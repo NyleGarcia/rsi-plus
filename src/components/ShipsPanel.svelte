@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ShipSelect from './ShipSelect.svelte';
   import { hangarUrl } from '@/lib/hangar';
   import {
     family,
@@ -373,11 +374,7 @@
         <div class="row spread">
           <h2>Compare <span class="muted">({compared.length})</span></h2>
           <div class="row">
-            <select bind:value={addCompare} aria-label="Add any ship to compare">
-              <option value={null}>Add any ship…</option>
-              {#each [...ships].sort((a, b) => a.name.localeCompare(b.name)) as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
-            </select>
-            <button class="btn small" disabled={addCompare == null} onclick={() => (addCompare != null && !compare.includes(addCompare) && (compare = [...compare, addCompare]), (addCompare = null))}>Add</button>
+            <div class="pick"><ShipSelect ships={[...ships].sort((a, b) => a.name.localeCompare(b.name))} bind:value={addCompare} ariaLabel="Add any ship to compare" placeholder="Add any ship…" price={false} onpick={(id) => (id != null && !compare.includes(id) && (compare = [...compare, id]), (addCompare = null))} /></div>
             <button class="btn small" onclick={() => (compare = [])}>Clear</button>
           </div>
         </div>
@@ -447,6 +444,10 @@
 {/if}
 
 <style>
+  .pick {
+    width: 260px;
+  }
+
   .seg {
     display: flex;
     flex-wrap: wrap;

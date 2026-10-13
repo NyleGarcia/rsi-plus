@@ -4,6 +4,7 @@
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, hangarItem } from '@/lib/settings';
   import { usd, type Catalog } from '@/lib/store';
+  import ShipSelect from './ShipSelect.svelte';
 
   let { initialTo = null }: { initialTo?: number | null } = $props();
 
@@ -17,7 +18,6 @@
   let mode = $state<Mode>('hangar');
   let fromId = $state<number | null>(null);
   let toId = $state<number | null>(null); // set from initialTo by the effect below
-  let targetFilter = $state('');
   let opt = $state<PlanOptions>({ ...DEFAULT_PLAN_OPTIONS, include: [], exclude: [] });
   let excludeSaved = $state(true);
   let chainName = $state('');
@@ -41,9 +41,6 @@
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
   const ccus = $derived(ownedCcus(hangar?.pledges ?? [], buyback?.items ?? [], ships));
   const buybackUrl = $derived(new Map((buyback?.items ?? []).map((b) => [b.id, b.url])));
-  const targets = $derived(
-    targetFilter.trim() ? ships.filter((s) => s.name.toLowerCase().includes(targetFilter.trim().toLowerCase())) : ships,
-  );
 
   /** Which saved chain holds each CCU ref. */
   const reservedBy = $derived(new Map(chains.flatMap((c) => reservedRefs([c]).map((r) => [r, c] as const))));
@@ -166,27 +163,12 @@
         {#if mode === 'store'}
           <span class="muted small">Picks the cheapest standalone ship on sale to start from.</span>
         {:else}
-          <select bind:value={fromId} aria-label="From ship">
-            <option value={null}>Pick a ship…</option>
-            {#if mode === 'hangar'}
-              {#if mine.length}
-                {#each mine as s (s.id)}<option value={s.id}>{s.name} — {usd(s.msrp)}</option>{/each}
-              {:else}
-                <option disabled>Load your hangar first</option>
-              {/if}
-            {:else}
-              {#each ships as s (s.id)}<option value={s.id}>{s.name} — {usd(s.msrp)}</option>{/each}
-            {/if}
-          </select>
+          <ShipSelect {ships} {mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? 'Pick a ship you own…' : 'Pick a ship…'} />
         {/if}
       </fieldset>
       <fieldset class="group grow">
         <legend>4 · Target</legend>
-        <input type="search" placeholder="Filter ships…" bind:value={targetFilter} aria-label="Filter target ships" />
-        <select bind:value={toId} aria-label="Target ship" size={1}>
-          <option value={null}>Pick a target…</option>
-          {#each targets as s (s.id)}<option value={s.id}>{s.name} — {usd(s.msrp)}</option>{/each}
-        </select>
+        <ShipSelect {ships} {mine} bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
       </fieldset>
     </div>
 

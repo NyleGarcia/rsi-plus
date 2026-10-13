@@ -6,6 +6,7 @@ updated: 2026-10-09
 # Changelog
 
 ## 0.2.0 — 2026-10-12
+- **Searchable dropdowns**: new `Combobox` (type to filter by name / maker, your hangar's ships listed first, arrow keys / Enter / Esc, clear ×, match highlighting) replaces the long native selects — CCU planner source + target, Ships compare "Add any ship", Store manufacturer filter.
 - **CCU planner v2** (CCU Game parity): optimisation target (current savings / lowest new money / long-term savings), start from a ship you own, any ship, or *buy a ship from the store* first, pay-with-store-credit and exclude-gifted options, force include / exclude per CCU ("Your CCUs" table), **saved chains** whose CCUs stay out of new plans and get re-priced on today's store, step table with running total, new money, hull value and buy links, "cash after store credit".
 - **Wallet**: *Fleet at today's prices* (melt value vs current MSRP per ship), *CCU portfolio* (paid vs today's upgrade worth, winners, gifted), funding average / best period / on-pace projection for the running day / week / month.
 - Party mode: a short **ding** when a friend request is auto-accepted (toggle *Ding on party auto-accept* in the popup, ♪ to preview). Played by an offscreen document (`offscreen` permission) since the background can't play audio.

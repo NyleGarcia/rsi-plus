@@ -13,6 +13,7 @@ updated: 2026-10-09
 | Hub | `src/entrypoints/hub/` + `src/components/*Panel.svelte` | ext page | Feed · Friends · Hangar · Buyback · Store · CCU planner · Watching · Mutes (`#tab?to=<shipId>` deep links) |
 | RSI content script | `src/entrypoints/rsi.content/` + `SiteBar.svelte` | isolated, all RSI pages except Spectrum | Bar on store ship pages (catalog match by link path) and account pages |
 | Popup | `src/entrypoints/popup/` | ext page | Toggles + hub shortcuts |
+| Combobox | `src/components/Combobox.svelte` (+ `ShipSelect.svelte`) | hub | Searchable single-select: closed = button with the pick, open = search input over a grouped listbox (`role=combobox` + `aria-activedescendant`, rows not focusable). Filters label + sublabel substring, groups in first-seen order, no portal. `ShipSelect` feeds it catalog ships with maker · price sublabels, owned ships first (`onlyMine` for the hangar-only mode). |
 
 ## Spectrum API (`src/lib/api.ts`)
 - `POST https://robertsspaceindustries.com/api/spectrum<endpoint>`, JSON body, header `X-Rsi-Token: <Rsi-Token cookie>`. Anonymous visitors get a token too → public reads work logged out (verified 2026-10: `/auth/identify`, `/v2/forum/channel/list`, `/forum/channel/threads`, `/forum/thread/nested`).

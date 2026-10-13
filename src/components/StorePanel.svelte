@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Combobox from './Combobox.svelte';
   import { bg } from '@/lib/messages';
   import { inventory, ownedShipsWithPaints, type OwnedShip } from '@/lib/items';
   import { catalogItem, hangarItem, wishlistItem, type WishShip } from '@/lib/settings';
@@ -97,10 +98,7 @@
   {#if error}<span class="err">{error}</span>{/if}
   <div class="row">
     <input placeholder="Search ship, maker, role" bind:value={q} aria-label="Search ships" />
-    <select bind:value={maker} aria-label="Manufacturer">
-      <option value="">All makers</option>
-      {#each makers as m (m)}<option value={m}>{m}</option>{/each}
-    </select>
+    <div class="pick"><Combobox options={makers.map((m) => ({ value: m, label: m }))} value={maker || null} onpick={(v) => (maker = v ?? '')} ariaLabel="Manufacturer" placeholder="All makers" /></div>
     <select bind:value={only} aria-label="Show">
       <option value="">All ships</option>
       <option value="wish">★ Wishlist ({wish.length})</option>
@@ -157,6 +155,10 @@
 </section>
 
 <style>
+  .pick {
+    width: 220px;
+  }
+
   .who {
     display: flex;
     gap: 10px;
