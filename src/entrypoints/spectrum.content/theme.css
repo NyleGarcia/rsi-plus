@@ -1,0 +1,63 @@
+/* RSI+ page styles. Always injected; <html> classes switch parts on:
+   sp-theme, sp-wide, sp-compact, sp-dev, sp-hide-read, sp-mute-hide.
+   Spectrum's own classes come from its 2026-10 bundle (unhashed BEM-ish names). */
+
+/* ---- list rows (marked by decorate.ts) ---- */
+.sp-badges { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; vertical-align: middle; }
+.sp-pill {
+  font: 600 10px/1 system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 3px 6px; border-radius: 999px; white-space: nowrap;
+}
+.sp-pill-new { background: #3cc8ff; color: #04121a; }
+.sp-pill-dev { background: #ffb547; color: #1d1200; }
+.sp-star {
+  border: 0; background: none; padding: 0 2px; cursor: pointer; font-size: 15px; line-height: 1;
+  color: rgb(255 255 255 / 0.35); opacity: 0; transition: opacity 0.15s;
+}
+.sp-row:hover .sp-star, .sp-star.on, .sp-focus .sp-star { opacity: 1; }
+.sp-star.on { color: #ffd166; }
+.sp-row.sp-read:not(.sp-pinned) { opacity: 0.55; transition: opacity 0.15s; }
+.sp-row.sp-read:hover { opacity: 1; }
+.sp-hide-read .sp-row.sp-read:not(.sp-pinned):not(.sp-watched) { display: none !important; }
+.sp-row.sp-muted { opacity: 0.25; max-height: 34px; overflow: hidden; filter: grayscale(1); }
+.sp-row.sp-muted:hover { opacity: 0.8; max-height: none; }
+.sp-mute-hide .sp-row.sp-muted { display: none !important; }
+.sp-dev .sp-row.sp-dev-row { box-shadow: inset 3px 0 0 #ffb547; }
+.sp-focus { outline: 2px solid #3cc8ff !important; outline-offset: 2px; border-radius: 4px; }
+
+/* ---- replies ---- */
+.sp-muted-body { display: none !important; }
+.sp-muted-note {
+  display: block; margin: 6px 0; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px dashed rgb(255 255 255 / 0.2); background: none; color: rgb(255 255 255 / 0.5);
+  font: 12px system-ui, sans-serif;
+}
+.sp-reply-actions { display: inline-flex; gap: 4px; margin-left: 10px; opacity: 0; transition: opacity 0.15s; }
+.forum-thread-item:hover > * .sp-reply-actions, .forum-thread-member-info:hover .sp-reply-actions, .sp-focus .sp-reply-actions { opacity: 1; }
+.sp-mini {
+  border: 1px solid rgb(255 255 255 / 0.15); background: rgb(255 255 255 / 0.05); color: rgb(255 255 255 / 0.7);
+  border-radius: 6px; padding: 1px 7px; font: 11px/1.6 system-ui, sans-serif; cursor: pointer;
+}
+.sp-mini:hover { background: rgb(255 255 255 / 0.12); color: #fff; }
+
+/* ---- dev highlight ---- */
+.sp-dev .forum-thread-item.is-highlighted-staff { box-shadow: inset 3px 0 0 #ffb547; background: rgb(255 181 71 / 0.06); }
+
+/* ---- theme ---- */
+.sp-theme .forum-thread-item .content-blocks,
+.sp-theme .forum-thread-item .body-content-blocks { font-size: 15px; line-height: 1.6; max-width: 78ch; }
+.sp-theme .forum-thread-subject { letter-spacing: -0.01em; }
+.sp-theme ::-webkit-scrollbar { width: 10px; height: 10px; }
+.sp-theme ::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.14); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+.sp-theme ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- wide ---- */
+.sp-wide .forum-thread-item .content-blocks,
+.sp-wide .forum-thread-item .body-content-blocks { max-width: none; }
+.sp-wide .forum-thread, .sp-wide .forum-thread-replies, .sp-wide .thread-screen { max-width: none !important; }
+
+/* ---- compact ---- */
+.sp-compact .forum-thread-item { padding-top: 6px !important; padding-bottom: 6px !important; }
+.sp-compact .forum-thread-item .member-avatar,
+.sp-compact .forum-thread-item .avatar { transform: scale(0.8); transform-origin: top left; }
+.sp-compact .forum-thread-item .content-blocks { margin-top: 2px !important; }

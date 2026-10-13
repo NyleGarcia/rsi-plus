@@ -1,0 +1,66 @@
+:root {
+  --bg: #0b0c10;
+  --surface: #14161c;
+  --surface-2: #1c1f27;
+  --line: rgb(255 255 255 / 0.08);
+  --text: #eceef3;
+  --muted: #9da1b0;
+  --accent: #3cc8ff;
+  --ok: #3ddc97;
+  --err: #ff5470;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  border-radius: 9px;
+  padding: 7px 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text); text-decoration: none; /* links styled as buttons */
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #04121a; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.muted { color: var(--muted); }
+input, select {
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+a { color: var(--accent); }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.card h2 { margin: 0 0 4px; font-size: 15px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.spread { justify-content: space-between; }
+.stack { display: grid; gap: 16px; }
+.err { color: var(--err); }
+.ok { color: var(--ok); }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: rgb(255 255 255 / 0.07); border: 1px solid var(--line);
+}
+.chip button { border: 0; background: none; padding: 0; color: var(--muted); }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.danger { border-color: rgb(255 84 112 / 0.5); color: var(--err); }
