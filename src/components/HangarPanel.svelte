@@ -434,25 +434,6 @@
 </div>
 
 <style>
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-    gap: 8px;
-  }
-  .stats div {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: grid;
-  }
-  .stats strong {
-    font-size: 18px;
-  }
-  .stats span {
-    color: var(--muted);
-    font-size: 12px;
-  }
   .chip.on {
     border-color: var(--accent);
     color: var(--accent);
@@ -550,9 +531,6 @@
   }
   .chip.ok {
     color: var(--ok);
-  }
-  .stats a {
-    color: var(--accent);
   }
   .bar {
     display: inline-block;

@@ -13,6 +13,7 @@ updated: 2026-10-09
 | Hub | `src/entrypoints/hub/` + `src/components/*Panel.svelte` | ext page | Feed · Friends · Hangar · Buyback · Store · CCU planner · Watching · Mutes (`#tab?to=<shipId>` deep links) |
 | RSI content script | `src/entrypoints/rsi.content/` + `SiteBar.svelte` | isolated, all RSI pages except Spectrum | Bar on store ship pages (catalog match by link path) and account pages |
 | Popup | `src/entrypoints/popup/` | ext page | Toggles + hub shortcuts |
+| Segmented | `src/components/Segmented.svelte` | hub | Radio group with a sliding pill (measured from the checked button, `ResizeObserver` re-measures); arrow keys move selection. |
 | Combobox | `src/components/Combobox.svelte` (+ `ShipSelect.svelte`) | hub | Searchable single-select: closed = button with the pick, open = search input over a grouped listbox (`role=combobox` + `aria-activedescendant`, rows not focusable). Filters label + sublabel substring, groups in first-seen order, no portal. `ShipSelect` feeds it catalog ships with maker · price sublabels, owned ships first (`onlyMine` for the hangar-only mode). |
 
 ## Spectrum API (`src/lib/api.ts`)
@@ -68,6 +69,9 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
 - Target sku price is absolute; CCU A→B costs `sku.price − msrp(A)` (RSI's `upgradePrice`). One `to(from: cheapest)` query yields every target.
 - Background refreshes every 30 min with a wishlist, else 6 h (`local:catalog`); `wishlistEvents` alerts on the first offer or a lower one (`sync:wishlist.lowest`).
 - Verified live 2026-10: 240 ships, 53 CCU targets on sale, warbond detection.
+
+## Hub styling notes
+- `base.css` owns the shared primitives: `.btn`, `.chip`, `.card`, `.stats` KPI tiles (`.stats > div`, `.delta.up|down|warn` chips, `.credit` / `.accent` tones). Panels add only their own layout CSS. Visual patterns (sliding segmented control, KPI tiles with delta chips, vertical titled stepper) follow 21st.dev components, re-done in Svelte + vanilla CSS — nothing installed from there.
 
 ## RSI cart (`src/lib/cart.ts`)
 - Upgrades: `POST /api/ship-upgrades/setContextToken {fromShipId, toShipId, toSkuId[, pledgeId]}` (pledgeId = buy-back mode) → `getPrice(from: shipId, to: skuId) { price { amount } }` (cents) → `mutation addToCart(from, to) { jwt }` on `/pledge-store/api/upgrade/graphql`; a jwt back = line in the cart. Sign-in check first: `initShipUpgrade { app { isAnonymous } }`. Sources: RSI's store bundle (`rsi.store.build.*.js`) and Open Hangar's cart PRs #396/#404 (API shape only — their code is PolyForm Strict, nothing copied).

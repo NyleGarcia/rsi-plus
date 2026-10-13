@@ -5,6 +5,7 @@
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, hangarItem } from '@/lib/settings';
   import { usd, type Catalog } from '@/lib/store';
+  import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
 
   let { initialTo = null }: { initialTo?: number | null } = $props();
@@ -164,11 +165,7 @@
 
     <fieldset class="group">
       <legend>1 · Optimise for</legend>
-      <div class="row">
-        {#each OBJECTIVES as ob (ob.id)}
-          <label class="radio" title={ob.hint}><input type="radio" name="objective" value={ob.id} bind:group={opt.objective} /> {ob.label}</label>
-        {/each}
-      </div>
+      <Segmented options={OBJECTIVES} bind:value={opt.objective} ariaLabel="Optimisation target" />
       <span class="muted small">{OBJECTIVES.find((o) => o.id === opt.objective)?.hint}</span>
     </fieldset>
 
@@ -192,11 +189,15 @@
     <div class="row">
       <fieldset class="group grow">
         <legend>3 · Source</legend>
-        <div class="row">
-          <label class="radio"><input type="radio" name="mode" value="hangar" bind:group={mode} /> Ship in my hangar</label>
-          <label class="radio"><input type="radio" name="mode" value="store" bind:group={mode} /> Buy a ship from the store</label>
-          <label class="radio"><input type="radio" name="mode" value="any" bind:group={mode} /> Any ship</label>
-        </div>
+        <Segmented
+          options={[
+            { id: 'hangar', label: 'Ship in my hangar' },
+            { id: 'store', label: 'Buy from the store', hint: 'Start by buying the cheapest standalone ship on sale' },
+            { id: 'any', label: 'Any ship' },
+          ]}
+          bind:value={mode}
+          ariaLabel="Source"
+        />
         {#if mode === 'store'}
           <span class="muted small">Picks the cheapest standalone ship on sale to start from.</span>
         {:else}
@@ -222,47 +223,53 @@
           {#if cashNeeded != null}<div><strong class:ok={cashNeeded === 0}>{usd(cashNeeded)}</strong><span>cash after store credit</span></div>{/if}
           {#if result.paid}<div><strong>{usd(result.paid)}</strong><span>already paid (owned CCUs)</span></div>{/if}
           <div><strong>{usd(result.msrpDiff)}</strong><span>{mode === 'store' ? 'target MSRP' : 'MSRP difference'}</span></div>
-          <div><strong class:ok={result.savings > 0} class:err={result.savings < 0}>{usd(result.savings)}</strong><span>saved vs MSRP</span></div>
+          <div><strong class:ok={result.savings > 0} class:err={result.savings < 0}>{usd(result.savings)}</strong><span>saved vs MSRP</span>{#if result.msrpDiff > 0}<span class="delta" class:up={result.savings > 0} class:down={result.savings < 0}>{result.savings >= 0 ? '▼' : '▲'} {Math.abs((100 * result.savings) / result.msrpDiff).toFixed(0)}%</span>{/if}</div>
         </div>
-        <table>
-          <thead>
-            <tr><th>#</th><th>Step</th><th>Ship</th><th>Cost</th><th>New money</th><th>Running</th><th>Hull value</th><th>RSI cart</th><th></th></tr>
-          </thead>
-          <tbody>
-            {#each result.steps as s, i (i)}
-              {@const a = addable(s, byId)}
-              {@const c = cart[cartKey(s)]}
-              <tr>
-                <td class="muted">{i + 1}</td>
-                <td><span class="chip k-{s.kind}">{KIND[s.kind]}</span>{s.label && s.kind !== 'owned' && s.kind !== 'buyback' ? ` ${s.label}` : ''}</td>
-                <td>{#if s.fromId !== STORE_START}<span class="muted">{name(s.fromId)} →</span> {/if}<strong>{name(s.toId)}</strong></td>
-                <td>{s.cost ? usd(s.cost) : 'free'}{s.paid ? ` (paid ${usd(s.paid)})` : ''}</td>
-                <td class:warn={s.cash > 0}>{s.cash ? usd(s.cash) : '—'}</td>
-                <td>{usd(running[i] ?? 0)}</td>
-                <td class="muted">{usd(byId.get(s.toId)?.msrp ?? 0)}</td>
-                <td class="cartcell">
-                  {#if a.kind === 'none'}
-                    <span class="muted small">{s.kind === 'owned' ? '—' : a.why}</span>
-                  {:else if c?.st === 'adding'}
-                    <span class="muted small">Adding…</span>
-                  {:else if c?.st === 'added'}
-                    <span class="ok small">In cart{c.price != null && c.price !== s.cost ? ` · RSI says ${usd(c.price)}` : ''}</span>
-                  {:else}
-                    <button class="btn small" disabled={cartBusy} onclick={() => addOne(s)} title={s.kind === 'buyback' ? 'Buy-backs check out alone: one per cart, nothing else in it.' : 'Adds this CCU to your RSI cart (nothing is paid)'}>
-                      {s.kind === 'buyback' ? 'Add buy-back' : 'Add to cart'}
-                    </button>
-                    {#if c?.st === 'error'}<span class="err small" title={c.msg}>{c.code === 'signed-out' ? 'Sign in to RSI' : c.code === 'conflict' ? 'Cart busy' : c.code === 'network' ? 'No answer — check cart' : 'Refused'}</span>{/if}
-                  {/if}
-                </td>
-                <td>
-                  {#if link(s)}
-                    <a class="btn small" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' ? 'Store' : 'Upgrades'}</a>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+        <ol class="chain" aria-label="Chain steps">
+          {#each result.steps as s, i (i)}
+            {@const a = addable(s, byId)}
+            {@const c = cart[cartKey(s)]}
+            {@const done = s.kind === 'owned' || c?.st === 'added'}
+            <li class="step" class:done class:busy={c?.st === 'adding'} class:bad={c?.st === 'error'}>
+              <div class="rail">
+                <span class="dot">{#if done}✓{:else if c?.st === 'error'}!{:else}{i + 1}{/if}</span>
+                {#if i < result.steps.length - 1}<span class="line"></span>{/if}
+              </div>
+              <div class="body">
+                <div class="row spread">
+                  <div class="title">
+                    {#if s.fromId !== STORE_START}<span class="muted">{name(s.fromId)}</span> <span class="arrow">→</span> {/if}<strong>{name(s.toId)}</strong>
+                    <span class="chip k-{s.kind}">{KIND[s.kind]}</span>
+                    {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback'}<span class="muted small">{s.label}</span>{/if}
+                  </div>
+                  <div class="row actions">
+                    {#if a.kind === 'none'}
+                      {#if s.kind !== 'owned'}<span class="muted small">{a.why}</span>{/if}
+                    {:else if c?.st === 'adding'}
+                      <span class="muted small">Adding…</span>
+                    {:else if c?.st === 'added'}
+                      <span class="ok small">In cart{c.price != null && c.price !== s.cost ? ` · RSI says ${usd(c.price)}` : ''}</span>
+                    {:else}
+                      <button class="btn small" disabled={cartBusy} onclick={() => addOne(s)} title={s.kind === 'buyback' ? 'Buy-backs check out alone: one per cart, nothing else in it.' : 'Adds this CCU to your RSI cart (nothing is paid)'}>
+                        {s.kind === 'buyback' ? 'Add buy-back' : 'Add to cart'}
+                      </button>
+                      {#if c?.st === 'error'}<span class="err small" title={c.msg}>{c.code === 'signed-out' ? 'Sign in to RSI' : c.code === 'conflict' ? 'Cart busy' : c.code === 'network' ? 'No answer — check cart' : 'Refused'}</span>{/if}
+                    {/if}
+                    {#if link(s)}
+                      <a class="btn small ghost" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' ? 'Store' : 'Upgrades'} ↗</a>
+                    {/if}
+                  </div>
+                </div>
+                <dl class="meta">
+                  <div><dt>Cost</dt><dd>{s.cost ? usd(s.cost) : 'free'}{s.paid ? ` · paid ${usd(s.paid)}` : ''}</dd></div>
+                  <div><dt>New money</dt><dd class:warn={s.cash > 0}>{s.cash ? usd(s.cash) : '—'}</dd></div>
+                  <div><dt>Running</dt><dd>{usd(running[i] ?? 0)}</dd></div>
+                  <div><dt>Hull value</dt><dd class="muted">{usd(byId.get(s.toId)?.msrp ?? 0)}</dd></div>
+                </dl>
+              </div>
+            </li>
+          {/each}
+        </ol>
         <div class="row spread">
           <div class="row">
             {#if addableSteps.some((s) => s.kind !== 'buyback')}
@@ -365,30 +372,6 @@
   .grow {
     flex: 1 1 300px;
   }
-  .radio {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-  }
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 8px;
-  }
-  .stats div {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: grid;
-  }
-  .stats strong {
-    font-size: 18px;
-  }
-  .stats span {
-    color: var(--muted);
-    font-size: 12px;
-  }
   .ok {
     color: var(--ok);
   }
@@ -413,10 +396,99 @@
   .small {
     font-size: 11px;
   }
-  .cartcell {
-    white-space: nowrap;
+  /* vertical stepper (pattern after 21st.dev's titled steppers) */
+  .chain {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
   }
-  .cartcell .err {
-    margin-left: 6px;
+  .step {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 12px;
+  }
+  .rail {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    justify-items: center;
+  }
+  .dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid rgb(255 255 255 / 0.18);
+    background: var(--surface-2);
+    color: var(--text);
+    transition: background 150ms, border-color 150ms;
+  }
+  .step.done .dot {
+    background: rgb(61 220 151 / 0.18);
+    border-color: rgb(61 220 151 / 0.6);
+    color: var(--ok);
+  }
+  .step.busy .dot {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgb(60 200 255 / 0.18);
+  }
+  .step.bad .dot {
+    border-color: var(--err);
+    color: var(--err);
+  }
+  .line {
+    width: 2px;
+    flex: 1;
+    min-height: 16px;
+    margin: 4px 0;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0.06));
+    border-radius: 1px;
+  }
+  .step.done .line {
+    background: rgb(61 220 151 / 0.45);
+  }
+  .body {
+    padding: 2px 0 16px;
+    min-width: 0;
+  }
+  .title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+  }
+  .arrow {
+    color: var(--muted);
+  }
+  .actions {
+    gap: 6px;
+  }
+  .btn.ghost {
+    background: none;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 6px 0 0;
+  }
+  .meta div {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .meta dt {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .meta dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
   }
 </style>

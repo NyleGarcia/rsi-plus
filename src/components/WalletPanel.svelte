@@ -6,6 +6,7 @@
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByFunding, spendByMonth, spendByType, spendByYear, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
   import Bars from './Bars.svelte';
+  import Segmented from './Segmented.svelte';
   import Donut from './Donut.svelte';
 
   type Saved = NonNullable<Awaited<ReturnType<typeof hangarItem.getValue>>>;
@@ -177,11 +178,7 @@
         <div class="chart">
           <div class="row spread">
             <h3>By month</h3>
-            <div class="seg small-seg" role="radiogroup" aria-label="Months shown">
-              {#each [12, 24, 36] as m (m)}
-                <button class:on={months === m} role="radio" aria-checked={months === m} onclick={() => (months = m)}>{m}</button>
-              {/each}
-            </div>
+            <Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />
           </div>
           <Bars points={byMonth.map((b) => ({ label: `${b.label} '${b.key.slice(2, 4)}`, value: b.value, hint: `${b.count} pledge${b.count === 1 ? '' : 's'}` }))} fmt={short} height={110} />
         </div>
@@ -216,8 +213,7 @@
         <div class="stats">
           <div><strong>{money(fleet.paid)}</strong><span>melt value · {fleet.rows.length} ships</span></div>
           <div><strong>{money(fleet.msrp)}</strong><span>at today's MSRP</span></div>
-          <div><strong class:ok={fleet.msrp > fleet.paid} class:warn={fleet.msrp < fleet.paid}>{signed(fleet.msrp - fleet.paid)}</strong><span>price change since you pledged</span></div>
-          <div><strong>{fleet.paid ? `${((100 * (fleet.msrp - fleet.paid)) / fleet.paid).toFixed(0)}%` : '—'}</strong><span>vs melt</span></div>
+          <div><strong class:ok={fleet.msrp > fleet.paid} class:warn={fleet.msrp < fleet.paid}>{signed(fleet.msrp - fleet.paid)}</strong><span>price change since you pledged</span>{#if fleet.paid}<span class="delta" class:up={fleet.msrp > fleet.paid} class:down={fleet.msrp < fleet.paid}>{fleet.msrp >= fleet.paid ? '▲' : '▼'} {Math.abs((100 * (fleet.msrp - fleet.paid)) / fleet.paid).toFixed(0)}% vs melt</span>{/if}</div>
         </div>
         {#if showFleet}
           <table>
@@ -251,7 +247,7 @@
           <div><strong>{ccus.count}</strong><span>CCUs · {ccus.gifted} gifted</span></div>
           <div><strong>{money(ccus.paid)}</strong><span>paid (melt value)</span></div>
           <div><strong>{money(ccus.worth)}</strong><span>worth at today's prices</span></div>
-          <div><strong class:ok={ccus.gain > 0} class:warn={ccus.gain < 0}>{signed(ccus.gain)}</strong><span>unrealised gain · {ccus.winners} winners</span></div>
+          <div><strong class:ok={ccus.gain > 0} class:warn={ccus.gain < 0}>{signed(ccus.gain)}</strong><span>unrealised gain</span><span class="delta" class:up={ccus.winners > 0}>{ccus.winners} winner{ccus.winners === 1 ? '' : 's'}</span></div>
         </div>
         {#if showCcus}
           <table>
@@ -282,11 +278,7 @@
         </span>
       </div>
       <div class="row">
-        <div class="seg small-seg" role="radiogroup" aria-label="Funding range">
-          {#each RANGES as r (r.id)}
-            <button class:on={range === r.id} role="radio" aria-checked={range === r.id} title={r.hint} onclick={() => (range = r.id)}>{r.label}</button>
-          {/each}
-        </div>
+        <Segmented options={RANGES} bind:value={range} ariaLabel="Funding range" size="sm" />
         <button class="btn" disabled={fundingBusy} onclick={() => loadFunding(true)}>{fundingBusy ? '…' : 'Refresh'}</button>
       </div>
     </div>
@@ -297,7 +289,7 @@
         <div><strong>{funding.fans.toLocaleString('en-US')}</strong><span>citizens</span></div>
         <div><strong>{funding.fans ? money0(funding.funds / funding.fans) : '—'}</strong><span>per citizen</span></div>
         {#if period}
-          <div><strong>{big(period.usd)}</strong><span>this {range}{delta != null ? ` · ${delta >= 0 ? '+' : ''}${delta.toFixed(0)}% vs last` : ''}</span></div>
+          <div><strong>{big(period.usd)}</strong><span>this {range}</span>{#if delta != null}<span class="delta" class:up={delta >= 0} class:down={delta < 0}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}% vs last</span>{/if}</div>
         {/if}
         <div><strong>{big(shown)}</strong><span>last {funding.points.length} {range}s</span></div>
         {#if fstats?.average}<div><strong>{big(fstats.average)}</strong><span>average per {range}</span></div>{/if}
@@ -319,33 +311,11 @@
     font-size: 13px;
     color: var(--muted);
   }
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 8px;
-  }
-  .stats div {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: grid;
-  }
-  .stats strong {
-    font-size: 18px;
-  }
-  .stats span {
-    color: var(--muted);
-    font-size: 12px;
-  }
   .ok {
     color: var(--ok);
   }
   .warn {
     color: #ffd166;
-  }
-  .stats div.credit {
-    border-color: rgb(255 209 102 / 0.35);
   }
   .charts {
     display: grid;
@@ -361,28 +331,6 @@
     display: grid;
     gap: 6px;
     align-content: start;
-  }
-  .seg {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    width: fit-content;
-  }
-  .seg button {
-    border: 0;
-    background: none;
-    color: var(--muted);
-    padding: 3px 9px;
-    font-size: 12px;
-    border-radius: 7px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .seg button.on {
-    background: rgb(255 255 255 / 0.08);
-    color: var(--text);
   }
   .small {
     font-size: 11px;

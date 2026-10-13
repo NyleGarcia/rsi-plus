@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import { hangarUrl } from '@/lib/hangar';
   import {
@@ -229,11 +230,16 @@
           <button class="btn small" disabled={paintsLoading} onclick={() => refreshPaints(true)}>{paintsLoading ? 'Loading…' : 'Refresh store paints'}</button>
         </div>
         <div class="row">
-          <div class="seg small-seg" role="radiogroup" aria-label="Paint ownership">
-            <button role="radio" aria-checked={own === 'both'} class:on={own === 'both'} onclick={() => (own = 'both')}>Both</button>
-            <button role="radio" aria-checked={own === 'owned'} class:on={own === 'owned'} onclick={() => (own = 'owned')}>Owned · {counts.owned}</button>
-            <button role="radio" aria-checked={own === 'not-owned'} class:on={own === 'not-owned'} onclick={() => (own = 'not-owned')}>Not owned · {counts['not-owned']}</button>
-          </div>
+          <Segmented
+            options={[
+              { id: 'both', label: 'Both' },
+              { id: 'owned', label: `Owned · ${counts.owned}` },
+              { id: 'not-owned', label: `Not owned · ${counts['not-owned']}` },
+            ]}
+            bind:value={own}
+            ariaLabel="Paint ownership"
+            size="sm"
+          />
           <span class="muted">Ships:</span>
           {#each [['', 'All'], ['owned', 'I own'], ['not-owned', "I don't own"], ['unknown', 'Unknown / packs']] as [k, label] (k)}
             <button class="chip" class:on={groupShow === k} onclick={() => (groupShow = k as GroupShow)}>{label}</button>
@@ -466,10 +472,6 @@
     border-radius: 7px;
     font-weight: 600;
     cursor: pointer;
-  }
-  .seg.small-seg button {
-    padding: 3px 9px;
-    font-size: 12px;
   }
   .seg button.on {
     background: rgb(255 255 255 / 0.08);
