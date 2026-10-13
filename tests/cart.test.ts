@@ -14,6 +14,7 @@ function mockFetch(handler: (c: Call) => Response | Promise<Response>) {
   return calls;
 }
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
+const isSession = (c: Call) => c.url.endsWith('/setAuthToken') || c.url.endsWith('/setContextToken');
 const gqlBody = (c: Call) => (JSON.parse(String(c.init?.body)) as { operationName: string; variables: Record<string, unknown> }[])[0]!;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -23,7 +24,7 @@ const signedInBody = [{ data: { app: { mode: 'upgrade', isAnonymous: false } } }
 describe('cart: upgrades', () => {
   it('context → price → addToCart, in order, with RSI\'s ids', async () => {
     const calls = mockFetch((c) => {
-      if (c.url.endsWith('/setContextToken')) return json({ success: 1 });
+      if (isSession(c)) return json({ success: 1 });
       const o = gqlBody(c).operationName;
       if (o === 'initShipUpgrade') return json(signedInBody);
       if (o === 'getPrice') return json([{ data: { price: { amount: 2500, nativeAmount: 2500 } } }]);
@@ -32,35 +33,38 @@ describe('cart: upgrades', () => {
     });
     const r = await addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300 });
     expect(r.price).toBe(2500);
-    expect(calls.map((c) => (c.url.endsWith('/setContextToken') ? 'context' : gqlBody(c).operationName))).toEqual(['initShipUpgrade', 'context', 'getPrice', 'addToCart']);
-    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ fromShipId: 1, toShipId: 3, toSkuId: 300 });
-    expect(gqlBody(calls[3]!).variables).toEqual({ from: 1, to: 300 });
+    const seq = calls.map((c) => (c.url.endsWith('/setAuthToken') ? 'auth' : c.url.endsWith('/setContextToken') ? 'context' : gqlBody(c).operationName));
+    expect(seq).toEqual(['auth', 'context', 'initShipUpgrade', 'context', 'getPrice', 'addToCart']);
+    const ctx = calls.filter((c) => c.url.endsWith('/setContextToken')).at(-1)!;
+    expect(JSON.parse(String(ctx.init?.body))).toEqual({ fromShipId: 1, toShipId: 3, toSkuId: 300 });
+    expect(gqlBody(calls.at(-1)!).variables).toEqual({ from: 1, to: 300 });
     expect(calls.every((c) => c.init?.credentials === 'include')).toBe(true);
   });
 
   it('buy-back adds the pledge id to the context', async () => {
     const calls = mockFetch((c) => {
-      if (c.url.endsWith('/setContextToken')) return json({});
+      if (isSession(c)) return json({});
       const o = gqlBody(c).operationName;
       if (o === 'initShipUpgrade') return json(signedInBody);
       if (o === 'getPrice') return json([{ data: { price: { amount: 100 } } }]);
       return json([{ data: { addToCart: { jwt: 'j' } } }]);
     });
     await addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300, pledgeId: 77 });
-    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ fromShipId: 1, toShipId: 3, toSkuId: 300, pledgeId: 77 });
+    const ctx = calls.filter((c) => c.url.endsWith('/setContextToken')).at(-1)!;
+    expect(JSON.parse(String(ctx.init?.body))).toEqual({ fromShipId: 1, toShipId: 3, toSkuId: 300, pledgeId: 77 });
   });
 
   it('signed out → signed-out error before any cart call', async () => {
-    const calls = mockFetch(() => json([{ data: { app: { mode: 'upgrade', isAnonymous: true } } }]));
+    const calls = mockFetch((c) => (isSession(c) ? json({}) : json([{ data: { app: { mode: 'browse', isAnonymous: true } } }])));
     await expect(addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300 })).rejects.toMatchObject({ code: 'signed-out' });
-    expect(calls).toHaveLength(1);
-    expect(await signedIn()).toBe(false);
+    expect(calls.filter((c) => !isSession(c))).toHaveLength(1); // the app query only — no price, no add
+    expect((await signedIn()).ok).toBe(false);
   });
 
   it('addToCart is never retried; refusals are classified', async () => {
     let adds = 0;
     mockFetch((c) => {
-      if (c.url.endsWith('/setContextToken')) return json({});
+      if (isSession(c)) return json({});
       const o = gqlBody(c).operationName;
       if (o === 'initShipUpgrade') return json(signedInBody);
       if (o === 'getPrice') return json([{ data: { price: { amount: 100 } } }]);
@@ -73,7 +77,7 @@ describe('cart: upgrades', () => {
     expect(adds).toBe(1);
 
     mockFetch((c) => {
-      if (c.url.endsWith('/setContextToken')) return json({});
+      if (isSession(c)) return json({});
       const o = gqlBody(c).operationName;
       if (o === 'initShipUpgrade') return json(signedInBody);
       if (o === 'getPrice') return json([{ data: { price: { amount: 100 } } }]);
@@ -87,6 +91,7 @@ describe('cart: standalone', () => {
   it('reads the csrf token from the cart page and posts the store mutation', async () => {
     const calls = mockFetch((c) => {
       if (c.url.endsWith('/pledge/cart')) return new Response('<html><head><meta name="csrf-token" content="abc123" /></head></html>');
+      if (isSession(c)) return json({});
       if (c.url.endsWith('/upgrade/graphql')) return json(signedInBody);
       return json({ data: { store: { cart: { mutations: { add: true } } } } });
     });

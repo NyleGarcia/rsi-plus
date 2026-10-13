@@ -15,7 +15,7 @@
  * caller adds it on its own. Nothing here checks out or pays.
  */
 import type { Step } from './ccu';
-import { gql, type CatalogShip } from './store';
+import { gql, session, type CatalogShip } from './store';
 import { SPECTRUM_ORIGIN } from './types';
 
 export const CART_URL = `${SPECTRUM_ORIGIN}/en/store/pledge/cart`;
@@ -58,14 +58,25 @@ async function post(path: string, body: unknown, headers: Record<string, string>
   return res;
 }
 
-/** Signed in to RSI in this browser context? (anonymous visitors get a token too, so the cookie alone says nothing). */
-export async function signedIn(): Promise<boolean> {
+/**
+ * Signed in to RSI in this browser context? Runs `setAuthToken` first: the upgrade API reads the account from the
+ * `Rsi-Account-Auth` JWT cookie that call mints (≈30 min), not from the login session itself — without it even a
+ * signed-in browser reads as anonymous. Anonymous visitors get an `Rsi-Token` too, so that cookie alone says nothing.
+ */
+export async function signedIn(): Promise<{ ok: boolean; why: string }> {
   try {
-    const r = await gql<{ app?: { isAnonymous?: boolean } }>('initShipUpgrade', 'query initShipUpgrade { app { mode isAnonymous } }');
-    return r.app ? !r.app.isAnonymous : false;
-  } catch {
-    return false;
+    await session();
+    const r = await gql<{ app?: { mode?: string; isAnonymous?: boolean } }>('initShipUpgrade', 'query initShipUpgrade { app { mode isAnonymous } }');
+    if (!r.app) return { ok: false, why: 'RSI returned no app state' };
+    return r.app.isAnonymous ? { ok: false, why: `RSI sees this browser as anonymous (mode ${r.app.mode ?? '?'}) — sign in on robertsspaceindustries.com in this window` } : { ok: true, why: '' };
+  } catch (e) {
+    return { ok: false, why: `Sign-in check failed: ${(e as Error).message}` };
   }
+}
+
+async function requireSignIn() {
+  const s = await signedIn();
+  if (!s.ok) throw new CartError('signed-out', s.why);
 }
 
 export interface UpgradeRef {
@@ -99,7 +110,7 @@ export async function upgradePrice(u: UpgradeRef): Promise<number> {
 
 /** Adds the upgrade to the RSI cart. Returns RSI's price (cents) for the line. Never retries. */
 export async function addUpgrade(u: UpgradeRef): Promise<{ price: number }> {
-  if (!(await signedIn())) throw new CartError('signed-out', 'Sign in to RSI first.');
+  await requireSignIn();
   const price = await upgradePrice(u);
   try {
     const r = await gql<{ addToCart: { jwt?: string } | null }>('addToCart', 'mutation addToCart($from: Int!, $to: Int!) { addToCart(from: $from, to: $to) { jwt } }', {
@@ -133,7 +144,7 @@ async function csrfToken(): Promise<string> {
 
 /** Adds a standalone-ship SKU (regular store line) to the RSI cart. Never retries. */
 export async function addStandalone(skuId: number, qty = 1): Promise<void> {
-  if (!(await signedIn())) throw new CartError('signed-out', 'Sign in to RSI first.');
+  await requireSignIn();
   const csrf = await csrfToken();
   const query = `mutation AddCartItemMutation { store(name: "pledge") { cart { mutations { add(skuId: ${Math.trunc(skuId)}, qty: ${Math.trunc(qty)}) } } } }`;
   const res = await post('/graphql', { query }, { 'x-csrf-token': csrf });

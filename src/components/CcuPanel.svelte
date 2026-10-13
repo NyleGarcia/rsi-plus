@@ -260,6 +260,7 @@
                     {/if}
                   </div>
                 </div>
+                {#if c?.st === 'error'}<div class="err small reason">{c.msg}</div>{/if}
                 <dl class="meta">
                   <div><dt>Cost</dt><dd>{s.cost ? usd(s.cost) : 'free'}{s.paid ? ` · paid ${usd(s.paid)}` : ''}</dd></div>
                   <div><dt>New money</dt><dd class:warn={s.cash > 0}>{s.cash ? usd(s.cash) : '—'}</dd></div>
@@ -469,6 +470,9 @@
   }
   .btn.ghost {
     background: none;
+  }
+  .reason {
+    margin-top: 4px;
   }
   .meta {
     display: flex;

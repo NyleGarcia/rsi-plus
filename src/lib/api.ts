@@ -27,7 +27,7 @@ export class SpectrumError extends Error {
   }
 }
 
-async function token(): Promise<string> {
+export async function token(): Promise<string> {
   if (typeof document !== 'undefined' && location.hostname === 'robertsspaceindustries.com') {
     const m = document.cookie.match(/(?:^|;\s*)Rsi-Token=([^;]+)/);
     if (m?.[1]) return decodeURIComponent(m[1]);

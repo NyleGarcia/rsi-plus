@@ -8,6 +8,7 @@
  * A CCU A→B costs `sku(B).price − msrp(A)` and is only allowed when that is > 0.
  * Warbond SKUs need new money (no store credit) — tracked as `warbond` so the planner can report cash vs credit.
  */
+import { token } from './api';
 import { SPECTRUM_ORIGIN } from './types';
 
 export interface Sku {
@@ -45,10 +46,12 @@ const GQL = `${SPECTRUM_ORIGIN}/pledge-store/api/upgrade/graphql`;
 
 /** One operation against the upgrade-tool GraphQL (array body, like RSI's own page). */
 export async function gql<T>(operationName: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
+  // RSI's own pages send the Rsi-Token cookie as a header too; harmless when absent (public reads work without).
+  const rsi = await token().catch(() => '');
   const res = await fetch(GQL, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(rsi ? { 'X-Rsi-Token': rsi } : {}) },
     body: JSON.stringify([{ operationName, variables, query }]),
   });
   if (!res.ok) throw new Error(`RSI store ${operationName}: HTTP ${res.status}`);
@@ -67,7 +70,12 @@ const sku = (s: RawSku): Sku => ({
   stock: s.unlimitedStock || !s.showStock ? null : (s.availableStock ?? null),
 });
 
-async function session() {
+/**
+ * Account context for the upgrade API: `setAuthToken` mints the short-lived `Rsi-Account-Auth` JWT cookie (≈30 min)
+ * from the main login — without it the API treats even a signed-in browser as anonymous; `setContextToken` opens an
+ * upgrade context. Both work anonymously too (no CSRF).
+ */
+export async function session() {
   for (const path of ['/api/account/v2/setAuthToken', '/api/ship-upgrades/setContextToken']) {
     const res = await fetch(`${SPECTRUM_ORIGIN}${path}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!res.ok) throw new Error(`RSI store session ${path}: HTTP ${res.status}`);
