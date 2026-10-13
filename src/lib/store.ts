@@ -76,8 +76,16 @@ const sku = (s: RawSku): Sku => ({
  * upgrade context. Both work anonymously too (no CSRF).
  */
 export async function session() {
+  // RSI's own bootstrap posts these with `X-Rsi-Token: <Rsi-Token cookie>` (attachStoreHeader); without the header the
+  // platform API mints an *anonymous* account token even for a signed-in browser.
+  const rsi = await token().catch(() => '');
   for (const path of ['/api/account/v2/setAuthToken', '/api/ship-upgrades/setContextToken']) {
-    const res = await fetch(`${SPECTRUM_ORIGIN}${path}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const res = await fetch(`${SPECTRUM_ORIGIN}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(rsi ? { 'X-Rsi-Token': rsi } : {}) },
+      body: '{}',
+    });
     if (!res.ok) throw new Error(`RSI store session ${path}: HTTP ${res.status}`);
   }
 }

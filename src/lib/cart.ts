@@ -15,6 +15,7 @@
  * caller adds it on its own. Nothing here checks out or pays.
  */
 import type { Step } from './ccu';
+import { token } from './api';
 import { gql, session, type CatalogShip } from './store';
 import { SPECTRUM_ORIGIN } from './types';
 
@@ -44,11 +45,12 @@ function classify(e: unknown): CartError {
 
 async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
   let res: Response;
+  const rsi = await token().catch(() => '');
   try {
     res = await fetch(`${SPECTRUM_ORIGIN}${path}`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(rsi ? { 'X-Rsi-Token': rsi } : {}), ...headers },
       body: JSON.stringify(body),
     });
   } catch (e) {
