@@ -6,7 +6,10 @@
  *   1. `POST /api/ship-upgrades/setContextToken { fromShipId, toShipId, toSkuId }` — the session's upgrade context;
  *      adding `pledgeId` switches it to buy-back mode for that melted CCU.
  *   2. `query getPrice(from: shipId, to: skuId) { price { amount } }` — RSI's live price in cents.
- *   3. `mutation addToCart(from: shipId, to: skuId) { jwt }` — a jwt back = the line is in the cart.
+ *   3. `mutation addToCart(from: shipId, to: skuId) { jwt }` — a ticket, not yet a cart line;
+ *   4. `POST /api/store/v2/cart/token { jwt }` — the cart takes the ticket (`success: 1`). Only now is it in the cart.
+ * Eligibility: `filterShips` → `from(to: skuId) { ships { id } }` lists every ship RSI lets you upgrade *from* to that
+ * SKU; a chain step whose source ship is missing there is one RSI won't sell, whatever the catalog math says.
  * Standalone ships — the regular store (`POST /graphql`, `store(name:"pledge"){cart{mutations{add(skuId, qty)}}}`,
  * header `x-csrf-token` from an RSI page's `<meta name="csrf-token">`).
  *
@@ -20,6 +23,7 @@ import { gql, session, type CatalogShip } from './store';
 import { SPECTRUM_ORIGIN } from './types';
 
 export const CART_URL = `${SPECTRUM_ORIGIN}/en/store/pledge/cart`;
+const CART_TOKEN_PATH = '/api/store/v2/cart/token';
 
 export type CartErrorCode = 'signed-out' | 'refused' | 'conflict' | 'network' | 'not-addable';
 
@@ -96,9 +100,43 @@ async function setContext(u: UpgradeRef): Promise<void> {
   await post('/api/ship-upgrades/setContextToken', body);
 }
 
-/** RSI's live price for the upgrade (cents), after setting the context. */
-export async function upgradePrice(u: UpgradeRef): Promise<number> {
+async function appMode(): Promise<string | null> {
+  try {
+    const r = await gql<{ app?: { mode?: string } }>('initShipUpgrade', 'query initShipUpgrade { app { mode isAnonymous } }');
+    return r.app?.mode ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export interface Verified {
+  /** RSI lists the source ship among those allowed to upgrade to this SKU. */
+  eligible: boolean;
+  /** RSI's live price in cents (null when it did not answer). */
+  price: number | null;
+}
+
+/** Is this upgrade really on offer from that ship, and at what price? Read-only. */
+export async function verifyUpgrade(u: UpgradeRef): Promise<Verified> {
+  await session();
   await setContext(u);
+  let eligible = false;
+  try {
+    const r = await gql<{ from: { ships: { id: number }[] } }>(
+      'filterShips',
+      'query filterShips($toId: Int, $fromFilters: [FilterConstraintValues]) { from(to: $toId, filters: $fromFilters) { ships { id } } }',
+      { toId: u.toSkuId, fromFilters: [] },
+    );
+    eligible = r.from.ships.some((x) => x.id === u.fromShipId);
+  } catch (e) {
+    throw classify(e);
+  }
+  if (!eligible) return { eligible, price: null };
+  const price = await livePrice(u).catch(() => null);
+  return { eligible, price };
+}
+
+async function livePrice(u: UpgradeRef): Promise<number> {
   try {
     const r = await gql<{ price: { amount: number } }>('getPrice', 'query getPrice($from: Int!, $to: Int!) { price(from: $from, to: $to) { amount nativeAmount } }', {
       from: u.fromShipId,
@@ -110,19 +148,38 @@ export async function upgradePrice(u: UpgradeRef): Promise<number> {
   }
 }
 
-/** Adds the upgrade to the RSI cart. Returns RSI's price (cents) for the line. Never retries. */
+/** RSI's live price for the upgrade (cents), after setting the context. */
+export async function upgradePrice(u: UpgradeRef): Promise<number> {
+  await setContext(u);
+  return livePrice(u);
+}
+
+/**
+ * Adds the upgrade to the RSI cart: context → mode guard → price → addToCart ticket → cart takes the ticket.
+ * Returns RSI's price (cents) for the line. Neither the add nor the cart step is ever retried.
+ */
 export async function addUpgrade(u: UpgradeRef): Promise<{ price: number }> {
   await requireSignIn();
-  const price = await upgradePrice(u);
+  await setContext(u);
+  // A buy-back only after RSI really switched to buy-back mode; a new upgrade never while it is in that mode.
+  const mode = await appMode();
+  if (u.pledgeId && mode !== 'buyback') throw new CartError('refused', `RSI did not open buy-back mode for pledge #${u.pledgeId} (mode ${mode ?? '?'}).`);
+  if (!u.pledgeId && mode === 'buyback') throw new CartError('conflict', 'RSI is in buy-back mode — finish or clear that buy-back first.');
+  const price = await livePrice(u);
+  let jwt: string;
   try {
     const r = await gql<{ addToCart: { jwt?: string } | null }>('addToCart', 'mutation addToCart($from: Int!, $to: Int!) { addToCart(from: $from, to: $to) { jwt } }', {
       from: u.fromShipId,
       to: u.toSkuId,
     });
-    if (!r.addToCart?.jwt) throw new Error('no cart token returned');
+    if (!r.addToCart?.jwt) throw new Error('no cart ticket returned');
+    jwt = r.addToCart.jwt;
   } catch (e) {
     throw classify(e);
   }
+  const res = await post(CART_TOKEN_PATH, { jwt });
+  const body = (await res.json().catch(() => null)) as { success?: number | boolean; msg?: string; code?: string } | null;
+  if (!body || body.success === 0 || body.success === false) throw classify(new Error(body?.msg || body?.code || 'cart did not take the ticket'));
   return { price };
 }
 

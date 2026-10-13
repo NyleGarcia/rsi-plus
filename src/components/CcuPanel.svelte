@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addable, addStep, CART_URL, CartError } from '@/lib/cart';
+  import { addable, addStep, CART_URL, CartError, verifyUpgrade } from '@/lib/cart';
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
@@ -78,6 +78,50 @@
       return false;
     }
   }
+  // ---- verify against RSI: is each step really on offer from that ship, at that price? ----
+  type VerifyState = { st: 'checking' } | { st: 'ok'; price: number | null; note?: string } | { st: 'price'; price: number } | { st: 'no'; why: string } | { st: 'error'; msg: string };
+  let verify = $state<Record<string, VerifyState>>({});
+  let verifying = $state(false);
+  const verified = $derived(result ? result.steps.map((s) => verify[cartKey(s)]).filter(Boolean) : []);
+  const confirmed = $derived(verified.filter((v) => v.st === 'ok').length);
+  async function verifyChain() {
+    if (!result) return;
+    verifying = true;
+    verify = {};
+    try {
+      for (const s of result.steps) {
+        const k = cartKey(s);
+        verify = { ...verify, [k]: { st: 'checking' } };
+        try {
+          if (s.kind === 'owned') {
+            const have = ccus.owned.some((o) => o.source === 'hangar' && o.ref === s.ref);
+            verify = { ...verify, [k]: have ? { st: 'ok', price: null, note: 'in your hangar' } : { st: 'no', why: 'not in your hangar any more — reload it' } };
+            continue;
+          }
+          const a = addable(s, byId);
+          if (a.kind === 'none') {
+            verify = { ...verify, [k]: { st: 'no', why: a.why } };
+            continue;
+          }
+          if (a.kind === 'standalone') {
+            const sku = byId.get(s.toId)?.standalone.find((x) => x.id === a.skuId);
+            verify = { ...verify, [k]: sku?.available ? { st: 'ok', price: sku.price, note: 'catalog' } : { st: 'no', why: 'standalone SKU no longer on sale' } };
+            continue;
+          }
+          const v = await verifyUpgrade(a.ref);
+          if (!v.eligible) verify = { ...verify, [k]: { st: 'no', why: `RSI does not sell this CCU from the ${name(s.fromId)}` } };
+          else if (v.price != null && v.price !== s.cost) verify = { ...verify, [k]: { st: 'price', price: v.price } };
+          else verify = { ...verify, [k]: { st: 'ok', price: v.price } };
+          await new Promise((ok) => setTimeout(ok, 300));
+        } catch (e) {
+          verify = { ...verify, [k]: { st: 'error', msg: (e as Error).message } };
+        }
+      }
+    } finally {
+      verifying = false;
+    }
+  }
+
   /** Store steps one after another (RSI is polite about it; a buy-back goes alone, so it is skipped here). */
   async function addAll() {
     cartBusy = true;
@@ -230,9 +274,10 @@
             {@const a = addable(s, byId)}
             {@const c = cart[cartKey(s)]}
             {@const done = s.kind === 'owned' || c?.st === 'added'}
-            <li class="step" class:done class:busy={c?.st === 'adding'} class:bad={c?.st === 'error'}>
+            {@const v = verify[cartKey(s)]}
+            <li class="step" class:done class:busy={c?.st === 'adding' || v?.st === 'checking'} class:bad={c?.st === 'error' || v?.st === 'no'}>
               <div class="rail">
-                <span class="dot">{#if done}✓{:else if c?.st === 'error'}!{:else}{i + 1}{/if}</span>
+                <span class="dot">{#if done}✓{:else if c?.st === 'error' || v?.st === 'no'}!{:else}{i + 1}{/if}</span>
                 {#if i < result.steps.length - 1}<span class="line"></span>{/if}
               </div>
               <div class="body">
@@ -241,6 +286,11 @@
                     {#if s.fromId !== STORE_START}<span class="muted">{name(s.fromId)}</span> <span class="arrow">→</span> {/if}<strong>{name(s.toId)}</strong>
                     <span class="chip k-{s.kind}">{KIND[s.kind]}</span>
                     {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback'}<span class="muted small">{s.label}</span>{/if}
+                    {#if v?.st === 'checking'}<span class="badge">checking…</span>
+                    {:else if v?.st === 'ok'}<span class="badge ok">✓ RSI confirmed{v.note ? ` · ${v.note}` : ''}</span>
+                    {:else if v?.st === 'price'}<span class="badge warn">⚠ RSI price {usd(v.price)}</span>
+                    {:else if v?.st === 'no'}<span class="badge err">✗ {v.why}</span>
+                    {:else if v?.st === 'error'}<span class="badge err" title={v.msg}>? could not check</span>{/if}
                   </div>
                   <div class="row actions">
                     {#if a.kind === 'none'}
@@ -273,6 +323,12 @@
         </ol>
         <div class="row spread">
           <div class="row">
+            <button class="btn small" disabled={verifying || cartBusy} onclick={verifyChain} title="Asks RSI, step by step, whether it sells each CCU from that ship and at what price. Read-only.">
+              {verifying ? 'Checking with RSI…' : verified.length ? 'Re-check with RSI' : 'Verify chain with RSI'}
+            </button>
+            {#if verified.length && !verifying}
+              <span class="small" class:ok={confirmed === result.steps.length} class:warn={confirmed !== result.steps.length}>{confirmed}/{result.steps.length} steps confirmed</span>
+            {/if}
             {#if addableSteps.some((s) => s.kind !== 'buyback')}
               <button class="btn primary small" disabled={cartBusy} onclick={addAll}>{cartBusy ? 'Adding…' : `Add ${addableSteps.filter((s) => s.kind !== 'buyback').length} store step${addableSteps.filter((s) => s.kind !== 'buyback').length === 1 ? '' : 's'} to RSI cart`}</button>
             {/if}
@@ -473,6 +529,26 @@
   }
   .reason {
     margin-top: 4px;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.07);
+    color: var(--muted);
+  }
+  .badge.ok {
+    background: rgb(61 220 151 / 0.14);
+    color: var(--ok);
+  }
+  .badge.warn {
+    background: rgb(255 209 102 / 0.14);
+    color: #ffd166;
+  }
+  .badge.err {
+    background: rgb(255 84 112 / 0.14);
+    color: var(--err);
   }
   .meta {
     display: flex;

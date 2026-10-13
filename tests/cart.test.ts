@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addable, addStandalone, addUpgrade, CartError, csrfFrom, signedIn } from '@/lib/cart';
+import { addable, addStandalone, addUpgrade, CartError, csrfFrom, signedIn, verifyUpgrade } from '@/lib/cart';
 import type { Step } from '@/lib/ccu';
 import type { CatalogShip } from '@/lib/store';
 
@@ -15,6 +15,8 @@ function mockFetch(handler: (c: Call) => Response | Promise<Response>) {
 }
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
 const isSession = (c: Call) => c.url.endsWith('/setAuthToken') || c.url.endsWith('/setContextToken');
+const isTicket = (c: Call) => c.url.endsWith('/api/store/v2/cart/token');
+const tag = (c: Call) => (c.url.endsWith('/setAuthToken') ? 'auth' : c.url.endsWith('/setContextToken') ? 'context' : isTicket(c) ? 'ticket' : gqlBody(c).operationName);
 const gqlBody = (c: Call) => (JSON.parse(String(c.init?.body)) as { operationName: string; variables: Record<string, unknown> }[])[0]!;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -25,6 +27,7 @@ describe('cart: upgrades', () => {
   it('context → price → addToCart, in order, with RSI\'s ids', async () => {
     const calls = mockFetch((c) => {
       if (isSession(c)) return json({ success: 1 });
+      if (isTicket(c)) return json({ success: 1, code: 'OK' });
       const o = gqlBody(c).operationName;
       if (o === 'initShipUpgrade') return json(signedInBody);
       if (o === 'getPrice') return json([{ data: { price: { amount: 2500, nativeAmount: 2500 } } }]);
@@ -33,25 +36,73 @@ describe('cart: upgrades', () => {
     });
     const r = await addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300 });
     expect(r.price).toBe(2500);
-    const seq = calls.map((c) => (c.url.endsWith('/setAuthToken') ? 'auth' : c.url.endsWith('/setContextToken') ? 'context' : gqlBody(c).operationName));
-    expect(seq).toEqual(['auth', 'context', 'initShipUpgrade', 'context', 'getPrice', 'addToCart']);
+    expect(calls.map(tag)).toEqual(['auth', 'context', 'initShipUpgrade', 'context', 'initShipUpgrade', 'getPrice', 'addToCart', 'ticket']);
     const ctx = calls.filter((c) => c.url.endsWith('/setContextToken')).at(-1)!;
     expect(JSON.parse(String(ctx.init?.body))).toEqual({ fromShipId: 1, toShipId: 3, toSkuId: 300 });
-    expect(gqlBody(calls.at(-1)!).variables).toEqual({ from: 1, to: 300 });
+    expect(gqlBody(calls.find((c) => tag(c) === 'addToCart')!).variables).toEqual({ from: 1, to: 300 });
+    expect(JSON.parse(String(calls.at(-1)!.init?.body))).toEqual({ jwt: 'x.y.z' });
+    expect((calls.at(-1)!.init?.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect(calls.every((c) => c.init?.credentials === 'include')).toBe(true);
   });
 
-  it('buy-back adds the pledge id to the context', async () => {
+  it('buy-back adds the pledge id to the context and needs buy-back mode; a plain upgrade refuses buy-back mode', async () => {
+    let ctxCalls = 0;
     const calls = mockFetch((c) => {
-      if (isSession(c)) return json({});
+      if (isSession(c)) {
+        if (c.url.endsWith('/setContextToken')) ctxCalls++;
+        return json({});
+      }
+      if (isTicket(c)) return json({ success: 1 });
       const o = gqlBody(c).operationName;
-      if (o === 'initShipUpgrade') return json(signedInBody);
+      // Mode flips to buyback once a context with a pledge id was set (the 2nd context call in this flow).
+      if (o === 'initShipUpgrade') return json([{ data: { app: { mode: ctxCalls >= 2 ? 'buyback' : 'upgrade', isAnonymous: false } } }]);
       if (o === 'getPrice') return json([{ data: { price: { amount: 100 } } }]);
       return json([{ data: { addToCart: { jwt: 'j' } } }]);
     });
     await addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300, pledgeId: 77 });
     const ctx = calls.filter((c) => c.url.endsWith('/setContextToken')).at(-1)!;
     expect(JSON.parse(String(ctx.init?.body))).toEqual({ fromShipId: 1, toShipId: 3, toSkuId: 300, pledgeId: 77 });
+
+    // Session stuck in buy-back mode → a normal upgrade is refused as a cart conflict, nothing added.
+    let adds = 0;
+    mockFetch((c) => {
+      if (isSession(c)) return json({});
+      const o = gqlBody(c).operationName;
+      if (o === 'initShipUpgrade') return json([{ data: { app: { mode: 'buyback', isAnonymous: false } } }]);
+      adds++;
+      return json([{ data: { addToCart: { jwt: 'j' } } }]);
+    });
+    await expect(addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300 })).rejects.toMatchObject({ code: 'conflict' });
+    expect(adds).toBe(0);
+  });
+
+  it('a ticket the cart rejects is a refusal (and still not retried)', async () => {
+    let tickets = 0;
+    mockFetch((c) => {
+      if (isSession(c)) return json({});
+      if (isTicket(c)) return (tickets++, json({ success: 0, msg: 'Your cart contains a pending order' }));
+      const o = gqlBody(c).operationName;
+      if (o === 'initShipUpgrade') return json(signedInBody);
+      if (o === 'getPrice') return json([{ data: { price: { amount: 100 } } }]);
+      return json([{ data: { addToCart: { jwt: 'j' } } }]);
+    });
+    await expect(addUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300 })).rejects.toMatchObject({ code: 'conflict' });
+    expect(tickets).toBe(1);
+  });
+
+  it('verifyUpgrade: eligible only when RSI lists the source ship, with the live price', async () => {
+    mockFetch((c) => {
+      if (isSession(c)) return json({});
+      const b = gqlBody(c);
+      if (b.operationName === 'filterShips') {
+        expect(b.variables).toEqual({ toId: 300, fromFilters: [] });
+        return json([{ data: { from: { ships: [{ id: 1 }, { id: 2 }] } } }]);
+      }
+      if (b.operationName === 'getPrice') return json([{ data: { price: { amount: 2600 } } }]);
+      return json([{ errors: [{ message: 'unexpected' }] }]);
+    });
+    expect(await verifyUpgrade({ fromShipId: 1, toShipId: 3, toSkuId: 300 })).toEqual({ eligible: true, price: 2600 });
+    expect(await verifyUpgrade({ fromShipId: 9, toShipId: 3, toSkuId: 300 })).toEqual({ eligible: false, price: null });
   });
 
   it('signed out → signed-out error before any cart call', async () => {
