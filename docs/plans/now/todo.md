@@ -24,3 +24,4 @@ updated: 2026-10-09
 - [ ] Live-verify account switcher: cookie names captured (`Rsi-Token`, `Rsi-Account-Auth`, `_rsi_device`, `Rsi-XSRF`), switch lands logged in without 2FA, incognito list separate
 - [ ] Live-verify CCU planner v2 on a real hangar: gifted detection (melt value 0), store-start chains, saved-chain re-pricing, `Pledge.value` as paid price for owned CCUs
 - [ ] Live-verify Wallet fleet/CCU portfolio matching on real pledge ship titles (single-ship pledges, LTI suffixes)
+- [ ] **Live-verify Add to RSI cart** (add, check cart, remove — no checkout): CCU step lands at the planned price from the right ship; standalone ship via `/graphql` + csrf; buy-back step (`pledgeId` + target standard SKU) is the buy-back line; signed-out → 'Sign in to RSI'; refusal with a pending order → 'Cart busy'

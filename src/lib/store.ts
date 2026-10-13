@@ -43,7 +43,8 @@ export interface Catalog {
 
 const GQL = `${SPECTRUM_ORIGIN}/pledge-store/api/upgrade/graphql`;
 
-async function gql<T>(operationName: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
+/** One operation against the upgrade-tool GraphQL (array body, like RSI's own page). */
+export async function gql<T>(operationName: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch(GQL, {
     method: 'POST',
     credentials: 'include',

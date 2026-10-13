@@ -46,7 +46,10 @@ export interface Step {
   /** Cents already spent (owned CCUs) — only counts for `longterm`. */
   paid: number;
   label: string;
+  /** Pledge id (owned) / buyback id (buyback). */
   ref?: number;
+  /** Store SKU to add to the cart (store CCU / standalone steps). */
+  skuId?: number;
 }
 
 export interface Plan {
@@ -119,21 +122,21 @@ interface Graph {
 
 function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeStart: boolean): Graph {
   const byId = new Map(ships.map((s) => [s.id, s]));
-  const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string }[] = [];
+  const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId: number }[] = [];
   const starts: Step[] = [];
   for (const s of ships) {
     for (const k of s.ccu) {
       if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
       const kind = skuKind(k.title);
       if (kind === 'warbond' && !opt.warbond) continue;
-      offers.push({ to: s, price: k.price, kind, title: k.title || 'Standard' });
+      offers.push({ to: s, price: k.price, kind, title: k.title || 'Standard', skuId: k.id });
     }
     if (storeStart)
       for (const k of s.standalone) {
         if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
         const wb = isWarbondSku(k);
         if (wb && !opt.warbond) continue;
-        starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone' });
+        starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
       }
   }
   const excluded = new Set(opt.exclude);
@@ -150,7 +153,7 @@ function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeS
     for (const o of offers) {
       if (o.to.id === a.id || o.price <= a.msrp) continue;
       const cost = o.price - a.msrp;
-      out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || !opt.storeCredit ? cost : 0, paid: 0, label: o.title });
+      out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, skuId: o.skuId });
     }
     for (const o of ownedFrom.get(a.id) ?? []) {
       const to = byId.get(o.toId);

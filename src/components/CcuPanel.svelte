@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { addable, addStep, CART_URL, CartError } from '@/lib/cart';
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
@@ -54,6 +55,42 @@
   const running = $derived(result ? result.steps.reduce<number[]>((acc, s) => [...acc, (acc.at(-1) ?? 0) + s.cost], []) : []);
   const creditCents = $derived(hangar?.credits ? Math.round(hangar.credits.usd * 100) : null);
   const cashNeeded = $derived(result && creditCents != null ? result.cash + Math.max(0, result.total - result.cash - creditCents) : null);
+
+  // ---- RSI cart ----
+  type CartState = { st: 'adding' } | { st: 'added'; price: number | null } | { st: 'error'; code: string; msg: string };
+  let cart = $state<Record<string, CartState>>({});
+  let cartBusy = $state(false);
+  const cartKey = (s: Step) => `${s.kind}:${s.fromId}>${s.toId}:${s.skuId ?? s.ref ?? ''}`;
+  // A new plan = a new cart ledger (state is per step identity, so a re-plan with the same steps keeps it).
+  const addableSteps = $derived(result ? result.steps.filter((s) => addable(s, byId).kind !== 'none') : []);
+  const hasBuyback = $derived(addableSteps.some((s) => s.kind === 'buyback'));
+  async function addOne(s: Step) {
+    const k = cartKey(s);
+    cart = { ...cart, [k]: { st: 'adding' } };
+    try {
+      const { price } = await addStep(s, byId);
+      cart = { ...cart, [k]: { st: 'added', price } };
+      return true;
+    } catch (e) {
+      const ce = e instanceof CartError ? e : new CartError('refused', (e as Error).message);
+      cart = { ...cart, [k]: { st: 'error', code: ce.code, msg: ce.message } };
+      return false;
+    }
+  }
+  /** Store steps one after another (RSI is polite about it; a buy-back goes alone, so it is skipped here). */
+  async function addAll() {
+    cartBusy = true;
+    try {
+      for (const s of addableSteps) {
+        if (s.kind === 'buyback') continue;
+        if (cart[cartKey(s)]?.st === 'added') continue;
+        if (!(await addOne(s))) break;
+        await new Promise((ok) => setTimeout(ok, 400));
+      }
+    } finally {
+      cartBusy = false;
+    }
+  }
 
   const name = (id: number) => (id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
   const KIND: Record<string, string> = { warbond: 'Warbond CCU', standard: 'Standard CCU', limited: 'Limited CCU', owned: 'You own it', buyback: 'Buyback', standalone: 'Buy ship' };
@@ -189,10 +226,12 @@
         </div>
         <table>
           <thead>
-            <tr><th>#</th><th>Step</th><th>Ship</th><th>Cost</th><th>New money</th><th>Running</th><th>Hull value</th><th></th></tr>
+            <tr><th>#</th><th>Step</th><th>Ship</th><th>Cost</th><th>New money</th><th>Running</th><th>Hull value</th><th>RSI cart</th><th></th></tr>
           </thead>
           <tbody>
             {#each result.steps as s, i (i)}
+              {@const a = addable(s, byId)}
+              {@const c = cart[cartKey(s)]}
               <tr>
                 <td class="muted">{i + 1}</td>
                 <td><span class="chip k-{s.kind}">{KIND[s.kind]}</span>{s.label && s.kind !== 'owned' && s.kind !== 'buyback' ? ` ${s.label}` : ''}</td>
@@ -201,6 +240,20 @@
                 <td class:warn={s.cash > 0}>{s.cash ? usd(s.cash) : '—'}</td>
                 <td>{usd(running[i] ?? 0)}</td>
                 <td class="muted">{usd(byId.get(s.toId)?.msrp ?? 0)}</td>
+                <td class="cartcell">
+                  {#if a.kind === 'none'}
+                    <span class="muted small">{s.kind === 'owned' ? '—' : a.why}</span>
+                  {:else if c?.st === 'adding'}
+                    <span class="muted small">Adding…</span>
+                  {:else if c?.st === 'added'}
+                    <span class="ok small">In cart{c.price != null && c.price !== s.cost ? ` · RSI says ${usd(c.price)}` : ''}</span>
+                  {:else}
+                    <button class="btn small" disabled={cartBusy} onclick={() => addOne(s)} title={s.kind === 'buyback' ? 'Buy-backs check out alone: one per cart, nothing else in it.' : 'Adds this CCU to your RSI cart (nothing is paid)'}>
+                      {s.kind === 'buyback' ? 'Add buy-back' : 'Add to cart'}
+                    </button>
+                    {#if c?.st === 'error'}<span class="err small" title={c.msg}>{c.code === 'signed-out' ? 'Sign in to RSI' : c.code === 'conflict' ? 'Cart busy' : c.code === 'network' ? 'No answer — check cart' : 'Refused'}</span>{/if}
+                  {/if}
+                </td>
                 <td>
                   {#if link(s)}
                     <a class="btn small" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' ? 'Store' : 'Upgrades'}</a>
@@ -211,13 +264,23 @@
           </tbody>
         </table>
         <div class="row spread">
-          <span class="muted small">Buy CCUs on the RSI <a href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
+          <div class="row">
+            {#if addableSteps.some((s) => s.kind !== 'buyback')}
+              <button class="btn primary small" disabled={cartBusy} onclick={addAll}>{cartBusy ? 'Adding…' : `Add ${addableSteps.filter((s) => s.kind !== 'buyback').length} store step${addableSteps.filter((s) => s.kind !== 'buyback').length === 1 ? '' : 's'} to RSI cart`}</button>
+            {/if}
+            <a class="btn small" href={CART_URL} target="_blank" rel="noopener">Open RSI cart ↗</a>
+            <span class="muted small">
+              Lines are added to your RSI cart in your signed-in session; nothing is paid here. Check the cart before checkout.
+              {#if hasBuyback} A buy-back must be the only line in the cart — add it separately and check it out alone.{/if}
+            </span>
+          </div>
           <form class="row" onsubmit={(e) => (e.preventDefault(), saveChain())}>
             <input placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
             <button class="btn small" type="submit">Save chain</button>
             {#if saved}<span class="ok small">Saved “{saved}”</span>{/if}
           </form>
         </div>
+        <span class="muted small">Or buy by hand on the RSI <a href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
       {/if}
     {/if}
   </section>
@@ -349,5 +412,11 @@
   }
   .small {
     font-size: 11px;
+  }
+  .cartcell {
+    white-space: nowrap;
+  }
+  .cartcell .err {
+    margin-left: 6px;
   }
 </style>

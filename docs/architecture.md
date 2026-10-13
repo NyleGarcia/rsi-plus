@@ -69,6 +69,12 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
 - Background refreshes every 30 min with a wishlist, else 6 h (`local:catalog`); `wishlistEvents` alerts on the first offer or a lower one (`sync:wishlist.lowest`).
 - Verified live 2026-10: 240 ships, 53 CCU targets on sale, warbond detection.
 
+## RSI cart (`src/lib/cart.ts`)
+- Upgrades: `POST /api/ship-upgrades/setContextToken {fromShipId, toShipId, toSkuId[, pledgeId]}` (pledgeId = buy-back mode) → `getPrice(from: shipId, to: skuId) { price { amount } }` (cents) → `mutation addToCart(from, to) { jwt }` on `/pledge-store/api/upgrade/graphql`; a jwt back = line in the cart. Sign-in check first: `initShipUpgrade { app { isAnonymous } }`. Sources: RSI's store bundle (`rsi.store.build.*.js`) and Open Hangar's cart PRs #396/#404 (API shape only — their code is PolyForm Strict, nothing copied).
+- Standalone ships: `POST /graphql { query: 'mutation AddCartItemMutation { store(name:"pledge") { cart { mutations { add(skuId, qty) } } } }' }` with `x-csrf-token` from `<meta name="csrf-token">` of `/en/store/pledge/cart`.
+- Rules: `addToCart` is never retried (a lost answer may still have added the line); errors classified `signed-out` / `conflict` (message mentions cart / buy-back / pending / invalid — RSI blocks new lines while a pending order or a buy-back sits in the cart) / `network` / `refused`. Buy-back needs a `toSkuId`: the target's current standard CCU SKU from the catalog (RSI's buy-back list doesn't expose it) — unverified. **Not live-verified yet** (see now/todo).
+- Panel: per-step button + *Add N store steps* (sequential, 400 ms apart, stops at the first error; buy-backs skipped), per-step state (adding / in cart + RSI price / error code), *Open RSI cart ↗*. Nothing checks out.
+
 ## CCU planner (`src/lib/ccu.ts`)
 - Dijkstra over catalog ships (msrp > 0), ties → fewer steps. Edges: on-sale CCU SKUs (`warbond` / `standard` / `limited`, sold-out limited skipped), owned hangar CCUs (cost 0), buyback CCUs (optional, cost ≈ msrp diff).
 - Owned CCUs mapped via upgrade JSON ids when the catalog id's name agrees, else `matchShip` (normalized names, longest contained catalog name). Unmatched shown in the panel.
