@@ -82,7 +82,7 @@
   type VerifyState = { st: 'checking' } | { st: 'ok'; price: number | null; note?: string } | { st: 'price'; price: number } | { st: 'no'; why: string } | { st: 'error'; msg: string };
   let verify = $state<Record<string, VerifyState>>({});
   let verifying = $state(false);
-  const verified = $derived(result ? result.steps.map((s) => verify[cartKey(s)]).filter(Boolean) : []);
+  const verified = $derived(result ? result.steps.map((s) => verify[cartKey(s)]).filter((v): v is VerifyState => !!v) : []);
   const confirmed = $derived(verified.filter((v) => v.st === 'ok').length);
   async function verifyChain() {
     if (!result) return;
