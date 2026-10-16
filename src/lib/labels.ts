@@ -21,17 +21,29 @@ export const MELT = 'melt';
 
 const norm = (l: string) => l.trim().replace(/\s+/g, ' ').toLowerCase();
 
-export const labelsOf = (labels: Labels, id: number): string[] => labels[id] ?? [];
+/** One pledge's labels as a string array, whatever was stored (a reactive proxy once saved as `{"0": "Keep"}`). */
+const list = (v: unknown): string[] => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []).filter((x): x is string => typeof x === 'string');
+/** A plain, well-formed copy of stored labels — arrays only, empty lists dropped. Safe to put in storage. */
+export function cleanLabels(labels: unknown): Labels {
+  const out: Labels = {};
+  if (labels && typeof labels === 'object') for (const [id, v] of Object.entries(labels)) {
+    const ls = list(v);
+    if (ls.length) out[id] = [...ls];
+  }
+  return out;
+}
+
+export const labelsOf = (labels: Labels, id: number): string[] => list(labels[id]);
 export const hasLabel = (labels: Labels, id: number, name: string) => labelsOf(labels, id).some((l) => norm(l) === norm(name));
 /** Pledge ids carrying any of `names`. */
 export function idsWith(labels: Labels, names: string | string[]): Set<number> {
   const want = new Set((Array.isArray(names) ? names : [names]).map(norm));
-  return new Set(Object.entries(labels).filter(([, ls]) => ls.some((l) => want.has(norm(l)))).map(([id]) => Number(id)));
+  return new Set(Object.entries(labels).filter(([, ls]) => list(ls).some((l) => want.has(norm(l)))).map(([id]) => Number(id)));
 }
 /** Every label in use (first spelling), presets first, then A→Z, with how many pledges carry it. */
 export function allLabels(labels: Labels): { name: string; count: number }[] {
   const m = new Map<string, { name: string; count: number }>();
-  for (const ls of Object.values(labels)) for (const l of ls) {
+  for (const ls of Object.values(labels)) for (const l of list(ls)) {
     const k = norm(l);
     const e = m.get(k) ?? { name: l, count: 0 };
     e.count++;
@@ -45,9 +57,9 @@ export function setLabel(labels: Labels, ids: number[], name: string, on: boolea
   const l = name.trim().replace(/\s+/g, ' ');
   if (!l) return labels;
   const known = allLabels(labels).find((x) => norm(x.name) === norm(l))?.name ?? PRESET_LABELS.find((p) => norm(p.name) === norm(l))?.name ?? l;
-  const out: Labels = { ...labels };
+  const out = cleanLabels(labels);
   for (const id of ids) {
-    const cur = (out[id] ?? []).filter((x) => norm(x) !== norm(l));
+    const cur = list(out[id]).filter((x) => norm(x) !== norm(l));
     const next = on ? [...cur, known] : cur;
     if (next.length) out[id] = next;
     else delete out[id];

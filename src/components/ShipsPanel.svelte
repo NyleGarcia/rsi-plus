@@ -20,7 +20,7 @@
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
-  import { labelsOf, type Labels } from '@/lib/labels';
+  import { cleanLabels, labelsOf, type Labels } from '@/lib/labels';
   import { sortBy, type SortState } from '@/lib/sort';
   import { usd, type Catalog, type CatalogShip, type PaintCatalog, type StorePaint } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -53,12 +53,12 @@
     paintCatalogItem.getValue().then((p) => (storePaints = p));
     buybackItem.getValue().then((b) => (buyback = b));
     gameShipsItem.getValue().then((g) => (game = g));
-    pledgeLabelsItem.getValue().then((l) => (labels = l));
+    pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     refreshPaints(false);
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = l ?? {}))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {

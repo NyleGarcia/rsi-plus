@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allLabels, hasLabel, idsWith, setLabel } from '@/lib/labels';
+import { allLabels, cleanLabels, hasLabel, idsWith, setLabel } from '@/lib/labels';
 
 describe('labels', () => {
   it('adds, removes, matches case-insensitively and keeps the first spelling', () => {
@@ -14,5 +14,13 @@ describe('labels', () => {
     l = setLabel(l, [2], 'LTI TOKEN', false);
     expect(l[2]).toBeUndefined(); // empty list dropped
     expect(setLabel(l, [1], '   ', true)).toBe(l);
+  });
+
+  it('repairs label lists stored as objects (a reactive proxy saved to chrome.storage)', () => {
+    const broken = { 1: { 0: 'Keep', 1: 'Main flyer' }, 2: ['Melt'], 3: {}, 4: null } as unknown as Record<string, string[]>;
+    expect(cleanLabels(broken)).toEqual({ 1: ['Keep', 'Main flyer'], 2: ['Melt'] });
+    expect(allLabels(broken).map((l) => l.name)).toEqual(['Keep', 'Melt', 'Main flyer']);
+    expect(setLabel(broken, [1], 'Keep', false)).toEqual({ 1: ['Main flyer'], 2: ['Melt'] });
+    expect([...idsWith(broken, 'keep')]).toEqual([1]);
   });
 });

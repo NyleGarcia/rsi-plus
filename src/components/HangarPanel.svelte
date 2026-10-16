@@ -6,7 +6,7 @@
   import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, upgradedFrom, type GameShip } from '@/lib/items';
   import { bg } from '@/lib/messages';
   import { catalogItem, gameShipsItem, hangarItem, pledgeLabelsItem } from '@/lib/settings';
-  import { allLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
+  import { cleanLabels, allLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
   import type { Catalog } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
@@ -46,7 +46,12 @@
   let labelFilter = $state('');
   const labelList = $derived(allLabels(labels));
   const labelIds = $derived(labelFilter ? idsWith(labels, labelFilter) : null);
-  const saveLabels = (next: Labels) => ((labels = next), pledgeLabelsItem.setValue(next));
+  /** Store a plain copy: a Svelte state proxy put in chrome.storage turned label arrays into `{"0": …}` objects. */
+  const saveLabels = (next: Labels) => {
+    const plain = cleanLabels(JSON.parse(JSON.stringify(next)));
+    labels = plain;
+    pledgeLabelsItem.setValue(plain);
+  };
   let type = $state<PledgeType | 'all'>('all');
   let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'cash' | 'credit' | 'named'>('');
   /** Flag filter. "Meltable" means it can actually be melted for credit (Reclaim button *and* a value) — RSI puts a
@@ -61,11 +66,11 @@
     hangarItem.getValue().then((v) => (data = v)).catch((e) => (error = `Couldn't read saved hangar: ${(e as Error).message}`));
     catalogItem.getValue().then((c) => (cat = c));
     gameShipsItem.getValue().then((g) => (game = g));
-    pledgeLabelsItem.getValue().then((l) => (labels = l));
+    pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch(() => {}); // only needed to know which hulls a paint fits
-    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = l ?? {}))];
+    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 

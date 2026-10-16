@@ -136,6 +136,16 @@ def main():
                const inp = document.querySelector('input[aria-label=Search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, 'Cutlass Black'); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(600);
                const t = document.querySelector('table'); t?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -20); await sleep(200);
                [...document.querySelectorAll('table button')].find((b) => /Label|label/.test(b.getAttribute('title') ?? ''))?.click(); await sleep(700); }})()"""),
+            ('labels-remove', '#hangar', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
+             f"""(async () => {{ const sleep = {SLEEP}; const errs = []; addEventListener('error', (e) => errs.push(String(e.message)));
+               const inp = document.querySelector('input[aria-label=Search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, 'Cutlass Black'); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(600);
+               document.querySelector('button[aria-label="Remove label Main flyer"]')?.click(); await sleep(600);
+               document.querySelector('button[aria-label="Edit labels"]')?.click(); await sleep(500);
+               [...document.querySelectorAll('label')].find((l) => /^Gift/.test(l.innerText.trim()))?.querySelector('button')?.click(); await sleep(600);
+               document.querySelector('button[aria-label="Remove label Keep"]')?.click(); await sleep(600);
+               const st = (await chrome.storage.local.get('pledgeLabels')).pledgeLabels;
+               document.querySelector('table')?.scrollIntoView({{ block: 'start' }});
+               return JSON.stringify(st) + ' errs=' + errs.join(' | '); }})()"""),
             ('hangar-by-ship', '#hangar', {'rsiplus:hangar': {'byShip': True, 'hiddenSets': []}}, None),
             ('melt-calculator', '#melt', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
              f"(async () => {{ const btn = {BTN}, sleep = {SLEEP}; btn('Pick duplicates')?.click(); await sleep(300); btn('Pick paints without a ship')?.click(); await sleep(500); btn('Pick duplicates')?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -70); }})()"),

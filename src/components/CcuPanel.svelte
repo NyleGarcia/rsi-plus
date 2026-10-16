@@ -4,7 +4,7 @@
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
-  import { idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
+  import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
   import { lastSale, matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -68,11 +68,11 @@
     catalogItem.getValue().then((c) => (cat = c));
     ccuChainsItem.getValue().then((c) => (chains = c));
     saleHistoryItem.getValue().then((h) => (sales = h));
-    pledgeLabelsItem.getValue().then((l) => (labels = l));
+    pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
-    const offs = [hangarItem.watch((h) => (hangar = h)), pledgeLabelsItem.watch((l) => (labels = l ?? {}))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => offs.forEach((o) => o());
   });
   /** Load the hangar right here (same pages and storage as the Hangar tab). */
