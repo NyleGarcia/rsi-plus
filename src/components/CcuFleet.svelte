@@ -216,6 +216,7 @@
         <Badge variant="secondary" class="gap-1 pr-0.5">{name(k)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Allow ${name(k)}`} onclick={() => (keep = keep.filter((x) => x !== k))}><X /></Button></Badge>
       {/each}
       <div class="w-[220px]"><ShipSelect ships={keepable} mine={keepable} onlyMine bind:value={() => picks.keep ?? null, (v) => (picks.keep = v)} price={false} onpick={(id) => (id != null && addKeep(id), (picks.keep = null))} ariaLabel="Ship to keep" placeholder="+ ship to keep flying" /></div>
+      {#if keep.length}<Button variant="ghost" size="xs" onclick={() => (keep = [])}><X /> Clear all</Button>{/if}
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground" title="Auto upgrades one of these first whenever it gets to the target — cheap LTI tokens, ships you don't fly">Prefer to upgrade</span>
@@ -224,6 +225,7 @@
       {/each}
       <div class="w-[220px]"><ShipSelect ships={preferable} mine={preferable} onlyMine bind:value={() => picks.prefer ?? null, (v) => (picks.prefer = v)} price={false} onpick={(id) => (id != null && addPrefer([id]), (picks.prefer = null))} ariaLabel="Ship to upgrade first" placeholder="+ ship to upgrade first" /></div>
       {#if ltiToAdd.length}<Button variant="outline" size="xs" onclick={() => addPrefer(ltiToAdd)} title={ltiToAdd.map((id) => name(id)).join(', ')}><Plus /> my LTI hulls ({ltiToAdd.length})</Button>{/if}
+      {#if prefer.length}<Button variant="ghost" size="xs" onclick={() => (prefer = [])}><X /> Clear all</Button>{/if}
     </div>
     <span class="text-muted-foreground text-xs">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain · Auto tries preferred hulls first, never the kept ones</span>
   </fieldset>
