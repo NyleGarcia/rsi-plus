@@ -1,5 +1,30 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
+
+/**
+ * Version label for a local build of commits not released yet: `0.5.0-dev (local a31e2a6)` instead of the last
+ * release's number, so a reloaded unpacked build shows it is newer. WXT derives the manifest `version` from it (0.5.0).
+ * Untouched in CI (the Prerelease workflow sets `X.Y.Z-dev.N` itself; release builds keep `X.Y.Z`), for a
+ * prerelease package.json version, and on a commit tagged with the package.json version.
+ */
+function localVersionName(): string | undefined {
+  if (process.env.CI) return undefined;
+  try {
+    const version = JSON.parse(readFileSync('package.json', 'utf8')).version as string;
+    if (version.includes('-')) return undefined;
+    const sh = (cmd: string) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const tags = sh('git tag --points-at HEAD').split('\n');
+    if (tags.includes(`v${version}`)) return undefined;
+    const next = sh('bash scripts/next-prerelease.sh').replace(/-dev\..*$/, '');
+    const dirty = sh('git status --porcelain --untracked-files=no') ? '+' : '';
+    return `${next}-dev (local ${sh('git rev-parse --short HEAD')}${dirty})`;
+  } catch {
+    return undefined;
+  }
+}
+const versionName = localVersionName();
 
 export default defineConfig({
   srcDir: 'src',
@@ -12,6 +37,7 @@ export default defineConfig({
     const firefox = browser === 'firefox';
     return {
       name: 'RSI+',
+      ...(versionName ? { version_name: versionName } : {}),
       description: 'RSI, better: Spectrum read tracking, mutes, watches, friends, hangar & buyback explorer, store prices, wishlist alerts, CCU planner.',
       // unlimitedStorage: big hangars/buybacks + read marks can pass storage.local's 10 MB default quota.
       // cookies: read the Rsi-Token cookie so the background can call Spectrum's API (X-Rsi-Token header) without a tab.

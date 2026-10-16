@@ -235,6 +235,7 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
   - The workflow sets `package.json` to `<next>-dev.<run>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev.<run>` (`--prerelease --latest=false`). It keeps the newest 10 such prereleases.
   - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev.<run>`. Firefox gets only `<next>`.
   - Real bumps: open a PR `dev` → `main`, merge, then release-please's PR → `vX.Y.Z` with assets as above.
+  - Local builds (`wxt.config.ts` → `localVersionName`, not in CI, not on the tagged release commit) set `version_name` `<next>-dev (local <sha>[+])`, with `+` for uncommitted changes. WXT derives the manifest `version` `<next>` from it, so an unpacked `.output/chrome-mv3` shows it is newer than the last release.
   - `dev` is the GitHub default branch, and `release.yml` pins release-please to `target-branch: main`.
   - Branch protection:
     - `main`: no force push or deletion; status check `verify` required, not enforced for admins, because release-please PRs get no CI with `GITHUB_TOKEN`.
