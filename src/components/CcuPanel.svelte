@@ -3,7 +3,7 @@
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, saleHistoryItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, saleHistoryItem } from '@/lib/settings';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
   import { lastSale, matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -269,6 +269,16 @@
     opt = { ...DEFAULT_PLAN_OPTIONS, ...c.opt, include: [...c.opt.include], exclude: [...c.opt.exclude], via: [...(c.opt.via ?? [])] };
     excludeSaved = false;
     planner = 'one';
+  }
+  /** This chain's source / target / stops as a new fleet-plan goal (last = lowest priority). */
+  let addedToFleet = $state(false);
+  async function addToFleet() {
+    if (startId == null || toId == null) return;
+    const v = await ccuGoalsItem.getValue();
+    const goal = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, fromId: startId, targetId: toId, via: [...(opt.via ?? [])], storeStart: false, lti: 'any' as const };
+    await ccuGoalsItem.setValue({ ...v, goals: [...v.goals, goal] });
+    addedToFleet = true;
+    setTimeout(() => (addedToFleet = false), 4000);
   }
   /** A fleet goal → the single planner (same options; verify + cart live there). */
   function openGoal(start: number, target: number, via: number[]) {
@@ -568,7 +578,9 @@
             <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
               <Input class="h-7 w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
               <Button variant="outline" size="sm" type="submit">Save chain</Button>
+              <Button variant="outline" size="sm" type="button" onclick={addToFleet} title="Add this source → target (with its stops) as a goal at the end of your fleet plan">Add to fleet plan</Button>
               {#if saved}<span class="text-success text-[11px]">Saved “{saved}”</span>{/if}
+              {#if addedToFleet}<span class="text-success text-[11px]">Added — <button type="button" class="text-primary cursor-pointer border-0 bg-transparent p-0 underline-offset-4 hover:underline" onclick={() => (planner = 'fleet')}>open Fleet plan</button></span>{/if}
             </form>
           </div>
           <span class="text-muted-foreground text-[11px]">Or buy by hand on the RSI <a class="text-primary underline-offset-4 hover:underline" href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>

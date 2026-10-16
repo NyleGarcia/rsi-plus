@@ -6,6 +6,7 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **One chain → Fleet plan**: *Add to fleet plan* next to *Save chain* adds the current source → target, with its stops, as the last goal of your fleet plan. *open Fleet plan* jumps there.
 - **Fleet plan: options per goal.**
   - **Insurance:** *Any* / *Prefer LTI* / *LTI only*. A CCU keeps the pledge's insurance, so an LTI goal upgrades an LTI copy of a hull. *Any* uses a non-LTI copy first, leaving your LTI tokens for the goals that want them. The chain line shows an *LTI* badge, or *no LTI copy* when a prefer-LTI goal had to settle.
   - **May start from a store ship:** now per goal instead of plan-wide. Your old setting is carried into existing goals, and *LTI only* never starts from the store, because a new ship has no LTI.
