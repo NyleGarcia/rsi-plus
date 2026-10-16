@@ -141,6 +141,13 @@ def main():
                const cat = (await chrome.storage.local.get('catalog')).catalog; const t = cat.ships.filter((x) => x.ccu.length && x.msrp > 11000 && x.msrp <= 60000).sort((a, b) => b.msrp - a.msrp)[0];
                await pick('From ship', 'Cutlass Black'); if (t) await pick('Target ship', t.name); await sleep(2500);
                const el = [...document.querySelectorAll('span')].find((e) => e.innerText === 'to pay now'); (el?.closest('[data-slot=card]')?.parentElement ?? document.querySelector('fieldset, [role=group]'))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -240); return t?.name; }})()"""),
+            ('ccu-ahead', '#ccu', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const pick = async (label, text) => {{ document.querySelector(`button[aria-label="${{label}}"]`)?.click(); await sleep(600); const inp = document.querySelector(`input[aria-label="${{label}}"]`); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, text); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(700); const opt = [...document.querySelectorAll('[role=option]')].find((o) => o.innerText.trim().startsWith(text)); opt?.click(); await sleep(800); }};
+               [...document.querySelectorAll('label')].find((l) => /Plan ahead/.test(l.innerText))?.querySelector('button, [role=checkbox]')?.click(); await sleep(300);
+               const cat = (await chrome.storage.local.get('catalog')).catalog; const t = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 30000 && x.msrp <= 60000).sort((a, b) => b.msrp - a.msrp)[0];
+               await pick('From ship', 'Cutlass Black'); if (t) await pick('Target ship', t.name); await sleep(2500);
+               const el = [...document.querySelectorAll('span')].find((e) => e.innerText === 'to pay now'); (el?.closest('[data-slot=card]')?.parentElement ?? document.querySelector('fieldset, [role=group]'))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -240); return t?.name; }})()"""),
             ('wallet', '#wallet', {}, None),
             ('browse', '#browse', {}, f"(async () => {{ const sleep = {SLEEP}; for (let i = 0; i < 40 && !/listings · prices/.test(document.body.innerText); i++) await sleep(500); }})()"),
             ('store', '#store', {}, f"(async () => {{ const sleep = {SLEEP}; [...document.querySelectorAll('th button, th [role=button]')].find((b) => /Discount/.test(b.innerText))?.click(); await sleep(400); }})()"),

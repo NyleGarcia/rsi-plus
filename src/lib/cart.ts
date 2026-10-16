@@ -287,6 +287,7 @@ export type Addable = { kind: 'upgrade'; ref: UpgradeRef } | { kind: 'standalone
  */
 export function addable(s: Step, byId: Map<number, CatalogShip>): Addable {
   if (s.kind === 'owned') return { kind: 'none', why: 'already in your hangar' };
+  if (s.kind === 'future') return { kind: 'none', why: 'buy when it is back on sale' };
   if (s.kind === 'standalone') return s.skuId ? { kind: 'standalone', skuId: s.skuId } : { kind: 'none', why: 'no store SKU' };
   if (s.kind === 'buyback') {
     const to = byId.get(s.toId);

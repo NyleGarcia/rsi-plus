@@ -4,6 +4,7 @@ tags: [plans]
 updated: 2026-10-13
 ---
 # Now
+- [ ] Live-verify Plan ahead: pick a hull with no CCU on sale, chain shows *Later* steps + *to pay now* / *later* tiles, Verify marks them *waits for a sale*, save it; after a catalog refresh with that CCU on sale the Feed shows the *Store* alert opening `#ccu` and the saved chain says *on sale now*; Ship catalog *Not on sale now* filter + last-seen dates after a day of refreshes
 - [ ] Live-verify the Firefox build (`about:debugging` → Load Temporary Add-on → `rsi-plus-<v>-firefox.zip`): popup/hub open, background poll with the `Rsi-Token` cookie, hangar load from the hub page, Spectrum MAIN-world hook, badge count, party ding; then submit to AMO (sources zip) and decide listed vs self-hosted signing
 - [ ] Live-verify the Edge zip loads on Edge (identical to Chrome's) and Brave with the Chrome zip
 - [ ] Live-verify thread-list row detection + badges on a channel page (logged in)

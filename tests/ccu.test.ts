@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions } from '@/lib/ccu';
-import { lowestOffer, matchShip, wishlistEvents, type CatalogShip, type Sku } from '@/lib/store';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
 const ship = (id: number, name: string, msrp: number, ccu: Sku[] = [], standalone: Sku[] = []): CatalogShip => ({
@@ -143,5 +143,67 @@ describe('wishlist', () => {
     expect(first.lowest.get(3)).toBe(10000);
     expect(wishlistEvents([{ id: 3, name: 'Cutlass', lowest: 10000 }], ships, now).events).toHaveLength(0);
     expect(wishlistEvents([{ id: 3, name: 'Cutlass', lowest: 11000 }], ships, now).events).toHaveLength(1);
+  });
+});
+
+describe('plan ahead (long-term goals)', () => {
+  // Nothing sells a CCU to the Carrack today; with planAhead the planner assumes a standard CCU at MSRP later.
+  const K = ship(6, 'Carrack', 60000);
+  const all = [...ships, K];
+
+  it('is off by default: a target with no CCU on sale has no chain', () => {
+    expect(plan(all, [], 1, 6)).toBeNull();
+    expect(DEFAULT_PLAN_OPTIONS.planAhead).toBe(false);
+  });
+
+  it('routes through a future standard CCU at MSRP and counts the wait', () => {
+    const p = plan(all, [], 1, 6, o({ planAhead: true }))!;
+    // Aurora → Cutlass WB 7500 → Carrack later 49000 = 56500 (MSRP diff 57500); via the Connie costs the same
+    // (7500 + 13000 + 36000) but takes a step more, so the shorter chain wins.
+    expect(p.steps.map((s) => [s.toId, s.kind])).toEqual([
+      [3, 'warbond'],
+      [6, 'future'],
+    ]);
+    expect(p.steps.at(-1)).toMatchObject({ cost: 49000, cash: 0, label: 'Not on sale now' });
+    expect(p.steps.at(-1)!.skuId).toBeUndefined();
+    expect(p).toMatchObject({ total: 56500, waits: 1, later: 49000, savings: 1000 });
+  });
+
+  it('prefers a CCU on sale today over waiting when the price is the same', () => {
+    // Direct Aurora → Connie standard (21500) costs the same as a future hop would; today's CCU must win.
+    const noWb = all.map((s) => (s.id === 3 ? { ...s, ccu: [] } : s)); // Cutlass not on sale → future candidate
+    const p = plan(noWb, [], 1, 4, o({ planAhead: true }))!;
+    expect(p.steps.map((s) => s.kind)).toEqual(['standard']);
+    expect(p.waits).toBe(0);
+  });
+
+  it('future steps are new money when store credit is off', () => {
+    const p = plan(all, [], 4, 6, o({ planAhead: true, storeCredit: false }))!;
+    expect(p.steps[0]).toMatchObject({ kind: 'future', cost: 36000, cash: 36000 });
+  });
+
+  it('chainEvents fires once per SKU when a waited-for CCU goes on sale', () => {
+    const chain: SavedChain = {
+      id: 'c1', name: 'Carrack goal', at: 0, startId: 1, targetId: 6, total: 56500, cash: 7500, opt: o({ planAhead: true }),
+      steps: plan(all, [], 1, 6, o({ planAhead: true }))!.steps,
+    };
+    expect(chainEvents([chain], all, 1000)).toEqual([]);
+    const onSale = all.map((s) => (s.id === 6 ? { ...s, ccu: [sku('Warbond Edition', 55000, { id: 777 })] } : s));
+    const ev = chainEvents([chain], onSale, 1000);
+    expect(ev).toHaveLength(1);
+    expect(ev[0]).toMatchObject({ key: 'ccu:c1:3>6:777', kind: 'store', url: 'hub.html#ccu', title: 'Carrack goal: Cutlass Black → Carrack CCU on sale — $440' });
+    expect(ev[0]!.body).toContain('planned $490');
+    // Sold out = no alert; a CCU priced under the source hull is not a usable CCU either.
+    expect(chainEvents([chain], all.map((s) => (s.id === 6 ? { ...s, ccu: [sku('Limited', 55000, { stock: 0 })] } : s)), 1000)).toEqual([]);
+  });
+
+  it('recordSales / lastSale stamp what is on sale today and keep older stamps', () => {
+    const h1 = recordSales({}, ships, 100);
+    expect(h1).toEqual({ 2: { ccu: 100 }, 3: { ccu: 100 }, 4: { ccu: 100 } });
+    const h2 = recordSales(h1, [ship(2, 'Avenger Titan', 5500, [], [sku('Standalone', 5500)]), ship(3, 'Cutlass Black', 11000)], 200);
+    expect(h2[2]).toEqual({ ccu: 100, standalone: 200 });
+    expect(lastSale(h2, 2)).toBe(200);
+    expect(lastSale(h2, 3)).toBe(100);
+    expect(lastSale(h2, 1)).toBeNull();
   });
 });

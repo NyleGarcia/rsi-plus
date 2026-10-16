@@ -227,6 +227,31 @@ export function wishlistEvents(
   return { events, lowest };
 }
 
+/**
+ * When each ship was last seen on sale (ms), per ship id, from the catalog refreshes since install — RSI publishes
+ * no sale calendar, so this is the only "it usually comes back at…" signal we have. `ccu` = any CCU to it, `standalone`.
+ */
+export type SaleHistory = Record<string, { ccu?: number; standalone?: number }>;
+
+/** Stamp today's on-sale ships into the history (new object; untouched entries are kept). */
+export function recordSales(history: SaleHistory, ships: CatalogShip[], now: number): SaleHistory {
+  const out: SaleHistory = { ...history };
+  for (const s of ships) {
+    const ccu = s.ccu.some((k) => k.available && k.stock !== 0);
+    const standalone = s.standalone.some((k) => k.available && k.stock !== 0);
+    if (!ccu && !standalone) continue;
+    out[s.id] = { ...out[s.id], ...(ccu ? { ccu: now } : {}), ...(standalone ? { standalone: now } : {}) };
+  }
+  return out;
+}
+
+/** Last time a ship was on sale in any form (ms), or null when never seen since install. */
+export function lastSale(history: SaleHistory, id: number): number | null {
+  const h = history[id];
+  if (!h) return null;
+  return Math.max(h.ccu ?? 0, h.standalone ?? 0) || null;
+}
+
 /** A paint (or paint pack) on the pledge store — public browse listing, no login needed. */
 export interface StorePaint {
   id: number;

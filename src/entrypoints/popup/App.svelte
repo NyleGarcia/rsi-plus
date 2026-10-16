@@ -20,7 +20,7 @@
     { tab: 'melt', label: 'Melt calculator' },
     { tab: 'fleet', label: 'My ships' },
     { tab: 'wallet', label: 'Wallet' },
-    { tab: 'store', label: 'Ships for sale' },
+    { tab: 'store', label: 'Ship catalog' },
     { tab: 'browse', label: 'Browse store' },
     { tab: 'ccu', label: 'CCU planner' },
     { tab: 'paint-rebuy', label: 'Paint rebuy' },

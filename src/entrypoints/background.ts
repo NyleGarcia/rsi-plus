@@ -15,13 +15,16 @@ import {
   partyModeItem,
   partyLogItem,
   catalogItem,
+  ccuChainsItem,
   paintCatalogItem,
+  saleHistoryItem,
   wishlistItem,
   settingsItem,
   watchesItem,
 } from '@/lib/settings';
 import { ding } from '@/lib/sound';
-import { fetchCatalog, fetchPaints, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
+import { chainEvents } from '@/lib/ccu';
+import { fetchCatalog, fetchPaints, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
 import { threadUrl } from '@/lib/types';
 import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
 
@@ -210,6 +213,8 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
       events.push(...r.events);
       const cur = await wishlistItem.getValue();
       await wishlistItem.setValue(cur.map((w) => (r.lowest.has(w.id) ? { ...w, lowest: r.lowest.get(w.id)! } : w)));
+      // Long-term CCU goals: a saved chain's "wait for a sale" step whose CCU is in the store now.
+      events.push(...chainEvents(await ccuChainsItem.getValue(), cat.ships, now));
     }
   } catch (e) {
     errors.push(`store: ${(e as Error).message}`);
@@ -298,7 +303,11 @@ async function catalog(fresh: boolean): Promise<Catalog> {
   const cached = await catalogItem.getValue();
   if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return cached;
   catalogPromise ??= fetchCatalog()
-    .then(async (c) => (await catalogItem.setValue(c), c))
+    .then(async (c) => {
+      await catalogItem.setValue(c);
+      await saleHistoryItem.setValue(recordSales(await saleHistoryItem.getValue(), c.ships, c.at));
+      return c;
+    })
     .finally(() => (catalogPromise = null));
   return catalogPromise;
 }

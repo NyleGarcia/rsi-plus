@@ -77,7 +77,7 @@
     {
       label: 'Store',
       items: [
-        { tab: 'store', label: 'Ships for sale', sub: 'MSRP, CCUs, warbond, wishlist', icon: Store },
+        { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store },
         { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · Concierge · Subscribers', icon: LayoutGrid },
         { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route },
         { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
@@ -100,9 +100,10 @@
 
   let tab = $state<Tab>(fromHash());
   let ccuTo = $state<number | null>(Number(hashParam('to')) || null);
+  let ccuAhead = $state(hashParam('ahead') === '1'); // `#ccu?to=&ahead=1`: the hull isn't on sale, start with Plan ahead on
 
   $effect(() => {
-    const onHash = () => ((tab = fromHash()), (ccuTo = Number(hashParam('to')) || null));
+    const onHash = () => ((tab = fromHash()), (ccuTo = Number(hashParam('to')) || null), (ccuAhead = hashParam('ahead') === '1'));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   });
@@ -241,7 +242,7 @@
         {:else if tab === 'browse'}
           <BrowsePanel />
         {:else if tab === 'ccu'}
-          <CcuPanel initialTo={ccuTo} />
+          <CcuPanel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else if tab === 'settings'}
           <SettingsPanel />
         {:else}

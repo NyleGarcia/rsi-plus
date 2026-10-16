@@ -4,7 +4,7 @@ import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
 import type { OrgCache } from './orgs';
 import type { SavedChain } from './ccu';
 import type { BuybackItem, Credits, Pledge } from './hangar';
-import type { Catalog, PaintCatalog, StoreListing } from './store';
+import type { Catalog, PaintCatalog, SaleHistory, StoreListing } from './store';
 import type { Concierge } from './concierge';
 import type { Profiles } from './accounts';
 import type { ReadState } from './read';
@@ -95,6 +95,8 @@ export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]
 export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuChains'), { fallback: [] });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
+/** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */
+export const saleHistoryItem = storage.defineItem<SaleHistory>('local:saleHistory', { fallback: {} });
 /** Pledge-store paints (public), refreshed every 6 h on demand. */
 /** Every pledge-store category (ships, paints, packs, gear …) — per account, since Concierge-only listings only show on a Concierge session. */
 export const storeItemsItem = storage.defineItem<StoreListing | null>(acct('local:storeItems'), { fallback: null });

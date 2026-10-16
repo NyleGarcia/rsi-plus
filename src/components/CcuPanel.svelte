@@ -3,9 +3,9 @@
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, hangarItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, saleHistoryItem } from '@/lib/settings';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
-  import { matchShip, usd, type Catalog } from '@/lib/store';
+  import { lastSale, matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
   import Wizard, { type WizardStep } from './Wizard.svelte';
   import Segmented from './Segmented.svelte';
@@ -26,12 +26,13 @@
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
-  let { initialTo = null }: { initialTo?: number | null } = $props();
+  let { initialTo = null, initialAhead = false }: { initialTo?: number | null; initialAhead?: boolean } = $props();
 
   let cat = $state<Catalog | null>(null);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let chains = $state<SavedChain[]>([]);
+  let sales = $state<SaleHistory>({});
   let error = $state('');
 
   type Mode = 'store' | 'hangar' | 'any';
@@ -48,6 +49,7 @@
     buybackItem.getValue().then((b) => (buyback = b));
     catalogItem.getValue().then((c) => (cat = c));
     ccuChainsItem.getValue().then((c) => (chains = c));
+    saleHistoryItem.getValue().then((h) => (sales = h));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
@@ -68,6 +70,7 @@
   }
   $effect(() => {
     if (initialTo != null) toId = initialTo;
+    if (initialAhead) opt.planAhead = true;
   });
 
   const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
@@ -111,11 +114,11 @@
     }
   }
   // ---- verify against RSI: is each step really on offer from that ship, at that price? ----
-  type VerifyState = { st: 'checking' } | { st: 'ok'; price: number | null; note?: string } | { st: 'price'; price: number } | { st: 'no'; why: string } | { st: 'error'; msg: string };
+  type VerifyState = { st: 'checking' } | { st: 'ok'; price: number | null; note?: string } | { st: 'wait' } | { st: 'price'; price: number } | { st: 'no'; why: string } | { st: 'error'; msg: string };
   let verify = $state<Record<string, VerifyState>>({});
   let verifying = $state(false);
   const verified = $derived(result ? result.steps.map((s) => verify[cartKey(s)]).filter((v): v is VerifyState => !!v) : []);
-  const confirmed = $derived(verified.filter((v) => v.st === 'ok').length);
+  const confirmed = $derived(verified.filter((v) => v.st === 'ok' || v.st === 'wait').length);
   async function verifyChain() {
     if (!result) return;
     verifying = true;
@@ -128,6 +131,10 @@
           if (s.kind === 'owned') {
             const have = ccus.owned.some((o) => o.source === 'hangar' && o.ref === s.ref);
             verify = { ...verify, [k]: have ? { st: 'ok', price: null, note: 'in your hangar' } : { st: 'no', why: 'not in your hangar any more — reload it' } };
+            continue;
+          }
+          if (s.kind === 'future') {
+            verify = { ...verify, [k]: { st: 'wait' } }; // nothing to ask RSI yet; the feed alerts when it is on sale
             continue;
           }
           const a = addable(s, byId);
@@ -170,8 +177,13 @@
   }
 
   const name = (id: number) => (id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
-  const KIND: Record<string, string> = { warbond: 'Warbond CCU', standard: 'Standard CCU', limited: 'Limited CCU', owned: 'You own it', buyback: 'Buyback', standalone: 'Buy ship' };
-  const KIND_TONE: Record<string, string> = { warbond: 'text-warning', owned: 'text-success', standalone: 'text-primary' };
+  const KIND: Record<string, string> = { warbond: 'Warbond CCU', standard: 'Standard CCU', limited: 'Limited CCU', owned: 'You own it', buyback: 'Buyback', standalone: 'Buy ship', future: 'Later · wait for a sale' };
+  const KIND_TONE: Record<string, string> = { warbond: 'text-warning', owned: 'text-success', standalone: 'text-primary', future: 'border-warning/40 text-warning' };
+  /** "last on sale …" for a hull with no CCU today (history since install; RSI has no sale calendar). */
+  const seen = (id: number) => {
+    const t = lastSale(sales, id);
+    return t ? `last on sale ${new Date(t).toLocaleDateString()}` : 'not seen on sale since RSI+ was installed';
+  };
   const OBJECTIVES: { id: Objective; label: string; hint: string }[] = [
     { id: 'spend', label: 'Current highest savings', hint: 'least to pay now — CCUs you own are free' },
     { id: 'cash', label: 'Lowest new money', hint: 'least that store credit cannot cover, then least to pay' },
@@ -181,7 +193,7 @@
   function link(s: Step): string | null {
     if (s.kind === 'owned' && hangar && s.ref != null) return hangarUrl(hangar.pledges, s.ref);
     if (s.kind === 'buyback' && s.ref != null) return buybackUrl.get(s.ref) ?? null;
-    if (s.kind === 'standalone') return byId.get(s.toId)?.link ?? null;
+    if (s.kind === 'standalone' || s.kind === 'future') return byId.get(s.toId)?.link ?? null;
     return UPGRADES;
   }
   const forceOf = (ref: number): 'include' | 'exclude' | '' => (opt.include.includes(ref) ? 'include' : opt.exclude.includes(ref) ? 'exclude' : '');
@@ -234,13 +246,15 @@
     warn: 'bg-warning/15 text-warning',
     err: 'bg-destructive/15 text-destructive',
   } as const;
-  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted'; label: string }[] = [
+  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted' | 'planAhead'; label: string; title?: string }[] = [
     { key: 'warbond', label: 'Warbond CCUs' },
     { key: 'buyback', label: 'Buyback CCUs' },
     { key: 'inStockOnly', label: 'Skip sold-out limited' },
     { key: 'storeCredit', label: 'Pay with store credit' },
     { key: 'excludeGifted', label: 'Exclude gifted CCUs' },
+    { key: 'planAhead', label: 'Plan ahead (ships not on sale)', title: 'Route through hulls nobody sells a CCU to today, at MSRP, to buy when they return (IAE, Invictus, the maker\'s showcase). Save the chain and the Feed tells you when such a CCU is in the store.' },
   ];
+  const payNow = $derived(result ? result.total - result.later : 0);
   const storeSteps = $derived(addableSteps.filter((s) => s.kind !== 'buyback').length);
   let openSaved = $state(true);
   let openMine = $state(true);
@@ -249,7 +263,8 @@
   const HANGAR = 'https://robertsspaceindustries.com/account/pledges';
   const guide = $derived.by((): WizardStep[] => {
     const steps = result?.steps ?? [];
-    const store = steps.filter((s) => s.kind !== 'owned' && s.kind !== 'buyback');
+    const store = steps.filter((s) => s.kind !== 'owned' && s.kind !== 'buyback' && s.kind !== 'future');
+    const waits = steps.filter((s) => s.kind === 'future').length;
     const inCart = store.filter((s) => cart[cartKey(s)]?.st === 'added').length;
     const allVerified = steps.length > 0 && confirmed === steps.length;
     const savedThis = startId != null && toId != null && chains.some((c) => c.startId === startId && c.targetId === toId);
@@ -268,8 +283,10 @@
         id: 'route',
         title: 'Pick the source and the target',
         done: !!result,
-        hint: result ? `${steps.length} steps · pay ${usd(result.total)} now · ${usd(result.savings)} under MSRP` : 'Source = a ship you own (or buy the cheapest from the store), target = the ship you want. Then pick what to optimise for.',
-        warn: startId != null && toId != null && !result ? 'No chain found with these options — allow buyback / warbond CCUs, or pick another source.' : undefined,
+        hint: result
+          ? `${steps.length} steps · pay ${usd(payNow)} now${waits ? ` · ${usd(result.later)} later (${waits} step${waits === 1 ? '' : 's'} wait for a sale)` : ''} · ${usd(result.savings)} under MSRP`
+          : 'Source = a ship you own (or buy the cheapest from the store), target = the ship you want. Then pick what to optimise for.',
+        warn: startId != null && toId != null && !result ? (opt.planAhead ? 'No chain found with these options — allow buyback / warbond CCUs, or pick another source.' : 'No chain found with today\'s sales — turn on Plan ahead to route through ships that are not on sale now, or allow buyback / warbond CCUs.') : undefined,
       },
       {
         id: 'verify',
@@ -290,7 +307,7 @@
         id: 'cart',
         title: 'Add the store steps to your RSI cart',
         done: store.length === 0 ? !!result : inCart === store.length,
-        hint: store.length ? `${inCart} / ${store.length} store steps in the cart — nothing is paid here.` : 'Nothing to buy: every step is a CCU you already own.',
+        hint: store.length ? `${inCart} / ${store.length} store steps in the cart — nothing is paid here.${waits ? ` ${waits} step${waits === 1 ? '' : 's'} wait for a sale and cannot be added yet.` : ''}` : waits ? 'Nothing to buy today: the remaining steps wait for a sale.' : 'Nothing to buy: every step is a CCU you already own.',
         warn: hasBuyback ? 'A buy-back checks out alone: add it from its row and pay it in a cart of its own.' : undefined,
         action: store.length ? { label: cartBusy ? 'Adding…' : `Add ${storeSteps} store step${storeSteps === 1 ? '' : 's'}`, onclick: addAll, disabled: cartBusy, busy: cartBusy } : undefined,
       },
@@ -298,7 +315,7 @@
         id: 'pay',
         title: 'Check out on RSI, then reload the hangar',
         done: store.length === 0 ? !!result : store.every(ownedNow),
-        hint: 'Pay in the RSI cart (store credit applies there). After a hangar reload the bought CCUs show up as owned and this step ticks itself.',
+        hint: `Pay in the RSI cart (store credit applies there). After a hangar reload the bought CCUs show up as owned and this step ticks itself.${waits ? ' Steps waiting for a sale: save the chain — the Feed alerts you when their CCU is in the store, then re-plan and buy that leg.' : ''}`,
         action: { label: 'Open RSI cart', href: CART_URL },
       },
       {
@@ -325,7 +342,7 @@
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-lg font-semibold">CCU chain planner</Card.Title>
-      <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money.</Card.Description>
+      <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money. <em>Plan ahead</em> adds hulls nobody sells a CCU to today (at MSRP, bought when they return) for long-term goals.</Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-4">
       {#if error}<span class="text-destructive">{error}</span>{/if}
@@ -342,7 +359,7 @@
         <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
           {#each OPTIONS as o (o.key)}
-            <label class="flex cursor-pointer items-center gap-2 text-sm"><Checkbox bind:checked={opt[o.key]} /> {o.label}</label>
+            <label class="flex cursor-pointer items-center gap-2 text-sm" title={o.title}><Checkbox bind:checked={opt[o.key]} /> {o.label}</label>
           {/each}
           <label class="flex cursor-pointer items-center gap-2 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-60">
             <Checkbox bind:checked={excludeSaved} disabled={!chains.length} /> Exclude saved chains{chains.length ? ` (${reservedBy.size} CCUs)` : ''}
@@ -384,10 +401,12 @@
           <p class="text-destructive m-0">
             No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
             it's not pricier than the start.
+            {#if !opt.planAhead}<button type="button" class="text-primary cursor-pointer border-0 bg-transparent p-0 underline-offset-4 hover:underline" onclick={() => (opt.planAhead = true)}>Turn on Plan ahead</button> to route through ships that are not on sale now.{/if}
           </p>
         {:else}
           <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
-            <Stat value={usd(result.total)} label="to pay now" />
+            <Stat value={usd(payNow)} label="to pay now" />
+            {#if result.waits}<Stat value={usd(result.later)} label={`later · ${result.waits} step${result.waits === 1 ? '' : 's'} wait for a sale`} tone="accent" />{/if}
             <Stat value={usd(result.cash)} label="new money" />
             {#if cashNeeded != null}<Stat value={ownUsd(cashNeeded)} label="cash after store credit" valueTone={cashNeeded === 0 ? 'ok' : null} />{/if}
             {#if result.paid}<Stat value={ownUsd(result.paid)} label="already paid (owned CCUs)" />{/if}
@@ -417,8 +436,10 @@
                     <div class="flex flex-wrap items-center gap-1.5 text-sm">
                       {#if s.fromId !== STORE_START}<span class="text-muted-foreground">{name(s.fromId)}</span> <span class="text-muted-foreground">→</span> {/if}<strong>{name(s.toId)}</strong>
                       <Badge variant="outline" class={KIND_TONE[s.kind]}>{KIND[s.kind]}</Badge>
-                      {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback'}<span class="text-muted-foreground text-[11px]">{s.label}</span>{/if}
+                      {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback' && s.kind !== 'future'}<span class="text-muted-foreground text-[11px]">{s.label}</span>{/if}
+                      {#if s.kind === 'future'}<span class="text-muted-foreground text-[11px]">{seen(s.toId)}</span>{/if}
                       {#if v?.st === 'checking'}<Badge variant="secondary" class="text-muted-foreground">checking…</Badge>
+                      {:else if v?.st === 'wait'}<Badge variant="secondary" class={TONE.warn}>waits for a sale</Badge>
                       {:else if v?.st === 'ok'}<Badge variant="secondary" class={TONE.ok}><Check />RSI confirmed{v.note ? ` · ${v.note}` : ''}</Badge>
                       {:else if v?.st === 'price'}<Badge variant="secondary" class={TONE.warn}><TriangleAlert />RSI price {usd(v.price)}</Badge>
                       {:else if v?.st === 'no'}<Badge variant="secondary" class={TONE.err}><X />{v.why}</Badge>
@@ -438,7 +459,7 @@
                         {#if c?.st === 'error'}<Badge variant="secondary" class={TONE.err} title={c.msg}>{c.code === 'signed-out' ? 'Sign in to RSI' : c.code === 'conflict' ? 'Cart busy' : c.code === 'network' ? 'No answer — check cart' : 'Refused'}</Badge>{/if}
                       {/if}
                       {#if link(s)}
-                        <Button variant="ghost" size="xs" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' ? 'Store' : 'Upgrades'} <ExternalLink /></Button>
+                        <Button variant="ghost" size="xs" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' || s.kind === 'future' ? 'Store' : 'Upgrades'} <ExternalLink /></Button>
                       {/if}
                     </div>
                   </div>
@@ -489,7 +510,7 @@
       <Card.Root>
         <Card.Header>
           {@render foldTitle('Saved chains', chains.length, openSaved)}
-          <Card.Description>Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. “Now” re-prices each chain on today's store + hangar.</Card.Description>
+          <Card.Description>Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. “Now” re-prices each chain on today's store + hangar; a chain with steps waiting for a sale is a long-term goal — the Feed alerts when one of those CCUs is in the store.</Card.Description>
         </Card.Header>
         <Collapsible.Content>
           <Card.Content>
@@ -501,12 +522,13 @@
                 {#each chains as c (c.id)}
                   {@const p = now(c)}
                   <Table.Row>
-                    <Table.Cell><strong>{c.name}</strong><br /><span class="text-muted-foreground text-[11px]">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
+                    {@const savedWaits = c.steps.filter((s) => s.kind === 'future').length}
+                    <Table.Cell><strong>{c.name}</strong>{#if savedWaits}<Badge variant="outline" class="border-warning/40 text-warning ml-1.5">{savedWaits} waiting</Badge>{/if}<br /><span class="text-muted-foreground text-[11px]">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
                     <Table.Cell class="text-[11px] whitespace-normal">{[name(c.startId), ...c.steps.map((s) => name(s.toId))].join(' → ')}</Table.Cell>
                     <Table.Cell>{usd(c.total)}<br /><span class="text-muted-foreground text-[11px]">{usd(c.cash)} new money</span></Table.Cell>
                     <Table.Cell>
                       {#if !p}<span class="text-destructive">no longer possible</span>
-                      {:else}<span class={cn(p.total < c.total && 'text-success', p.total > c.total && 'text-warning')}>{usd(p.total)}</span>{#if changed(c, p)}<br /><span class="text-muted-foreground text-[11px]">chain changed</span>{/if}{/if}
+                      {:else}<span class={cn(p.total < c.total && 'text-success', p.total > c.total && 'text-warning')}>{usd(p.total)}</span>{#if savedWaits && p.waits < savedWaits}<br /><span class="text-success text-[11px]">on sale now — {savedWaits - p.waits} waiting step{savedWaits - p.waits === 1 ? '' : 's'} buyable</span>{:else if changed(c, p)}<br /><span class="text-muted-foreground text-[11px]">chain changed</span>{/if}{/if}
                     </Table.Cell>
                     <Table.Cell>
                       <div class="flex items-center gap-1.5">

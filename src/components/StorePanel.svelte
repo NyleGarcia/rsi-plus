@@ -2,8 +2,8 @@
   import Combobox from './Combobox.svelte';
   import { bg } from '@/lib/messages';
   import { inventory, ownedShipsWithPaints, type OwnedShip } from '@/lib/items';
-  import { catalogItem, hangarItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
-  import { isWarbondSku, lowestOffer, matchShip, usd, type Catalog, type CatalogShip } from '@/lib/store';
+  import { catalogItem, hangarItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
+  import { isWarbondSku, lastSale, lowestOffer, matchShip, usd, type Catalog, type CatalogShip, type SaleHistory } from '@/lib/store';
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import Thumb from './Thumb.svelte';
@@ -19,6 +19,7 @@
   let cat = $state<Catalog | null>(null);
   let wish = $state<WishShip[]>([]);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
+  let sales = $state<SaleHistory>({});
   /** Ships you own (from the hangar) → copies + insurance, keyed by catalog id. */
   const owned = $derived.by(() => {
     const ships = cat?.ships ?? [];
@@ -32,7 +33,7 @@
   let loading = $state(false);
   let q = $state('');
   let maker = $state('');
-  let only = $state<'' | 'wish' | 'warbond' | 'standalone' | 'ccu' | 'owned' | 'not-owned'>('');
+  let only = $state<'' | 'wish' | 'warbond' | 'standalone' | 'ccu' | 'not-on-sale' | 'concept' | 'owned' | 'not-owned'>('');
   type Col = 'wish' | 'name' | 'msrp' | 'offer' | 'saving';
   let sort = $state<SortState<Col>>({ key: 'msrp', dir: 'asc' });
 
@@ -40,9 +41,10 @@
     catalogItem.getValue().then((c) => (cat = c));
     wishlistItem.getValue().then((w) => (wish = w));
     hangarItem.getValue().then((h) => (hangar = h));
+    saleHistoryItem.getValue().then((h) => (sales = h));
     storeItemsItem.getValue().then((v) => (vipNames = (v?.items ?? []).filter((i) => i.vip && i.category === 'ships').map((i) => i.name)));
     refresh(false);
-    const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), hangarItem.watch((h) => (hangar = h)), storeItemsItem.watch((v) => (vipNames = (v?.items ?? []).filter((i) => i.vip && i.category === 'ships').map((i) => i.name)))];
+    const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), hangarItem.watch((h) => (hangar = h)), saleHistoryItem.watch((h) => (sales = h ?? {})), storeItemsItem.watch((v) => (vipNames = (v?.items ?? []).filter((i) => i.vip && i.category === 'ships').map((i) => i.name)))];
     return () => offs.forEach((o) => o());
   });
 
@@ -68,6 +70,7 @@
 
   const makers = $derived([...new Set((cat?.ships ?? []).map((s) => s.manufacturer).filter(Boolean))].sort());
   const warbondOf = (s: CatalogShip) => s.ccu.find((k) => isWarbondSku(k) && k.available);
+  const onSale = (s: CatalogShip) => s.ccu.length > 0 || s.standalone.some((k) => k.available);
   const saving = (s: CatalogShip) => {
     const o = lowestOffer(s);
     return o && s.msrp ? s.msrp - o.price : 0;
@@ -83,6 +86,8 @@
           (only === 'warbond' && !!warbondOf(s)) ||
           (only === 'standalone' && s.standalone.some((k) => k.available)) ||
           (only === 'ccu' && s.ccu.length > 0) ||
+          (only === 'not-on-sale' && !onSale(s)) ||
+          (only === 'concept' && /concept/i.test(s.flyable)) ||
           (only === 'owned' && owned.has(s.id)) ||
           (only === 'not-owned' && !owned.has(s.id))),
     );
@@ -102,6 +107,8 @@
     { value: 'warbond', label: 'Warbond CCU on sale' },
     { value: 'standalone', label: 'Standalone on sale' },
     { value: 'ccu', label: 'Any CCU on sale' },
+    { value: 'not-on-sale', label: `Not on sale now (${(cat?.ships ?? []).filter((s) => !onSale(s)).length})` },
+    { value: 'concept', label: 'Concept ships' },
     { value: 'owned', label: `Ships I own (${owned.size})` },
     { value: 'not-owned', label: "Ships I don't own" },
   ]);
@@ -112,10 +119,10 @@
 
 <Card.Root>
   <Card.Header>
-    <Card.Title class="text-lg font-semibold">Ships for sale</Card.Title>
+    <Card.Title class="text-lg font-semibold">Ship catalog</Card.Title>
     <Card.Description>
-      {cat ? `${cat.ships.length} ships · prices from ${new Date(cat.at).toLocaleString()}` : loading ? 'Loading…' : ''}
-      · ★ wishlist alerts when a warbond / sale price appears (checked every 30 min)
+      {cat ? `Every ship in the pledge store — ${cat.ships.length} hulls, ${cat.ships.filter(onSale).length} on sale · prices from ${new Date(cat.at).toLocaleString()}` : loading ? 'Loading…' : ''}
+      · ★ wishlist alerts when a warbond / sale price appears (checked every 30 min) · <em>Plan CCU</em> works for hulls not on sale too (Plan ahead)
     </Card.Description>
     <Card.Action class="flex flex-wrap items-center gap-2">
       <Button variant="outline" href="#paint-rebuy" title="Melt paints you own and buy them back together with RSI's multi-paint discount — best value per cart size">Paint rebuy value →</Button>
@@ -177,12 +184,15 @@
                 {#if wb}<Badge variant="outline" class="border-warning/40 text-warning">WB {usd(wb.price)}{wb.stock != null ? ` · ${wb.stock} left` : ''}</Badge>{/if}
                 {#each s.ccu.filter((k) => k !== wb) as k (k.id)}<Badge variant="outline">{k.title || 'CCU'} {usd(k.price)}</Badge>{/each}
                 {#each s.standalone.filter((k) => k.available) as k (k.id)}<Badge variant="outline" class="text-success">Standalone {usd(k.price)}</Badge>{/each}
-                {#if !s.ccu.length && !s.standalone.some((k) => k.available)}<span class="text-muted-foreground text-[11px]">not on sale</span>{/if}
+                {#if !onSale(s)}
+                  {@const t = lastSale(sales, s.id)}
+                  <span class="text-muted-foreground text-[11px]" title={t ? 'Last seen on sale by RSI+ (history starts when it was installed)' : 'Not seen on sale since RSI+ was installed — ships come back at IAE (November), Invictus (May) or the maker\'s showcase'}>not on sale{t ? ` · last ${new Date(t).toLocaleDateString()}` : ''}</span>
+                {/if}
               </div>
             </Table.Cell>
             <Table.Cell>
               {#if saving(s) > 0}<div class="text-success text-[11px]">−{usd(saving(s))}</div>{/if}
-              <Button variant="outline" size="xs" href={`#ccu?to=${s.id}`}>Plan CCU</Button>
+              <Button variant="outline" size="xs" href={`#ccu?to=${s.id}${onSale(s) ? '' : '&ahead=1'}`}>Plan CCU</Button>
             </Table.Cell>
           </Table.Row>
         {/each}
