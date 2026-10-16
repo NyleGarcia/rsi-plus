@@ -149,6 +149,7 @@ def main():
                await pick('From ship', 'Cutlass Black'); if (t) await pick('Target ship', t.name); await sleep(2500);
                const el = [...document.querySelectorAll('span')].find((e) => e.innerText === 'to pay now'); (el?.closest('[data-slot=card]')?.parentElement ?? document.querySelector('fieldset, [role=group]'))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -240); return t?.name; }})()"""),
             ('wallet', '#wallet', {}, None),
+            ('fan-footer', '#feed', {}, "window.scrollTo(0, document.body.scrollHeight); 1"),
             ('browse', '#browse', {}, f"(async () => {{ const sleep = {SLEEP}; for (let i = 0; i < 40 && !/listings · prices/.test(document.body.innerText); i++) await sleep(500); }})()"),
             ('store', '#store', {}, f"(async () => {{ const sleep = {SLEEP}; [...document.querySelectorAll('th button, th [role=button]')].find((b) => /Discount/.test(b.innerText))?.click(); await sleep(400); }})()"),
             ('ships', '#fleet', {}, None),

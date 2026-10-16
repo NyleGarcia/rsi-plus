@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FanNotice from '@/components/FanNotice.svelte';
   import { bg, type HubTab } from '@/lib/messages';
   import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, type Settings } from '@/lib/settings';
   import { partyActive, type PartyMode } from '@/lib/friends';
@@ -123,5 +124,6 @@
         {/each}
       </section>
     {/if}
+    <FanNotice variant="popup" class="border-t pt-3" />
   </main>
 </Tooltip.Provider>

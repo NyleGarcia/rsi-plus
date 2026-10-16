@@ -16,6 +16,8 @@
   import AccountSwitch from '@/components/AccountSwitch.svelte';
   import NavItem from './NavItem.svelte';
   import SidebarSupport from './SidebarSupport.svelte';
+  import FanNotice from '@/components/FanNotice.svelte';
+  import SidebarFan from './SidebarFan.svelte';
   import * as Sidebar from '@/components/ui/sidebar';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Separator } from '@/components/ui/separator';
@@ -184,6 +186,7 @@
       </Sidebar.Content>
       <Sidebar.Footer>
         <SidebarSupport />
+        <SidebarFan />
       </Sidebar.Footer>
       <Sidebar.Rail />
     </Sidebar.Root>
@@ -248,6 +251,7 @@
         {:else}
           <MutesPanel />
         {/if}
+        <FanNotice variant="footer" class="mt-10" />
       </main>
     </Sidebar.Inset>
   </Sidebar.Provider>
