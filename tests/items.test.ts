@@ -123,6 +123,26 @@ describe('items', () => {
     expect(of('Carrack')).toBeUndefined();
   });
 
+  it('in-game ships (aUEC / earned) count as hulls: paints attach, no-ship turns owned, keep-counts grow', () => {
+    const rows = inventory([pledge(1, [['Cutlass Black', 'Ship']]), pledge(2, [['Carrack Paint - Ghoulish Green', 'Skin'], ['Cutlass - Frost Livery', 'Skin']])], ships);
+    const game = [
+      { id: 5, name: 'Carrack', how: 'bought' as const, count: 1 },
+      { id: 1, name: 'Cutlass Black', how: 'earned' as const, count: 1 },
+      { id: 99, name: 'Gone ship', how: 'bought' as const, count: 1 }, // not in the catalog → skipped
+      { id: 6, name: '100i', how: 'earned' as const, count: 0 }, // empty line → skipped
+    ];
+    const fleet = ownedShipsWithPaints(rows, game, ships);
+    expect(fleet.map((f) => [f.ship.name, f.count, f.game, f.gameHow, f.paints.map((p) => p.title)])).toEqual([
+      ['Carrack', 1, 1, ['bought'], ['Carrack Paint - Ghoulish Green']],
+      ['Cutlass Black', 2, 1, ['earned'], ['Cutlass - Frost Livery']],
+    ]);
+    const owned = new Set(fleet.map((f) => f.ship.id));
+    expect(paintStatus(rows.find((r) => r.title === 'Carrack Paint - Ghoulish Green')!, owned)).toBe('owned-ship');
+    expect(paintCopiesNeeded(rows, fleet).get('cutlass - frost livery')).toBe(2);
+    // without the catalog, only hulls already in a pledge pick up in-game copies
+    expect(ownedShipsWithPaints(rows, game).map((f) => [f.ship.name, f.count])).toEqual([['Cutlass Black', 2]]);
+  });
+
   it('paint copies needed = owned hulls the paint fits', () => {
     const rows = inventory(
       [pledge(1, [['Cutlass Black', 'Ship']]), pledge(2, [['Cutlass Black', 'Ship']]), pledge(3, [['Cutlass Red', 'Ship']]), pledge(4, [['Cutlass - Frost Livery', 'Skin']]), pledge(5, [['Carrack Paint - Ghoulish Green', 'Skin']])],

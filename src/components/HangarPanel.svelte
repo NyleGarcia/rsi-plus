@@ -3,9 +3,9 @@
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
-  import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, upgradedFrom } from '@/lib/items';
+  import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, upgradedFrom, type GameShip } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { catalogItem, hangarItem } from '@/lib/settings';
+  import { catalogItem, gameShipsItem, hangarItem } from '@/lib/settings';
   import type { Catalog } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
@@ -35,6 +35,7 @@
   type Saved = NonNullable<Awaited<ReturnType<typeof hangarItem.getValue>>>;
   let data = $state<Saved | null>(null);
   let cat = $state<Catalog | null>(null);
+  let game = $state<GameShip[]>([]);
   let loading = $state<{ page: number; count: number; pages?: number } | null>(null);
   let error = $state('');
   let q = $state('');
@@ -51,11 +52,12 @@
   $effect(() => {
     hangarItem.getValue().then((v) => (data = v)).catch((e) => (error = `Couldn't read saved hangar: ${(e as Error).message}`));
     catalogItem.getValue().then((c) => (cat = c));
+    gameShipsItem.getValue().then((g) => (game = g));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch(() => {}); // only needed to know which hulls a paint fits
-    const off = catalogItem.watch((c) => (cat = c));
-    return () => (ctrl?.abort(), off());
+    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? []))];
+    return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
   /** Persist a plain copy (never the reactive proxy). Throws so the UI can show storage errors. */
@@ -218,7 +220,7 @@
   /** Paint → copies to keep (one per owned hull it fits), so "3 paints for 3 Cutlasses" isn't a duplicate. */
   const inv = $derived.by(() => {
     const rows = inventory(all, cat?.ships ?? []);
-    const fleet = ownedShipsWithPaints(rows);
+    const fleet = ownedShipsWithPaints(rows, game, cat?.ships ?? []);
     return { rows, fleet, ownedIds: new Set(fleet.map((f) => f.ship.id)) };
   });
   const keep = $derived(paintCopiesNeeded(inv.rows, inv.fleet));

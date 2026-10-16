@@ -14,11 +14,12 @@
     storePaintFor,
     storePaintIndex,
     storePaintsByFamily,
+    type GameShip,
     type ItemRow,
     type PaintGroup,
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
   import { usd, type Catalog, type CatalogShip, type PaintCatalog, type StorePaint } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -32,7 +33,7 @@
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
   import { Checkbox } from '@/components/ui/checkbox';
-  import { ArrowDown, Check, ChevronDown, ChevronRight, Download, ExternalLink, House, ShoppingCart, X } from '@lucide/svelte';
+  import { ArrowDown, Check, ChevronDown, ChevronRight, Download, ExternalLink, Gamepad2, House, Minus, Plus, ShoppingCart, X } from '@lucide/svelte';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
   import { shipLines, xplorCsv, xplorRows } from '@/lib/export';
 
@@ -40,6 +41,7 @@
   let cat = $state<Catalog | null>(null);
   let storePaints = $state<PaintCatalog | null>(null);
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
+  let game = $state<GameShip[]>([]);
   let error = $state('');
   let paintsLoading = $state(false);
 
@@ -48,11 +50,12 @@
     catalogItem.getValue().then((c) => (cat = c));
     paintCatalogItem.getValue().then((p) => (storePaints = p));
     buybackItem.getValue().then((b) => (buyback = b));
+    gameShipsItem.getValue().then((g) => (game = g));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     refreshPaints(false);
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? []))];
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {
@@ -68,7 +71,7 @@
 
   const ships = $derived(cat?.ships ?? []);
   const rows = $derived(inventory(hangar?.pledges ?? [], ships));
-  const fleet = $derived(ownedShipsWithPaints(rows));
+  const fleet = $derived(ownedShipsWithPaints(rows, game, ships));
   const storeIdx = $derived(storePaintIndex(storePaints?.paints ?? []));
   const storeByFam = $derived(storePaintsByFamily(storePaints?.paints ?? [], ships));
   const ownedPaints = $derived(rows.filter((r) => r.category === 'paint'));
@@ -253,6 +256,19 @@
   const toggleCompare = (id: number) => (compare = compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id]);
   const unmatchedShips = $derived(rows.filter((r) => r.category === 'ship' && !r.ship));
   const storeFor = (fam: string) => (storeByFam.get(fam) ?? []).filter((sp) => !ownedStoreIds.has(sp.id));
+  // ---- in-game ships (aUEC-bought / earned): tracked by hand, counted as hulls for paints ----
+  let gameAdd = $state<number | null>(null);
+  let gameHow = $state<GameShip['how']>('bought');
+  const gameSorted = $derived([...game].sort((a, b) => a.name.localeCompare(b.name) || a.how.localeCompare(b.how)));
+  /** Add `n` (may be negative) copies of a ship by `how`; a line at 0 is removed. */
+  async function bumpGame(id: number, how: GameShip['how'], n: number) {
+    const ship = byId.get(id);
+    const cur = await gameShipsItem.getValue();
+    const hit = cur.find((g) => g.id === id && g.how === how);
+    const next = hit ? cur.map((g) => (g === hit ? { ...g, count: g.count + n } : g)) : n > 0 && ship ? [...cur, { id, name: ship.name, how, count: n }] : cur;
+    await gameShipsItem.setValue(next.filter((g) => g.count > 0));
+  }
+  const removeGame = (g: GameShip) => bumpGame(g.id, g.how, -g.count);
   const linkCls = 'text-primary inline-flex items-center gap-1 whitespace-nowrap no-underline hover:underline';
 </script>
 
@@ -304,7 +320,7 @@
                   <Segmented
                     options={[
                       { id: 'all', label: `All · ${shipCounts.owned + shipCounts['not-owned'] + shipCounts.unknown}` },
-                      { id: 'owned', label: `I own · ${shipCounts.owned}`, hint: 'Ships in your hangar' },
+                      { id: 'owned', label: `I own · ${shipCounts.owned}`, hint: 'Ships in your hangar or added as in-game' },
                       { id: 'not-owned', label: `I don't own · ${shipCounts['not-owned']}`, hint: 'Ships the store has paints for that are not in your hangar' },
                       { id: 'unknown', label: `Packs & unmatched · ${shipCounts.unknown}`, hint: 'Paint packs / collections, and paints whose ship could not be worked out' },
                     ]}
@@ -350,7 +366,7 @@
                         {#if collapsed.has(k)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
                         <strong class={cn(st !== 'owned' && 'text-muted-foreground')}>{g.label}</strong>
                         {#if st === 'owned'}
-                          <Badge variant="secondary" class="text-success"><Check /> {g.owned.map((o) => `${o.ship.name}${o.count > 1 ? ` ×${o.count}` : ''}`).join(', ')}</Badge>
+                          <Badge variant="secondary" class="text-success"><Check /> {g.owned.map((o) => `${o.ship.name}${o.count > 1 ? ` ×${o.count}` : ''}${o.game ? ' (in-game)' : ''}`).join(', ')}</Badge>
                         {:else if st === 'not-owned'}
                           <Badge variant="outline" class="border-warning/40 text-warning">no ship owned</Badge>
                         {/if}
@@ -410,7 +426,7 @@
           <Card.Root>
             <Card.Header>
               <Card.Title>My ships <span class="text-muted-foreground">({fleet.length} hulls)</span></Card.Title>
-              <Card.Description>Each ship with the paints you own for it and how many more the store has. Tick ships to compare.</Card.Description>
+              <Card.Description>Each ship with the paints you own for it and how many more the store has. Tick ships to compare. Add ships you bought with aUEC or earned in the game — paints work on those too.</Card.Description>
               <Card.Action>
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger>
@@ -439,6 +455,38 @@
                 <Input class="w-64" placeholder="Search ships" bind:value={shipQ} aria-label="Search my ships" />
                 <label class="text-muted-foreground flex items-center gap-2"><Checkbox bind:checked={noPaints} /> Only ships with no paints</label>
               </div>
+              <div class="bg-muted/40 grid gap-2 rounded-lg border p-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase"><Gamepad2 class="size-3.5" /> In-game ships</span>
+                  <span class="text-muted-foreground text-xs">Not on your RSI account — kept in this browser's sync storage, counted for paints and the melt planner.</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="w-[260px]"><ShipSelect ships={[...ships].sort((a, b) => a.name.localeCompare(b.name))} bind:value={gameAdd} ariaLabel="In-game ship to add" placeholder="Add a ship you have in-game…" price={false} /></div>
+                  <Segmented
+                    options={[
+                      { id: 'bought', label: 'Bought (aUEC)', hint: 'Bought in the game with aUEC' },
+                      { id: 'earned', label: 'Earned', hint: 'Earned in the game: event, mission or other reward' },
+                    ]}
+                    bind:value={gameHow}
+                    ariaLabel="How you got it"
+                    size="sm"
+                  />
+                  <Button size="sm" disabled={gameAdd == null} onclick={() => gameAdd != null && bumpGame(gameAdd, gameHow, 1).then(() => (gameAdd = null))}><Plus /> Add</Button>
+                </div>
+                {#if gameSorted.length}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each gameSorted as g (`${g.id}|${g.how}`)}
+                      <span class="bg-background inline-flex items-center gap-1 rounded-md border py-0.5 pr-0.5 pl-2 text-xs">
+                        <span class="font-medium">{byId.get(g.id)?.name ?? g.name}</span>
+                        <span class="text-muted-foreground">{g.how === 'bought' ? 'aUEC' : 'earned'} ×{g.count}</span>
+                        <Button variant="ghost" size="icon-xs" aria-label={`One fewer ${g.name}`} onclick={() => bumpGame(g.id, g.how, -1)}><Minus /></Button>
+                        <Button variant="ghost" size="icon-xs" aria-label={`One more ${g.name}`} onclick={() => bumpGame(g.id, g.how, 1)}><Plus /></Button>
+                        <Button variant="ghost" size="icon-xs" aria-label={`Remove ${g.name}`} onclick={() => removeGame(g)}><X /></Button>
+                      </span>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
               <Table.Root>
                 <Table.Header>
                   <Table.Row>
@@ -464,7 +512,10 @@
                         </div>
                       </Table.Cell>
                       <Table.Cell class="text-muted-foreground text-[11px]">{f.ship.manufacturer}<br />{f.ship.focus}</Table.Cell>
-                      <Table.Cell>×{f.count}</Table.Cell>
+                      <Table.Cell>
+                        ×{f.count}
+                        {#if f.game}<Badge variant="outline" class="ml-1 text-[11px]" title={`${f.game} in the game only (${f.gameHow.map((h) => (h === 'bought' ? 'bought with aUEC' : 'earned')).join(', ')}), not on your RSI account`}><Gamepad2 /> {f.game === f.count ? 'in-game' : `${f.game} in-game`}</Badge>{/if}
+                      </Table.Cell>
                       <Table.Cell>{f.ship.msrp ? usd(f.ship.msrp) : '—'}</Table.Cell>
                       <Table.Cell>{@render insBadges(f.insurance, 'text-muted-foreground text-[11px]')}</Table.Cell>
                       <Table.Cell>

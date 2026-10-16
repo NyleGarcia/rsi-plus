@@ -1,8 +1,8 @@
 <script lang="ts">
   import Combobox from './Combobox.svelte';
   import { bg } from '@/lib/messages';
-  import { inventory, ownedShipsWithPaints, type OwnedShip } from '@/lib/items';
-  import { catalogItem, hangarItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
+  import { inventory, ownedShipsWithPaints, type GameShip, type OwnedShip } from '@/lib/items';
+  import { catalogItem, gameShipsItem, hangarItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { isWarbondSku, lastSale, lowestOffer, matchShip, usd, type Catalog, type CatalogShip, type SaleHistory } from '@/lib/store';
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
@@ -20,10 +20,11 @@
   let wish = $state<WishShip[]>([]);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let sales = $state<SaleHistory>({});
+  let game = $state<GameShip[]>([]);
   /** Ships you own (from the hangar) → copies + insurance, keyed by catalog id. */
   const owned = $derived.by(() => {
     const ships = cat?.ships ?? [];
-    const fleet = hangar && ships.length ? ownedShipsWithPaints(inventory(hangar.pledges, ships)) : [];
+    const fleet = hangar && ships.length ? ownedShipsWithPaints(inventory(hangar.pledges, ships), game, ships) : ships.length ? ownedShipsWithPaints([], game, ships) : [];
     return new Map<number, OwnedShip>(fleet.map((f) => [f.ship.id, f]));
   });
   /** Catalog ids of hulls the Browse listing flags Concierge-only (`isVip`, only present on a Chairman's Club session). */
@@ -40,11 +41,12 @@
   $effect(() => {
     catalogItem.getValue().then((c) => (cat = c));
     wishlistItem.getValue().then((w) => (wish = w));
+    gameShipsItem.getValue().then((g) => (game = g));
     hangarItem.getValue().then((h) => (hangar = h));
     saleHistoryItem.getValue().then((h) => (sales = h));
     storeItemsItem.getValue().then((v) => (vipNames = (v?.items ?? []).filter((i) => i.vip && i.category === 'ships').map((i) => i.name)));
     refresh(false);
-    const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), hangarItem.watch((h) => (hangar = h)), saleHistoryItem.watch((h) => (sales = h ?? {})), storeItemsItem.watch((v) => (vipNames = (v?.items ?? []).filter((i) => i.vip && i.category === 'ships').map((i) => i.name)))];
+    const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), gameShipsItem.watch((g) => (game = g ?? [])), hangarItem.watch((h) => (hangar = h)), saleHistoryItem.watch((h) => (sales = h ?? {})), storeItemsItem.watch((v) => (vipNames = (v?.items ?? []).filter((i) => i.vip && i.category === 'ships').map((i) => i.name)))];
     return () => offs.forEach((o) => o());
   });
 
@@ -171,7 +173,7 @@
                   {#if owned.get(s.id)}
                     {@const o = owned.get(s.id)!}
                     <div class="flex flex-wrap gap-1">
-                      <Badge variant="outline" class="text-success">owned ×{o.count}</Badge>
+                      <Badge variant="outline" class="text-success">owned ×{o.count}{o.game ? ` (${o.game === o.count ? '' : `${o.game} `}in-game)` : ''}</Badge>
                       {#each o.insurance as i (i)}<Badge variant="outline" class={cn(i === 'LTI' && 'border-warning/40 text-warning')}>{i}</Badge>{/each}
                     </div>
                   {/if}

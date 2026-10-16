@@ -1,6 +1,7 @@
 import { storage } from '#imports';
 import { NO_MUTES, type MuteRules } from './filters';
 import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
+import type { GameShip } from './items';
 import type { OrgCache } from './orgs';
 import type { SavedChain } from './ccu';
 import type { BuybackItem, Credits, Pledge } from './hangar';
@@ -113,6 +114,8 @@ export interface WishShip {
   lowest: number | null;
 }
 export const wishlistItem = storage.defineItem<WishShip[]>('sync:wishlist', { fallback: [] });
+/** Ships you have in the game but not on the RSI account (aUEC-bought, earned) — counted as hulls for paints. */
+export const gameShipsItem = storage.defineItem<GameShip[]>(acct('sync:gameShips'), { fallback: [] });
 /** Party mode (auto-accept friend requests). Local: it acts on this browser's session only. */
 export const partyModeItem = storage.defineItem<PartyMode | null>(acct('local:partyMode'), { fallback: null });
 /** What party mode accepted (or failed to), newest first. */

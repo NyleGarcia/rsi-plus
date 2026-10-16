@@ -69,7 +69,7 @@
       items: [
         { tab: 'hangar', label: 'Pledges', sub: 'Every pledge in your hangar', icon: Warehouse },
         { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
-        { tab: 'fleet', label: 'My ships', sub: 'Hulls, insurance, compare, export', icon: Ship },
+        { tab: 'fleet', label: 'My ships', sub: 'Hulls, in-game ships, insurance, compare', icon: Ship },
         { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
         { tab: 'items', label: 'My items', sub: 'Everything else in your pledges', icon: Package },
         { tab: 'buyback', label: 'Buyback', sub: 'What you melted', icon: Undo2 },

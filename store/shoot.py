@@ -153,6 +153,12 @@ def main():
             ('browse', '#browse', {}, f"(async () => {{ const sleep = {SLEEP}; for (let i = 0; i < 40 && !/listings · prices/.test(document.body.innerText); i++) await sleep(500); }})()"),
             ('store', '#store', {}, f"(async () => {{ const sleep = {SLEEP}; [...document.querySelectorAll('th button, th [role=button]')].find((b) => /Discount/.test(b.innerText))?.click(); await sleep(400); }})()"),
             ('ships', '#fleet', {}, None),
+            ('ships-ingame', '#fleet', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const cat = (await chrome.storage.local.get('catalog')).catalog; const by = (n) => cat.ships.find((x) => x.name === n);
+               const g = [['Prospector', 'bought'], ['Cutlass Black', 'earned'], ['Arrow', 'bought']].map(([n, how]) => by(n) && {{ id: by(n).id, name: n, how, count: 1 }}).filter(Boolean);
+               await chrome.storage.sync.set({{ gameShips: g }}); await sleep(1200);
+               [...document.querySelectorAll('span')].find((e) => e.innerText === 'In-game ships')?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -120); }})()"""),
             ('paints', '#paints', {}, None),
             ('buyback', '#buyback', {}, None),
         ]

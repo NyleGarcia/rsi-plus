@@ -1,8 +1,8 @@
 <script lang="ts">
   import { hangarUrl } from '@/lib/hangar';
-  import { CATEGORY_LABEL, line, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type ItemRow } from '@/lib/items';
+  import { CATEGORY_LABEL, line, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
   import { usd, type Catalog, type PaintCatalog } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -19,25 +19,27 @@
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
   let storePaints = $state<PaintCatalog | null>(null);
+  let game = $state<GameShip[]>([]);
   let error = $state('');
 
   $effect(() => {
     hangarItem.getValue().then((h) => (hangar = h));
     catalogItem.getValue().then((c) => (cat = c));
     paintCatalogItem.getValue().then((p) => (storePaints = p));
+    gameShipsItem.getValue().then((g) => (game = g));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     bg({ type: 'paints:get' })
       .then((p) => (storePaints = p))
       .catch(() => {}); // store links are a bonus
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), gameShipsItem.watch((g) => (game = g ?? []))];
     return () => offs.forEach((o) => o());
   });
 
   const ships = $derived(cat?.ships ?? []);
   const rows = $derived(inventory(hangar?.pledges ?? [], ships));
-  const fleet = $derived(ownedShipsWithPaints(rows));
+  const fleet = $derived(ownedShipsWithPaints(rows, game, ships));
   const ownedIds = $derived(new Set(fleet.map((f) => f.ship.id)));
   const series = $derived(seriesOf(rows));
   const storeIdx = $derived(storePaintIndex(storePaints?.paints ?? []));

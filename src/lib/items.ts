@@ -220,10 +220,24 @@ export function familyLabel(fam: string, ships: CatalogShip[]): string {
   return base ? base[0]!.toUpperCase() + base.slice(1) + suffix : fam;
 }
 
+/** A ship you have in the game but not on your RSI account — bought with aUEC or earned (event, reward). Tracked by hand. */
+export interface GameShip {
+  /** Catalog ship id. */
+  id: number;
+  /** Ship name when added, shown if the catalog no longer lists the id. */
+  name: string;
+  how: 'bought' | 'earned';
+  count: number;
+}
+
 export interface OwnedShip {
   ship: CatalogShip;
-  /** Hull copies across pledges. */
+  /** Hull copies: pledged + in-game. */
   count: number;
+  /** Of `count`, copies you have only in the game (`GameShip`), not in a pledge. */
+  game: number;
+  /** How the in-game copies were had (empty when none). */
+  gameHow: GameShip['how'][];
   lti: boolean;
   /** Distinct insurance terms across copies (['LTI'], ['120 mo', '6 mo'], [] when unknown). */
   insurance: string[];
@@ -233,17 +247,31 @@ export interface OwnedShip {
   paints: ItemRow[];
 }
 
-/** Your ships (matched to the catalog), each with the paints you own for it. */
-export function ownedShipsWithPaints(rows: ItemRow[]): OwnedShip[] {
+/**
+ * Your ships (matched to the catalog), each with the paints you own for it. `game` adds the ships you have only in the
+ * game (paints apply to those too), so paint views, melt keep-counts and "no ship" checks count them as hulls.
+ */
+export function ownedShipsWithPaints(rows: ItemRow[], game: GameShip[] = [], ships: CatalogShip[] = []): OwnedShip[] {
   const by = new Map<number, OwnedShip>();
+  const blank = (ship: CatalogShip): OwnedShip => ({ ship, count: 0, game: 0, gameHow: [], lti: false, insurance: [], items: [], paints: [] });
   for (const r of rows) {
     if (r.category !== 'ship' || !r.ship) continue;
-    const o = by.get(r.ship.id) ?? { ship: r.ship, count: 0, lti: false, insurance: [], items: [], paints: [] };
+    const o = by.get(r.ship.id) ?? blank(r.ship);
     o.count += r.count;
     o.lti ||= r.lti;
     for (const i of r.insurance) if (!o.insurance.includes(i)) o.insurance.push(i);
     o.items.push(r);
     by.set(r.ship.id, o);
+  }
+  const byId = new Map(ships.map((s) => [s.id, s]));
+  for (const g of game) {
+    const ship = by.get(g.id)?.ship ?? byId.get(g.id);
+    if (!ship || g.count < 1) continue;
+    const o = by.get(g.id) ?? blank(ship);
+    o.count += g.count;
+    o.game += g.count;
+    if (!o.gameHow.includes(g.how)) o.gameHow.push(g.how);
+    by.set(g.id, o);
   }
   for (const r of rows) {
     if (r.category !== 'paint') continue;
