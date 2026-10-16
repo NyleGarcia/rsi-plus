@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planFleet, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -205,5 +205,39 @@ describe('plan ahead (long-term goals)', () => {
     expect(lastSale(h2, 2)).toBe(200);
     expect(lastSale(h2, 3)).toBe(100);
     expect(lastSale(h2, 1)).toBeNull();
+  });
+
+  it('via: passes through a stop hull, in MSRP order; impossible stop → null', () => {
+    const p = plan(ships, [], 1, 4, o({ warbond: false, via: [3] }))!;
+    expect(p.steps.map((s) => s.toId)).toEqual([3, 4]);
+    expect(p.total).toBe(8500 + 13000);
+    expect(plan(ships, [], 3, 4, o({ via: [2] }))).toBeNull(); // Titan is below the Cutlass start
+  });
+
+  it('fleet plan: owned CCUs go to the first goal only, each hull copy starts one chain', () => {
+    const owned = [own(1, 3, 99)];
+    const goals = [
+      { id: 'a', fromId: 1, targetId: 3, via: [] },
+      { id: 'b', fromId: null, targetId: 3, via: [] },
+    ];
+    const f = planFleet(ships, owned, goals, o({ warbond: false }), { hulls: [{ id: 1, count: 1 }, { id: 2, count: 1 }] });
+    expect(f.legs[0]!.plan!.steps[0]).toMatchObject({ kind: 'owned', ref: 99 });
+    // goal b: the Aurora copy is taken by goal a, so auto picks the Titan; the owned CCU is already used
+    expect(f.legs[1]).toMatchObject({ startId: 2, auto: true });
+    expect(f.legs[1]!.plan!.steps.map((s) => s.kind)).toEqual(['standard']);
+    expect(f.total).toBe(0 + 5500);
+    expect(f.failed).toBe(0);
+  });
+
+  it('fleet plan: auto skips kept hulls, can buy from the store, reports failures', () => {
+    const E = ship(5, 'Mustang Alpha', 2000, [], [sku('Standalone', 2000)]);
+    const all = [...ships, E];
+    const goals = [{ id: 'a', fromId: null, targetId: 2, via: [] }, { id: 'b', fromId: null, targetId: 1, via: [] }];
+    const f = planFleet(all, [], goals, o({}), { hulls: [{ id: 1, count: 1 }], keep: [1], storeStart: true });
+    expect(f.legs[0]).toMatchObject({ startId: STORE_START });
+    expect(f.legs[0]!.plan!.steps.map((s) => s.toId)).toEqual([5, 2]);
+    expect(f.legs[1]!.plan).toBeNull(); // Aurora: no CCU sold to it, no cheaper hull
+    expect(f.failed).toBe(1);
+    expect(ownedHulls([{ ships: ['Aurora MR'] }, { ships: ['Aurora MR', 'Cutlass Black'] }], all)).toEqual([{ id: 1, count: 2 }, { id: 3, count: 1 }]);
   });
 });

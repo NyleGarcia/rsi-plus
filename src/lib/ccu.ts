@@ -89,6 +89,8 @@ export interface PlanOptions {
   exclude: number[];
   /** Route through ships with no CCU on sale today at MSRP (`future` steps) — long-term goals across event sales. */
   planAhead?: boolean;
+  /** Stops: hulls the chain must pass through (to fly a while on the way), visited in MSRP order. */
+  via?: number[];
 }
 
 export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
@@ -101,6 +103,7 @@ export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   include: [],
   exclude: [],
   planAhead: false,
+  via: [],
 };
 
 function skuKind(title: string): EdgeKind {
@@ -214,7 +217,8 @@ function route(g: Graph, opt: PlanOptions, startId: number, targetId: number): S
 
 /**
  * Best chain from `startId` (a ship id, or `STORE_START` to buy one first) to `targetId`.
- * Forced CCUs (`opt.include`) are visited in order of their source ship's MSRP; null when any leg is impossible.
+ * Stops — forced CCUs (`opt.include`) and hulls to pass through (`opt.via`) — are visited in order of the MSRP of the
+ * hull they start from; null when any leg is impossible (a stop not above the previous one, not reachable…).
  */
 export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, targetId: number, opt: PlanOptions = DEFAULT_PLAN_OPTIONS): Plan | null {
   const storeStart = startId === STORE_START;
@@ -223,14 +227,27 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   const target = g.byId.get(targetId);
   if ((!storeStart && !start) || !target || startId === targetId) return null;
 
-  const forced = opt.include
-    .map((ref) => owned.find((o) => o.ref === ref))
-    .filter((o): o is OwnedCcu => !!o && !opt.exclude.includes(o.ref) && g.byId.has(o.fromId) && g.byId.has(o.toId))
-    .sort((a, b) => g.byId.get(a.fromId)!.msrp - g.byId.get(b.fromId)!.msrp);
+  type Stop = { msrp: number; ccu: OwnedCcu } | { msrp: number; via: number };
+  const stops: Stop[] = [
+    ...opt.include
+      .map((ref) => owned.find((o) => o.ref === ref))
+      .filter((o): o is OwnedCcu => !!o && !opt.exclude.includes(o.ref) && g.byId.has(o.fromId) && g.byId.has(o.toId))
+      .map((ccu) => ({ msrp: g.byId.get(ccu.fromId)!.msrp, ccu })),
+    ...(opt.via ?? []).filter((id) => id !== startId && id !== targetId).map((via) => ({ msrp: g.byId.get(via)?.msrp ?? -1, via })),
+  ].sort((a, b) => a.msrp - b.msrp);
 
   const steps: Step[] = [];
   let at = startId;
-  for (const o of forced) {
+  for (const st of stops) {
+    if ('via' in st) {
+      if (st.msrp < 0) return null;
+      const leg = route(g, opt, at, st.via);
+      if (!leg || (at !== st.via && !leg.length)) return null;
+      steps.push(...leg);
+      at = st.via;
+      continue;
+    }
+    const o = st.ccu;
     const leg = route(g, opt, at, o.fromId);
     const edge = g.edges(o.fromId).find((e) => e.ref === o.ref);
     if (!leg || !edge) return null;
@@ -253,6 +270,8 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
 export interface SavedChain {
   id: string;
   name: string;
+  /** Fleet plan the chain was saved from (its name) — chains of one plan list together. */
+  group?: string;
   /** Saved at (ms). */
   at: number;
   startId: number;
@@ -261,6 +280,82 @@ export interface SavedChain {
   total: number;
   cash: number;
   opt: PlanOptions;
+}
+
+// ---- fleet plan: several goals at once ----
+
+/** One ship you want: from a hull (or `STORE_START`, or `null` = pick the best source for me), via stops, to a target. */
+export interface Goal {
+  id: string;
+  fromId: number | null;
+  targetId: number;
+  via: number[];
+}
+export interface FleetLeg {
+  goal: Goal;
+  /** Source used (the picked one for an auto goal); null when nothing could start the chain. */
+  startId: number | null;
+  plan: Plan | null;
+  auto: boolean;
+}
+export interface FleetPlan {
+  legs: FleetLeg[];
+  total: number;
+  cash: number;
+  paid: number;
+  later: number;
+  waits: number;
+  msrpDiff: number;
+  savings: number;
+  /** Goals with no chain. */
+  failed: number;
+}
+export interface FleetOptions {
+  /** Hull copies you own that can be upgraded (one copy per goal). */
+  hulls: { id: number; count: number }[];
+  /** Hulls an auto goal never upgrades (ones you want to keep flying). */
+  keep?: number[];
+  /** An auto goal may start by buying a ship from the store. */
+  storeStart?: boolean;
+}
+
+/** Auto source choice: most saved vs MSRP, then least to pay now, then fewest waits. */
+const better = (a: Plan, b: Plan) => a.savings !== b.savings ? a.savings > b.savings : a.total - a.later !== b.total - b.later ? a.total - a.later < b.total - b.later : a.waits < b.waits;
+
+/**
+ * Plans several goals together, in the given order (= priority): each goal's chain may not reuse an owned / buyback
+ * CCU an earlier goal took, and each owned hull copy starts at most one chain (goals with a fixed source claim theirs
+ * first). An auto goal (`fromId: null`) tries every free hull copy cheaper than the target (not in `keep`) and, with
+ * `storeStart`, buying from the store, and keeps the one that saves most. `opt.include` / `opt.via` are ignored —
+ * stops are per goal.
+ */
+export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[], opt: PlanOptions, fo: FleetOptions): FleetPlan {
+  const byId = new Map(ships.map((s) => [s.id, s]));
+  const free = new Map(fo.hulls.map((h) => [h.id, h.count]));
+  for (const g of goals) if (g.fromId != null && free.get(g.fromId)) free.set(g.fromId, free.get(g.fromId)! - 1);
+  const keep = new Set(fo.keep ?? []);
+  const used = new Set<number>();
+  const legs: FleetLeg[] = [];
+  for (const goal of goals) {
+    const o: PlanOptions = { ...opt, include: [], via: goal.via, exclude: [...new Set([...opt.exclude, ...used])] };
+    let startId = goal.fromId;
+    let best: Plan | null = null;
+    if (startId != null) best = plan(ships, owned, startId, goal.targetId, o);
+    else {
+      const target = byId.get(goal.targetId);
+      const cands = [...free].filter(([id, n]) => n > 0 && !keep.has(id) && (byId.get(id)?.msrp ?? Infinity) < (target?.msrp ?? 0)).map(([id]) => id);
+      if (fo.storeStart) cands.push(STORE_START);
+      for (const c of cands) {
+        const p = plan(ships, owned, c, goal.targetId, o);
+        if (p && (!best || better(p, best))) (best = p), (startId = c);
+      }
+      if (startId != null && startId !== STORE_START) free.set(startId, free.get(startId)! - 1);
+    }
+    for (const r of reservedRefs(best ? [best] : [])) used.add(r);
+    legs.push({ goal, startId: best ? startId : goal.fromId, plan: best, auto: goal.fromId == null });
+  }
+  const sum = (f: (p: Plan) => number) => legs.reduce((n, l) => n + (l.plan ? f(l.plan) : 0), 0);
+  return { legs, total: sum((p) => p.total), cash: sum((p) => p.cash), paid: sum((p) => p.paid), later: sum((p) => p.later), waits: sum((p) => p.waits), msrpDiff: sum((p) => p.msrpDiff), savings: sum((p) => p.savings), failed: legs.filter((l) => !l.plan).length };
 }
 
 /** Refs of owned / buyback CCUs a set of chains already uses (to keep them out of new plans). */
@@ -332,6 +427,16 @@ export function ownedCcus(
   add(pledges, 'hangar');
   add(buyback, 'buyback');
   return { owned, unmapped };
+}
+
+/** Hull copies you own (one per pledge listing it) — what a fleet plan can upgrade. */
+export function ownedHulls(pledges: { ships: string[] }[], ships: CatalogShip[]): { id: number; count: number }[] {
+  const n = new Map<number, number>();
+  for (const p of pledges) for (const t of p.ships) {
+    const s = matchShip(t, ships);
+    if (s) n.set(s.id, (n.get(s.id) ?? 0) + 1);
+  }
+  return [...n].map(([id, count]) => ({ id, count }));
 }
 
 /** Ships you own outright (single-ship / combo pledges, upgraded ships count as their current hull). */

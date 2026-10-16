@@ -1,6 +1,6 @@
 <script lang="ts">
   import { addable, addStep, CART_URL, CartError, verifyUpgrade } from '@/lib/cart';
-  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, hangarItem, saleHistoryItem } from '@/lib/settings';
@@ -11,6 +11,7 @@
   import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import Stat from './Stat.svelte';
+  import CcuFleet from './CcuFleet.svelte';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
   import * as Collapsible from '@/components/ui/collapsible';
@@ -39,7 +40,22 @@
   let mode = $state<Mode>('hangar');
   let fromId = $state<number | null>(null);
   let toId = $state<number | null>(null); // set from initialTo by the effect below
-  let opt = $state<PlanOptions>({ ...DEFAULT_PLAN_OPTIONS, include: [], exclude: [] });
+  let opt = $state<PlanOptions>({ ...DEFAULT_PLAN_OPTIONS, include: [], exclude: [], via: [] });
+  /** One chain (verify, cart) or a fleet plan (several goals at once, `CcuFleet`). */
+  let planner = $state<'one' | 'fleet'>((() => {
+    try {
+      return localStorage.getItem('rsiplus:ccu:planner') === 'fleet' ? 'fleet' : 'one';
+    } catch {
+      return 'one';
+    }
+  })());
+  $effect(() => {
+    try {
+      localStorage.setItem('rsiplus:ccu:planner', planner);
+    } catch {
+      /* no persistence — fine */
+    }
+  });
   let excludeSaved = $state(true);
   let chainName = $state('');
   let saved = $state('');
@@ -76,6 +92,9 @@
   const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
+  const hulls = $derived(ownedHulls(hangar?.pledges ?? [], ships));
+  let stopPick = $state<number | null>(null);
+  const sortedShips = $derived([...ships].sort((a, b) => a.name.localeCompare(b.name)));
   const ccus = $derived(ownedCcus(hangar?.pledges ?? [], buyback?.items ?? [], ships));
   const buybackUrl = $derived(new Map((buyback?.items ?? []).map((b) => [b.id, b.url])));
 
@@ -232,8 +251,19 @@
     mode = c.startId === STORE_START ? 'store' : mine.some((s) => s.id === c.startId) ? 'hangar' : 'any';
     fromId = c.startId === STORE_START ? null : c.startId;
     toId = c.targetId;
-    opt = { ...DEFAULT_PLAN_OPTIONS, ...c.opt, include: [...c.opt.include], exclude: [...c.opt.exclude] };
+    opt = { ...DEFAULT_PLAN_OPTIONS, ...c.opt, include: [...c.opt.include], exclude: [...c.opt.exclude], via: [...(c.opt.via ?? [])] };
     excludeSaved = false;
+    planner = 'one';
+  }
+  /** A fleet goal → the single planner (same options; verify + cart live there). */
+  function openGoal(start: number, target: number, via: number[]) {
+    mode = start === STORE_START ? 'store' : mine.some((s) => s.id === start) ? 'hangar' : 'any';
+    fromId = start === STORE_START ? null : start;
+    toId = target;
+    opt.via = [...via];
+    opt.include = [];
+    planner = 'one';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   /** What the same chain settings cost today (other saved chains' CCUs excluded, this one's own allowed). */
   function now(c: SavedChain) {
@@ -342,12 +372,23 @@
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-lg font-semibold">CCU chain planner</Card.Title>
-      <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money. <em>Plan ahead</em> adds hulls nobody sells a CCU to today (at MSRP, bought when they return) for long-term goals.</Card.Description>
+      <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money. <em>Plan ahead</em> adds hulls nobody sells a CCU to today (at MSRP, bought when they return) for long-term goals. <em>Fleet plan</em> plans several ships at once without using a CCU or hull twice.</Card.Description>
+      <Card.Action>
+        <Segmented
+          options={[
+            { id: 'one', label: 'One chain', hint: 'One source → one target: verify with RSI, add to cart' },
+            { id: 'fleet', label: 'Fleet plan', hint: 'Several goals at once, near-term and long-term, sharing your CCUs and hulls' },
+          ]}
+          bind:value={planner}
+          ariaLabel="Planner"
+          size="sm"
+        />
+      </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-4">
       {#if error}<span class="text-destructive">{error}</span>{/if}
 
-      <Wizard title="Guided CCU chain" steps={guide} storageKey="ccu" doneText="The target ship is in your hangar." />
+      {#if planner === 'one'}<Wizard title="Guided CCU chain" steps={guide} storageKey="ccu" doneText="The target ship is in your hangar." />{/if}
 
       <fieldset class="border-border m-0 grid min-w-0 gap-2 rounded-lg border px-3 py-2.5">
         <legend class="text-muted-foreground px-1 text-xs">1 · Optimise for</legend>
@@ -372,6 +413,9 @@
         </span>
       </fieldset>
 
+      {#if planner === 'fleet'}
+        <CcuFleet {ships} {mine} {hulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
+      {:else}
       <div class="flex flex-wrap gap-4">
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
           <legend class="text-muted-foreground px-1 text-xs">3 · Source</legend>
@@ -393,6 +437,13 @@
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
           <legend class="text-muted-foreground px-1 text-xs">4 · Target</legend>
           <ShipSelect {ships} {mine} bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+          <div class="flex flex-wrap items-center gap-1.5 text-xs">
+            <span class="text-muted-foreground" title="Hulls the chain must pass through — to fly them for a while on the way to the target">Stops</span>
+            {#each opt.via ?? [] as v (v)}
+              <Badge variant="secondary" class="gap-1 pr-0.5">{name(v)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Remove stop ${name(v)}`} onclick={() => (opt.via = (opt.via ?? []).filter((x) => x !== v))}><X /></Button></Badge>
+            {/each}
+            <div class="w-[200px]"><ShipSelect ships={sortedShips} bind:value={stopPick} price={false} onpick={(id) => (id != null && !(opt.via ?? []).includes(id) && (opt.via = [...(opt.via ?? []), id]), (stopPick = null))} ariaLabel="Add a stop" placeholder="+ ship to fly on the way" /></div>
+          </div>
         </fieldset>
       </div>
 
@@ -502,6 +553,7 @@
           <span class="text-muted-foreground text-[11px]">Or buy by hand on the RSI <a class="text-primary underline-offset-4 hover:underline" href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
         {/if}
       {/if}
+      {/if}
     </Card.Content>
   </Card.Root>
 
@@ -519,11 +571,11 @@
                 <Table.Row><Table.Head>Name</Table.Head><Table.Head>Chain</Table.Head><Table.Head>Saved</Table.Head><Table.Head>Now</Table.Head><Table.Head></Table.Head></Table.Row>
               </Table.Header>
               <Table.Body>
-                {#each chains as c (c.id)}
+                {#each [...chains].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '')) as c (c.id)}
                   {@const p = now(c)}
                   <Table.Row>
                     {@const savedWaits = c.steps.filter((s) => s.kind === 'future').length}
-                    <Table.Cell><strong>{c.name}</strong>{#if savedWaits}<Badge variant="outline" class="border-warning/40 text-warning ml-1.5">{savedWaits} waiting</Badge>{/if}<br /><span class="text-muted-foreground text-[11px]">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
+                    <Table.Cell>{#if c.group}<span class="text-primary text-[11px]">{c.group}</span><br />{/if}<strong>{c.name}</strong>{#if savedWaits}<Badge variant="outline" class="border-warning/40 text-warning ml-1.5">{savedWaits} waiting</Badge>{/if}<br /><span class="text-muted-foreground text-[11px]">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
                     <Table.Cell class="text-[11px] whitespace-normal">{[name(c.startId), ...c.steps.map((s) => name(s.toId))].join(' → ')}</Table.Cell>
                     <Table.Cell>{usd(c.total)}<br /><span class="text-muted-foreground text-[11px]">{usd(c.cash)} new money</span></Table.Cell>
                     <Table.Cell>

@@ -6,6 +6,15 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **CCU fleet plan.** The planner has a *Fleet plan* mode for long-term goals.
+  - **Goals:** add every ship you want, near-term and long-term, in priority order. Each goal has a source (*Auto*, *My ship* or *Store*), optional *stops* (ships to fly on the way), and its own chain.
+  - **Sharing:** an earlier goal gets first pick of your CCUs and hulls. No CCU is used twice, and each hull copy you own is upgraded at most once.
+  - **Auto source:** picks the hull (or, if you allow it, a store ship) that saves most. *Never auto-upgrade* keeps ships you want to keep flying out of it.
+  - **Totals:** the plan shows pay now, later, new money and saved for all goals together, plus a list of the CCUs that are waiting for a sale and when each was last seen on sale.
+  - **Save plan:** stores one saved chain per goal under the plan's name. The Feed alerts you when a waited-for CCU appears.
+  - **Open:** loads a goal into the single planner to verify it with RSI and add it to the cart.
+  - **Stops in the single planner:** the single planner gains *Stops* too.
+- **Pre-releases.** Every push to the new `dev` branch publishes a GitHub pre-release `vX.Y.Z-dev.N`. X.Y.Z is the next version worked out from the commits; the pre-release has all four browser zips, and only the newest 10 are kept. Real version bumps still come from merging `dev` into `main`, then the release-please PR.
 - **In-game ships**: *My ships* has an *In-game ships* box — add hulls you bought with aUEC or earned in the game (they aren't on your RSI account, so the hangar can't see them), with −/+/× per line. They count as hulls everywhere paints are worked out: *Paints by ship* lists them under *I own* (marked *in-game*) with the store paints for them, *My items* stops calling their paints "no ship", the Melt calculator and Paint rebuy keep one paint copy per in-game hull too, and the Ship catalog's *owned* badge says how many are in-game. Kept in sync storage (follows your browser profile); not part of the fleet export.
 - **Fan-project notice** per the Star Citizen Fankit guidelines (2025-11-19): the *Made By The Community* badge (white on dark themes, black on light, unaltered) with "Unofficial fan tool. Not affiliated with Cloud Imperium." at the bottom of the hub sidebar, and the full notice plus the required trademark line under every hub page and in the popup.
 - **CCU planner: plan ahead for ships not on sale.** New option *Plan ahead (ships not on sale)* routes through hulls nobody sells a CCU to today at MSRP, marked *Later · wait for a sale*, so a long-term target (an event-only hull) gets a chain: *to pay now* vs *later* tiles, the hull's last-seen-on-sale date, no cart button on waiting steps, *Verify* marks them *waits for a sale*. Waiting never beats a CCU buyable today at the same price. Save the chain and the Feed alerts you (kind *Store*, opens the planner) when one of its waited-for CCUs is in the store; saved chains show *N waiting* and *on sale now* when a leg becomes buyable. The "no chain" message offers to turn the option on.

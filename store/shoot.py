@@ -148,6 +148,16 @@ def main():
                const cat = (await chrome.storage.local.get('catalog')).catalog; const t = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 30000 && x.msrp <= 60000).sort((a, b) => b.msrp - a.msrp)[0];
                await pick('From ship', 'Cutlass Black'); if (t) await pick('Target ship', t.name); await sleep(2500);
                const el = [...document.querySelectorAll('span')].find((e) => e.innerText === 'to pay now'); (el?.closest('[data-slot=card]')?.parentElement ?? document.querySelector('fieldset, [role=group]'))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -240); return t?.name; }})()"""),
+            ('ccu-fleet', '#ccu', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const cat = (await chrome.storage.local.get('catalog')).catalog; const by = (n) => cat.ships.find((x) => x.name === n);
+               const later = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 40000 && x.msrp <= 90000).sort((a, b) => b.msrp - a.msrp)[0];
+               const mid = cat.ships.filter((x) => x.ccu.length && x.msrp > 15000 && x.msrp <= 30000).sort((a, b) => b.msrp - a.msrp)[0];
+               const goals = [mid && {{ id: 'g1', fromId: null, targetId: mid.id, via: [] }}, later && {{ id: 'g2', fromId: by('Cutlass Black')?.id ?? null, targetId: later.id, via: [] }}].filter(Boolean);
+               await chrome.storage.local.set({{ ccuGoals: {{ goals, keep: [], storeStart: false }} }});
+               [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === 'Fleet plan')?.click(); await sleep(1500);
+               [...document.querySelectorAll('label')].find((l) => /Plan ahead/.test(l.innerText))?.querySelector('button, [role=checkbox]')?.click(); await sleep(800);
+               [...document.querySelectorAll('legend')].find((e) => /Goals/.test(e.innerText))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -80); }})()"""),
             ('wallet', '#wallet', {}, None),
             ('fan-footer', '#feed', {}, "window.scrollTo(0, document.body.scrollHeight); 1"),
             ('browse', '#browse', {}, f"(async () => {{ const sleep = {SLEEP}; for (let i = 0; i < 40 && !/listings · prices/.test(document.body.innerText); i++) await sleep(500); }})()"),
@@ -179,7 +189,7 @@ def main():
             time.sleep(1)
             page.js("document.head.insertAdjacentHTML('beforeend', '<style>header [title=Accounts]{display:none}</style>'); window.scrollTo(0,0); 1")
             if prep:
-                try: page.js(prep)
+                try: r = page.js(prep); r is not None and print('prep', name, r)
                 except Exception as e: print('prep failed', name, str(e)[:200])
                 time.sleep(1.5)
             data = page.call('Page.captureScreenshot', format='png', captureBeyondViewport=False)['data']
