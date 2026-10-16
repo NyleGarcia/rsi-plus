@@ -96,6 +96,9 @@
   /** Hulls on LTI pledges (LTI tokens): one click to prefer them in a fleet plan. */
   const ltiHulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => p.lti), ships).map((h) => h.id));
   let stopPick = $state<number | null>(null);
+  /** The target picker hides ships you already own unless asked. */
+  let targetOwned = $state(false);
+  const targetable = $derived(targetOwned ? ships : ships.filter((s) => !mine.some((m) => m.id === s.id) || s.id === toId));
   const sortedShips = $derived([...ships].sort((a, b) => a.name.localeCompare(b.name)));
   const ccus = $derived(ownedCcus(hangar?.pledges ?? [], buyback?.items ?? [], ships));
   const buybackUrl = $derived(new Map((buyback?.items ?? []).map((b) => [b.id, b.url])));
@@ -448,7 +451,8 @@
         </fieldset>
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
           <legend class="text-muted-foreground px-1 text-xs">4 · Target</legend>
-          <ShipSelect {ships} {mine} saleTag bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+          <ShipSelect ships={targetable} mine={targetOwned ? mine : []} saleTag bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+          <label class="text-muted-foreground flex items-center gap-2 text-xs" title="List the ships already in your hangar too"><Checkbox bind:checked={targetOwned} /> include ships I own</label>
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <span class="text-muted-foreground" title="Hulls the chain must pass through — to fly them for a while on the way to the target">Stops</span>
             {#each opt.via ?? [] as v (v)}

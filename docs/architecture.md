@@ -123,6 +123,12 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
   - Negative ids, `msrpSource: 'wiki'`, starcitizen.tools pledge cost, link to the wiki page.
   - `withExtraShips` adds them in `fetchCatalog` and on the background's cached catalog, unless RSI lists the name itself.
   - They have no SKUs, so they only appear as `future` targets. The planner shows no store link for them.
+- **Per-goal options**:
+  - `Goal.lti` (`any` / `prefer` / `only`) and `Goal.storeStart` (falls back to `FleetOptions.storeStart`; the old plan-wide value is migrated into goals on load).
+  - `ownedHulls` counts LTI copies (`lti`). `planFleet` keeps free copies split `{ lti, plain }`: LTI goals take LTI copies, others take plain ones first.
+  - Auto candidate groups: LTI hulls first for `prefer` (only those for `only`, which also never adds `STORE_START`), each split by the global `prefer` list.
+  - `FleetLeg.lti` = the upgraded copy is LTI.
+- *Want* pickers (fleet *Add a ship you want*, single *Target*) list only hulls you don't own unless *include ships I own* is ticked.
 - **Fleet `prefer`**: auto candidates are tried in two groups, preferred hulls first, within each pass (today's sales, then plan ahead). So a preferred hull that gets there beats any other hull, but never beats buying today vs waiting.
   - `ccuGoals.prefer` is stored next to `keep`.
   - *+ my LTI hulls* = `ownedHulls` of LTI pledges.

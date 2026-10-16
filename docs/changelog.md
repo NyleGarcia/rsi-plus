@@ -6,6 +6,10 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **Fleet plan: options per goal.**
+  - **Insurance:** *Any* / *Prefer LTI* / *LTI only*. A CCU keeps the pledge's insurance, so an LTI goal upgrades an LTI copy of a hull. *Any* uses a non-LTI copy first, leaving your LTI tokens for the goals that want them. The chain line shows an *LTI* badge, or *no LTI copy* when a prefer-LTI goal had to settle.
+  - **May start from a store ship:** now per goal instead of plan-wide. Your old setting is carried into existing goals, and *LTI only* never starts from the store, because a new ship has no LTI.
+- **CCU planner: the "ship you want" pickers hide ships you already own** (*Add a ship you want* and the single planner's target). Tick *include ships I own* to list them.
 - **Ship pickers read better**: two-line rows (name, then maker · price) in a wider list. The sale state is a small pill (*not on sale*, *concept*, *wiki MSRP*, with a tooltip) instead of text that squeezed the ship name out.
 - **Kraken, Kraken Privateer, Javelin and Idris-M in the planner and Ship catalog.** RSI's upgrade catalog never lists them; they're sold only in rare packages and events. RSI+ now adds them with their pledge cost from starcitizen.tools ($1,650 / $2,420 / $3,000 / $1,000), so they can be CCU goals (planned ahead at MSRP) and hangar copies match. They're tagged *not in RSI CCU list · MSRP via wiki*. Concept hulls RSI does list (Galaxy, Nautilus, Orion, Pioneer…) are plannable the same way.
 - **Fleet plan: *Prefer to upgrade*.** The counterpart of *Never auto-upgrade*: Auto upgrades one of these hulls first whenever it reaches the goal, such as cheap LTI tokens or ships you don't fly. *+ my LTI hulls* adds every hull on an LTI pledge in one click. A hull sits in only one of the two lists, and each list has *Clear all*.

@@ -163,8 +163,10 @@ def main():
                const later = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 40000 && x.msrp <= 90000).sort((a, b) => b.msrp - a.msrp)[0];
                const mid = cat.ships.filter((x) => x.ccu.length && x.msrp > 15000 && x.msrp <= 30000).sort((a, b) => b.msrp - a.msrp)[0];
                const goals = [mid && {{ id: 'g1', fromId: null, targetId: mid.id, via: [] }}, later && {{ id: 'g2', fromId: by('Cutlass Black')?.id ?? null, targetId: later.id, via: [] }}].filter(Boolean);
+               const tab = (t) => [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === t)?.click();
+               tab('One chain'); await sleep(500);
                await chrome.storage.local.set({{ ccuGoals: {{ goals, keep: [], storeStart: false }} }});
-               [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === 'Fleet plan')?.click(); await sleep(1500);
+               tab('Fleet plan'); await sleep(1500);
                [...document.querySelectorAll('label')].find((l) => /Plan ahead/.test(l.innerText))?.querySelector('button, [role=checkbox]')?.click(); await sleep(800);
                [...document.querySelectorAll('legend')].find((e) => /Goals/.test(e.innerText))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -80); }})()"""),
             ('wallet', '#wallet', {}, None),

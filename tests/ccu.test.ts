@@ -241,7 +241,7 @@ describe('plan ahead (long-term goals)', () => {
     expect(f.legs[1]!.plan!.steps.map((s) => s.kind)).toEqual(['standalone', 'future']);
     expect(f.legs[2]!.plan).toBeNull(); // Connie → Titan goes down
     expect(f.failed).toBe(1);
-    expect(ownedHulls([{ ships: ['Aurora MR'] }, { ships: ['Aurora MR', 'Cutlass Black'] }], all)).toEqual([{ id: 1, count: 2 }, { id: 3, count: 1 }]);
+    expect(ownedHulls([{ ships: ['Aurora MR'] }, { ships: ['Aurora MR', 'Cutlass Black'] }], all)).toEqual([{ id: 1, count: 2, lti: 0 }, { id: 3, count: 1, lti: 0 }]);
   });
 
   it('fleet plan: a target nothing sells today (Orion) is planned ahead even with the option off', () => {
@@ -273,5 +273,33 @@ describe('plan ahead (long-term goals)', () => {
     expect(matchShip('Kraken Privateer', all)?.name).toBe('Kraken Privateer');
     const p = plan(all, [], 4, kraken.id, o({ planAhead: true }))!;
     expect(p.steps.at(-1)).toMatchObject({ toId: kraken.id, kind: 'future', cost: 165000 - 24000 });
+  });
+
+  it('fleet plan: per-goal LTI and store start', () => {
+    const E = ship(5, 'Mustang Alpha', 2000, [], [sku('Standalone', 2000)]);
+    const all = [...ships, E];
+    // Aurora: 1 LTI + 1 plain copy; Titan: 1 plain copy
+    const hulls = [{ id: 1, count: 2, lti: 1 }, { id: 2, count: 1, lti: 0 }];
+    const goals = [
+      { id: 'plain', fromId: null, targetId: 3, via: [], lti: 'any' as const },
+      { id: 'lti', fromId: null, targetId: 4, via: [], lti: 'only' as const },
+      { id: 'store', fromId: null, targetId: 2, via: [], storeStart: true },
+    ];
+    const f = planFleet(all, [], goals, o({ warbond: false }), { hulls, prefer: [] });
+    // the "any" goal takes a plain copy, leaving the LTI Aurora for the LTI goal
+    expect(f.legs[0]!.lti).toBe(false);
+    expect(f.legs[1]).toMatchObject({ startId: 1, lti: true });
+    // the store goal may use the store, but a free hull that pays less now wins
+    expect(f.legs[2]!.plan).not.toBeNull();
+    const onlyStore = planFleet(all, [], [goals[2]!], o({}), { hulls: [] });
+    expect(onlyStore.legs[0]!.startId).toBe(STORE_START);
+    const noStore = planFleet(all, [], [{ ...goals[2]!, storeStart: false }], o({}), { hulls: [] });
+    expect(noStore.legs[0]!.plan).toBeNull();
+    // LTI only with no LTI copy → no chain, never a store start
+    const none = planFleet(all, [], [{ id: 'x', fromId: null, targetId: 4, via: [], lti: 'only' as const, storeStart: true }], o({}), { hulls: [{ id: 1, count: 1, lti: 0 }] });
+    expect(none.legs[0]!.plan).toBeNull();
+    // prefer LTI: picks the LTI copy's hull over a hull that saves more
+    const pref = planFleet(all, [], [{ id: 'p', fromId: null, targetId: 4, via: [], lti: 'prefer' as const }], o({ warbond: false }), { hulls: [{ id: 1, count: 1, lti: 0 }, { id: 2, count: 1, lti: 1 }] });
+    expect(pref.legs[0]).toMatchObject({ startId: 2, lti: true });
   });
 });

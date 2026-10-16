@@ -55,25 +55,24 @@
   let goals = $state<Goal[]>([]);
   let keep = $state<number[]>([]);
   let prefer = $state<number[]>([]);
-  let storeStart = $state(false);
   let loaded = $state(false);
   $effect(() => {
     ccuGoalsItem.getValue().then((v) => {
-      goals = v.goals;
+      // The store-start option used to be plan-wide: carry it into each goal that has none of its own.
+      goals = v.goals.map((g) => (g.storeStart === undefined ? { ...g, storeStart: v.storeStart } : g));
       keep = v.keep;
       prefer = v.prefer ?? [];
-      storeStart = v.storeStart;
       loaded = true;
     });
   });
   $effect(() => {
-    const v = { goals: $state.snapshot(goals), keep: $state.snapshot(keep), prefer: $state.snapshot(prefer), storeStart };
+    const v = { goals: $state.snapshot(goals), keep: $state.snapshot(keep), prefer: $state.snapshot(prefer), storeStart: false };
     if (loaded) ccuGoalsItem.setValue(v);
   });
 
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const name = (id: number | null) => (id == null ? 'Auto' : id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
-  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer, storeStart }));
+  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer }));
   const payNow = $derived(fleet.total - fleet.later);
   /** Every CCU the plan waits for, cheapest first: hull, which goal, planned cost, when last seen on sale. */
   const waiting = $derived(
@@ -88,12 +87,15 @@
 
   // ---- editing goals ----
   let addTo = $state<number | null>(null);
+  /** The goal picker hides ships you already own unless asked (a goal is usually a ship you don't have yet). */
+  let wantOwned = $state(false);
+  const wantable = $derived(wantOwned ? ships : ships.filter((s) => !mine.some((m) => m.id === s.id)));
   /** One-shot pickers (stops, keep): bound here and cleared after each pick so they read empty again. */
   let picks = $state<Record<string, number | null>>({});
   const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   function addGoal(id: number | null) {
     if (id == null) return;
-    goals = [...goals, { id: uid(), fromId: null, targetId: id, via: [] }];
+    goals = [...goals, { id: uid(), fromId: null, targetId: id, via: [], storeStart: false, lti: 'any' }];
     addTo = null;
   }
   const edit = (i: number, g: Partial<Goal>) => (goals = goals.map((x, j) => (j === i ? { ...x, ...g } : x)));
@@ -186,12 +188,34 @@
           {/each}
           <div class="w-[190px]"><ShipSelect ships={sortedShips} bind:value={() => picks[`via${g.id}`] ?? null, (v) => (picks[`via${g.id}`] = v)} price={false} onpick={(id) => (id != null && !g.via.includes(id) && edit(i, { via: [...g.via, id] }), (picks[`via${g.id}`] = null))} ariaLabel={`Add a stop for ${name(g.targetId)}`} placeholder="+ ship to fly on the way" /></div>
         </div>
+        {#if srcOf(g) !== 'store'}
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-muted-foreground text-xs" title="A CCU keeps the pledge's insurance: upgrade an LTI copy to end with an LTI ship">Insurance</span>
+            <Segmented
+              options={[
+                { id: 'any', label: 'Any', hint: 'Any copy; a non-LTI copy is used first so LTI copies stay free for LTI goals' },
+                { id: 'prefer', label: 'Prefer LTI', hint: 'Upgrade an LTI copy when one gets there, else any' },
+                { id: 'only', label: 'LTI only', hint: 'Only LTI copies (no store start — a new ship has no LTI)' },
+              ]}
+              value={g.lti ?? 'any'}
+              onchange={(v) => edit(i, { lti: v as Goal['lti'] })}
+              ariaLabel={`Insurance for ${name(g.targetId)}`}
+              size="sm"
+            />
+            {#if srcOf(g) === 'auto'}
+              <label class={cn('text-muted-foreground flex items-center gap-2 text-xs', g.lti === 'only' && 'opacity-50')} title="This goal may start by buying a standalone ship on sale instead of upgrading one of yours">
+                <Checkbox checked={!!g.storeStart && g.lti !== 'only'} disabled={g.lti === 'only'} onCheckedChange={(v) => edit(i, { storeStart: !!v })} /> may start from a store ship
+              </label>
+            {/if}
+          </div>
+        {/if}
         {#if leg}
           {#if !leg.plan}
-            <span class="text-destructive text-xs">No chain, even planning ahead — {leg.auto ? 'no free hull of yours is cheaper than the target' : 'not reachable from that source'}, or a stop is not between source and target.</span>
+            <span class="text-destructive text-xs">No chain, even planning ahead — {leg.auto ? `no free ${g.lti === 'only' ? 'LTI ' : ''}hull of yours is cheaper than the target` : 'not reachable from that source'}, or a stop is not between source and target.</span>
           {:else}
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
               {#if leg.auto}<Badge variant="outline" class="text-primary">auto: {name(leg.startId)}</Badge>{/if}
+              {#if leg.lti}<Badge variant="outline" class="border-warning/40 text-warning" title="Upgrades a copy on an LTI pledge — the target keeps LTI">LTI</Badge>{:else if g.lti === 'prefer' && leg.startId !== STORE_START}<Badge variant="outline" class="text-muted-foreground" title="No free LTI copy gets there — a non-LTI copy is used">no LTI copy</Badge>{/if}
               {#if leg.ahead}<Badge variant="outline" class="border-warning/40 text-warning" title="Nothing on sale today gets there — planned through CCUs at MSRP, bought when they return">planned ahead</Badge>{/if}
               <span class="text-muted-foreground">{name(leg.startId)}</span>
               {#each leg.plan.steps as s, k (k)}
@@ -207,8 +231,8 @@
       </div>
     {/each}
     <div class="flex flex-wrap items-center gap-2">
-      <div class="w-[260px]"><ShipSelect {ships} {mine} saleTag bind:value={addTo} onpick={addGoal} ariaLabel="Add a goal ship" placeholder="+ Add a ship you want…" /></div>
-      <label class="text-muted-foreground flex items-center gap-2 text-xs" title="An Auto goal may start by buying a standalone ship on sale instead of upgrading one of yours"><Checkbox bind:checked={storeStart} /> Auto may start from a store ship</label>
+      <div class="w-[260px]"><ShipSelect ships={wantable} mine={wantOwned ? mine : []} saleTag bind:value={addTo} onpick={addGoal} ariaLabel="Add a goal ship" placeholder="+ Add a ship you want…" /></div>
+      <label class="text-muted-foreground flex items-center gap-2 text-xs" title="List the ships already in your hangar too (another copy, or a goal you already reached)"><Checkbox bind:checked={wantOwned} /> include ships I own</label>
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">Never auto-upgrade</span>
