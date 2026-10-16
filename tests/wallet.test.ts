@@ -88,28 +88,18 @@ describe('personal spend', () => {
       ['paint', 20.5],
       ['gear', 10],
     ]);
-    // No currency on these saves: everything but the warbond is unknown.
     expect(spendByPayment(hangar)).toEqual([
       { key: 'warbond', label: 'Warbond', value: 20.5, count: 1 },
-      { key: 'unknown', label: 'Unknown', value: 475, count: 4 },
+      { key: 'standard', label: 'Standard', value: 475, count: 4 },
     ]);
   });
 
-  it('splits by payment: warbond, cash, store credit, unknown, free', () => {
+  it('splits by what a pledge needed: warbond, standard, free — the melt currency is ignored', () => {
     const p = (value: number, paidWith?: 'cash' | 'credit', warbond = false): Pledge => ({ ...pledge(1, value, 'May 01, 2024', 'ship', warbond), ...(paidWith ? { paidWith } : {}) });
-    expect([p(50, 'cash', true), p(50, 'credit', true), p(50, 'cash'), p(50, 'credit'), p(50), p(0, 'credit'), p(50, undefined, true)].map(paymentOf)).toEqual([
-      'warbond',
-      'credit',
-      'cash',
-      'credit',
-      'unknown',
-      'free',
-      'warbond',
-    ]);
-    expect(spendByPayment([p(0), p(30, 'credit'), p(20, 'cash'), p(10, 'cash', true), p(5, 'credit')]).map((b) => [b.key, b.value, b.count])).toEqual([
+    expect([p(50, 'credit', true), p(50, 'credit'), p(50, 'cash'), p(0, 'credit'), p(50)].map(paymentOf)).toEqual(['warbond', 'standard', 'standard', 'free', 'standard']);
+    expect(spendByPayment([p(0), p(30, 'credit'), p(10, 'credit', true)]).map((b) => [b.key, b.value, b.count])).toEqual([
       ['warbond', 10, 1],
-      ['cash', 20, 1],
-      ['credit', 35, 2],
+      ['standard', 30, 1],
       ['free', 0, 1],
     ]);
   });

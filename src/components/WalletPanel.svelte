@@ -118,7 +118,7 @@
   const byPayment = $derived(spendByPayment(all));
   const payment = $derived(Object.fromEntries(byPayment.map((b) => [b.key, b])) as Partial<Record<string, (typeof byPayment)[number]>>);
   /** New money = warbond + regular cash (store credit and $0 pledges aren't). */
-  const newMoney = $derived((payment.warbond?.value ?? 0) + (payment.cash?.value ?? 0));
+  const warbond = $derived(payment.warbond?.value ?? 0);
   const last24 = $derived(spendByMonth(all, 24).map((b) => b.value));
   const prev12 = $derived(last24.slice(0, 12).reduce((a, b) => a + b, 0));
   const this12 = $derived(last24.slice(12).reduce((a, b) => a + b, 0));
@@ -135,7 +135,7 @@
   ];
   const WIDGET_LABELS: Record<string, string> = { year: 'By year', month: 'By month', payment: 'How you paid', type: 'By type', time: 'Backing over time', facts: 'At a glance', actions: 'Quick actions' };
   const LAYOUT_KEY = 'rsiplus:spend:layout';
-  const PAY_COLORS: Record<string, string> = { warbond: '#ffb547', cash: 'var(--success)', credit: 'var(--chart-1)', unknown: 'var(--muted-foreground)', free: '#c77dff' };
+  const PAY_COLORS: Record<string, string> = { warbond: '#ffb547', standard: 'var(--chart-1)', free: '#c77dff' };
   const ACTIONS = [
     { href: '#hangar', label: 'Pledges', hint: 'refresh your hangar', icon: Wallet },
     { href: '#melt', label: 'Melt calculator', hint: 'pick what to melt', icon: Flame },
@@ -368,7 +368,7 @@
     <div class="flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-2 pb-3 text-xs">
       {#if change}
         <Badge variant="secondary" class={cn('h-5 px-1.5 text-[11px] font-semibold tabular-nums', change.pct >= 0 ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive')}>
-          <span aria-hidden="true">{change.pct >= 0 ? '↑' : '↓'}</span>{Math.abs(change.pct).toFixed(0)}%<span class="sr-only"> {change.against}</span>
+          <span aria-hidden="true">{change.pct >= 0 ? '↑' : '↓'}</span>{change.pct >= 900 ? `${Math.round(change.pct / 100 + 1)}×` : `${Math.abs(change.pct).toFixed(0)}%`}<span class="sr-only"> {change.against}</span>
         </Badge>
       {/if}
       <span class="text-muted-foreground truncate">{sub}</span>
@@ -406,14 +406,14 @@
     {#snippet b()}{@render fill(timeChart)}{/snippet}
     {@render panel('Backing over time', 'running total since your first pledge', b)}
   {:else if id === 'type'}
-    {#snippet b()}<div class="h-full overflow-auto">{@render donut('type', typeSlices, money0)}</div>{/snippet}
+    {#snippet b()}<div>{@render donut('type', typeSlices, money0)}</div>{/snippet}
     {@render panel('By type', `${byType.length} kinds of pledge`, b)}
   {:else if id === 'payment'}
-    {#snippet b()}<div class="sens h-full overflow-auto">{@render donut('payment', paymentSlices, money0, PAY_COLORS)}</div>{/snippet}
-    {@render panel('How you paid', 'warbond and cash are new money; store credit is recycled', b)}
+    {#snippet b()}<div class="sens grid gap-2">{@render donut('payment', paymentSlices, money0, PAY_COLORS)}<span class="text-muted-foreground text-[11px]">RSI's hangar doesn't say whether a standard pledge was paid with cash or store credit — only warbonds are sure to be new money.</span></div>{/snippet}
+    {@render panel('How you paid', 'warbond needs new money; standard takes cash or store credit', b)}
   {:else if id === 'facts'}
     {#snippet b()}
-      <dl class="grid h-full content-start gap-1.5 overflow-auto text-xs">
+      <dl class="grid content-start gap-1.5 text-xs">
         {#each facts as [k, v] (k)}
           <div class="flex items-baseline justify-between gap-3 border-b border-dashed pb-1.5 last:border-0">
             <dt class="text-muted-foreground truncate">{k}</dt>
@@ -425,7 +425,7 @@
     {@render panel('At a glance', '', b)}
   {:else if id === 'actions'}
     {#snippet b()}
-      <div class={cn('grid h-full content-start gap-1.5 overflow-auto', size !== 'sm' && size !== 'tall' && 'grid-cols-2')}>
+      <div class={cn('grid content-start gap-1.5', size !== 'sm' && size !== 'tall' && 'grid-cols-2')}>
         {#each ACTIONS as act (act.href)}
           <a href={act.href} class="hover:bg-muted/60 group/act flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-xs transition-colors">
             <span class="bg-muted text-muted-foreground group-hover/act:text-primary inline-flex size-7 shrink-0 items-center justify-center rounded-md"><act.icon class="size-3.5" /></span>
@@ -554,21 +554,15 @@
           )}
           {@render hero(
             Banknote,
-            'New money',
-            money0(newMoney),
-            sum.payKnown ? `${sum.value ? Math.round((100 * newMoney) / sum.value) : 0}% · warbond + cash` : 'warbond only · refresh Pledges',
+            'Warbond (new money)',
+            money0(warbond),
+            `${payment.warbond?.count ?? 0} warbond pledges · ${sum.value ? ((100 * warbond) / sum.value).toFixed(warbond && warbond < sum.value / 100 ? 1 : 0) : 0}% of melt value`,
             null,
             [],
             'muted',
           )}
           {@render hero(Rocket, 'Ships', String(tot.ships), `${tot.lti} with LTI · ${buybacks} in buyback`, null, [], 'muted')}
         </div>
-        {#if !sum.payKnown || sum.payKnown < sum.pledges - (payment.free?.count ?? 0)}
-          <div class="border-warning/30 bg-warning/5 text-muted-foreground rounded-lg border px-3 py-2 text-xs">
-            <strong class="text-foreground">{sum.payKnown ? `${payment.unknown?.count ?? 0} pledges` : 'Your saved pledges'} don't say how they were paid.</strong>
-            RSI shows cash vs store credit per pledge; your save predates RSI+ reading it. Refresh on the <a class="text-primary hover:underline" href="#hangar">Pledges</a> page to fill in <em>How you paid</em>.
-          </div>
-        {/if}
         <WidgetGrid bind:items={layout} editable={editing} labels={WIDGET_LABELS} onchange={saveLayout}>
           {#snippet widget(id: string, size: WidgetSize)}
             {@render tile(id, size)}

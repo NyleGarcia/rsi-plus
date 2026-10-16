@@ -53,11 +53,11 @@
     pledgeLabelsItem.setValue(plain);
   };
   let type = $state<PledgeType | 'all'>('all');
-  let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'cash' | 'credit' | 'named'>('');
+  let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'named'>('');
   /** Flag filter. "Meltable" means it can actually be melted for credit (Reclaim button *and* a value) — RSI puts a
    *  Reclaim button on nearly every row, $0 flair included, so the raw flag alone filtered almost nothing out. */
   const flagPass = (p: Pledge) =>
-    !flag ? true : flag === 'meltable' ? canMelt(p) : flag === 'notMeltable' ? !canMelt(p) : flag === 'cash' || flag === 'credit' ? p.paidWith === flag : flag === 'named' ? !!(p.nickname || p.reservedNames?.length) : !!p[flag];
+    !flag ? true : flag === 'meltable' ? canMelt(p) : flag === 'notMeltable' ? !canMelt(p) : flag === 'named' ? !!(p.nickname || p.reservedNames?.length) : !!p[flag];
   type Col = 'name' | 'type' | 'value' | 'date' | 'flags' | 'qty';
   let sort = $state<SortState<Col>>({ key: 'date', dir: 'desc' });
   let ctrl: AbortController | null = null;
@@ -159,8 +159,6 @@
     { value: 'upgraded', label: 'Upgraded' },
     { value: 'hasGame', label: 'Has game package' },
     { value: 'noBuyback', label: 'No buyback after melt' },
-    { value: 'cash', label: 'Paid with cash' },
-    { value: 'credit', label: 'Paid with store credit' },
     { value: 'named', label: 'Named ship' },
   ];
   /** Pledges RSI marks as never returning to buyback, among the ones picked to melt. */
@@ -675,7 +673,6 @@
                       {#if p.hasGame}<Badge variant="secondary">game</Badge>{/if}
                       {#if !p.meltable}<Badge variant="outline" class="text-muted-foreground">no melt</Badge>{/if}
                       {#if p.noBuyback}<Badge variant="outline" class="border-warning/40 text-warning" title="RSI marks this pledge as not buy-backable: melting it is final">no buyback</Badge>{/if}
-                      {#if p.paidWith === 'credit'}<Badge variant="outline" class="text-muted-foreground" title="Paid with store credit (RSI's hangar page)">credit</Badge>{/if}
                       {#if p.configValue}<Badge variant="outline" class="text-muted-foreground" title="Paid customization on top of the pledge">+{money(p.configValue)} config</Badge>{/if}
                       {#if p.availability}<Badge variant="outline" class="border-warning/40 text-warning" title="RSI's availability state for this pledge">{p.availability}</Badge>{/if}
                       {#if p.reservedNames?.length}<Badge variant="secondary" title="Ship name reserved on RSI">name: {p.reservedNames.join(', ')}</Badge>{:else if p.nameable?.length}<Badge variant="outline" class="text-muted-foreground" title="RSI lets you name this ship">nameable</Badge>{/if}

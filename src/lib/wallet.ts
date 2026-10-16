@@ -113,21 +113,18 @@ export function spendByType(pledges: Pledge[]): Bucket[] {
   return bucket(pledges, (p) => p.type).sort((a, b) => b.value - a.value);
 }
 
-export type PaymentKey = 'warbond' | 'cash' | 'credit' | 'unknown' | 'free';
-const PAYMENT_LABELS: Record<PaymentKey, string> = { warbond: 'Warbond', cash: 'Cash', credit: 'Store credit', unknown: 'Unknown', free: 'Free / gifted' };
-const PAYMENT_ORDER: PaymentKey[] = ['warbond', 'cash', 'credit', 'unknown', 'free'];
+export type PaymentKey = 'warbond' | 'standard' | 'free';
+const PAYMENT_LABELS: Record<PaymentKey, string> = { warbond: 'Warbond', standard: 'Standard', free: 'Free ($0)' };
+const PAYMENT_ORDER: PaymentKey[] = ['warbond', 'standard', 'free'];
 
 /**
- * How each pledge was paid, from RSI's per-pledge currency (`paidWith`) plus the warbond name:
- * $0 → free (subscriber flair, referral rewards, gifts with no melt value); store credit → credit (a warbond rebought
- * from buyback with credit counts as credit); otherwise a warbond → warbond (new money only); cash → regular cash;
- * no currency on the save (hangar read before RSI+ kept it) → unknown. Fixed order, empty buckets left out.
+ * What a pledge needed: $0 → free (flair, referral rewards, gifts with no melt value); warbond in the name → new money
+ * (warbond prices can't be paid with store credit); anything else → standard (cash or store credit). The hangar can't
+ * tell cash from credit: its per-pledge currency is what a melt pays out in, "Store Credit" on every pledge.
  */
 export function paymentOf(p: Pledge): PaymentKey {
   if (!(p.value > 0)) return 'free';
-  if (p.paidWith === 'credit') return 'credit';
-  if (p.warbond) return 'warbond';
-  return p.paidWith === 'cash' ? 'cash' : 'unknown';
+  return p.warbond ? 'warbond' : 'standard';
 }
 
 export function spendByPayment(pledges: Pledge[]): Bucket[] {
@@ -157,10 +154,6 @@ export interface SpendSummary {
   years: number;
   /** Average melt value per year backed (0 when unknown). */
   perYear: number;
-  /** Melt value of pledges RSI says were paid with cash / with store credit; `payKnown` = pledges carrying that field (0 on old saves). */
-  cash: number;
-  credit: number;
-  payKnown: number;
 }
 
 export function spendSummary(pledges: Pledge[], now = Date.now()): SpendSummary {
@@ -175,9 +168,6 @@ export function spendSummary(pledges: Pledge[], now = Date.now()): SpendSummary 
     since,
     years,
     perYear: years ? r2(value / years) : 0,
-    cash: r2(pledges.filter((p) => p.paidWith === 'cash').reduce((s, p) => s + p.value, 0)),
-    credit: r2(pledges.filter((p) => p.paidWith === 'credit').reduce((s, p) => s + p.value, 0)),
-    payKnown: pledges.filter((p) => p.paidWith).length,
   };
 }
 

@@ -26,6 +26,7 @@
     editable?: boolean;
     /** Accessible name per widget id. */
     labels?: Record<string, string>;
+    /** Minimum row height; a row grows to fit its tallest widget, so nothing scrolls inside a widget. */
     rowHeight?: number;
     gap?: number;
     minCol?: number;
@@ -121,7 +122,7 @@
   bind:this={grid}
   role="list"
   class="relative grid w-full"
-  style={`gap:${gap}px;grid-template-columns:repeat(${columns},minmax(0,1fr));grid-auto-rows:${rowHeight}px`}
+  style={`gap:${gap}px;grid-template-columns:repeat(${columns},minmax(0,1fr));grid-auto-rows:minmax(${rowHeight}px,auto)`}
 >
   {#each items as it (it.id)}
     {@const p = places.get(it.id)}
