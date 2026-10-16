@@ -202,7 +202,7 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 
 ## Versioning & releases
 
-- Conventional commits drive semver: `feat:` bumps minor while 0.x (`bump-minor-pre-major`), `fix:` bumps patch, `feat!:` / `BREAKING CHANGE` also bumps minor while 0.x.
+- Conventional commits drive semver while 0.x: `feat:` → minor, `fix:` / `perf:` → patch, `feat!:` / `BREAKING CHANGE` → minor (`bump-minor-pre-major: true`; `bump-patch-for-minor-pre-major` stays false, or features would only bump the patch). Other types (`docs:`, `ci:`, `chore:`) don't bump.
 - release-please opens/updates a `chore(main): release X.Y.Z` PR that bumps `package.json` (the manifest version WXT emits) and `CHANGELOG.md`.
 - Merging that PR creates tag `vX.Y.Z` and a GitHub release; the `assets` job in `release.yml` attaches `rsi-plus-X.Y.Z-chrome.zip`.
 - CI does not auto-run on the release PR with the default `GITHUB_TOKEN` (GitHub limitation); re-run manually or switch to a PAT later.
