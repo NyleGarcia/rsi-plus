@@ -178,10 +178,11 @@
         </div>
         {#if leg}
           {#if !leg.plan}
-            <span class="text-destructive text-xs">No chain — {leg.auto ? 'no free hull of yours is cheaper than the target' : 'not reachable from that source'}{opt.planAhead ? '' : '; turn on Plan ahead for ships not on sale now'}, or a stop is not between source and target.</span>
+            <span class="text-destructive text-xs">No chain, even planning ahead — {leg.auto ? 'no free hull of yours is cheaper than the target' : 'not reachable from that source'}, or a stop is not between source and target.</span>
           {:else}
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
               {#if leg.auto}<Badge variant="outline" class="text-primary">auto: {name(leg.startId)}</Badge>{/if}
+              {#if leg.ahead}<Badge variant="outline" class="border-warning/40 text-warning" title="Nothing on sale today gets there — planned through CCUs at MSRP, bought when they return">planned ahead</Badge>{/if}
               <span class="text-muted-foreground">{name(leg.startId)}</span>
               {#each leg.plan.steps as s, k (k)}
                 <span class="text-muted-foreground">→</span>
@@ -196,7 +197,7 @@
       </div>
     {/each}
     <div class="flex flex-wrap items-center gap-2">
-      <div class="w-[260px]"><ShipSelect {ships} {mine} bind:value={addTo} onpick={addGoal} ariaLabel="Add a goal ship" placeholder="+ Add a ship you want…" /></div>
+      <div class="w-[260px]"><ShipSelect {ships} {mine} saleTag bind:value={addTo} onpick={addGoal} ariaLabel="Add a goal ship" placeholder="+ Add a ship you want…" /></div>
       <label class="text-muted-foreground flex items-center gap-2 text-xs" title="An Auto goal may start by buying a standalone ship on sale instead of upgrading one of yours"><Checkbox bind:checked={storeStart} /> Auto may start from a store ship</label>
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">

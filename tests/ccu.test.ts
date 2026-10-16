@@ -232,12 +232,24 @@ describe('plan ahead (long-term goals)', () => {
   it('fleet plan: auto skips kept hulls, can buy from the store, reports failures', () => {
     const E = ship(5, 'Mustang Alpha', 2000, [], [sku('Standalone', 2000)]);
     const all = [...ships, E];
-    const goals = [{ id: 'a', fromId: null, targetId: 2, via: [] }, { id: 'b', fromId: null, targetId: 1, via: [] }];
+    const goals = [{ id: 'a', fromId: null, targetId: 2, via: [] }, { id: 'b', fromId: null, targetId: 1, via: [] }, { id: 'c', fromId: 4, targetId: 2, via: [] }];
     const f = planFleet(all, [], goals, o({}), { hulls: [{ id: 1, count: 1 }], keep: [1], storeStart: true });
-    expect(f.legs[0]).toMatchObject({ startId: STORE_START });
+    expect(f.legs[0]).toMatchObject({ startId: STORE_START, ahead: false });
     expect(f.legs[0]!.plan!.steps.map((s) => s.toId)).toEqual([5, 2]);
-    expect(f.legs[1]!.plan).toBeNull(); // Aurora: no CCU sold to it, no cheaper hull
+    // Aurora: no CCU sold to it today, the kept Aurora can't start it → store ship, then wait for an Aurora CCU
+    expect(f.legs[1]).toMatchObject({ startId: STORE_START, ahead: true });
+    expect(f.legs[1]!.plan!.steps.map((s) => s.kind)).toEqual(['standalone', 'future']);
+    expect(f.legs[2]!.plan).toBeNull(); // Connie → Titan goes down
     expect(f.failed).toBe(1);
     expect(ownedHulls([{ ships: ['Aurora MR'] }, { ships: ['Aurora MR', 'Cutlass Black'] }], all)).toEqual([{ id: 1, count: 2 }, { id: 3, count: 1 }]);
+  });
+
+  it('fleet plan: a target nothing sells today (Orion) is planned ahead even with the option off', () => {
+    const F = ship(6, 'Orion', 65000);
+    const f = planFleet([...ships, F], [], [{ id: 'o', fromId: 3, targetId: 6, via: [] }, { id: 'c', fromId: 1, targetId: 3, via: [] }], o({ planAhead: false }), { hulls: [] });
+    expect(f.legs[0]).toMatchObject({ ahead: true });
+    expect(f.legs[0]!.plan!.steps.at(-1)).toMatchObject({ toId: 6, kind: 'future' });
+    expect(f.legs[1]).toMatchObject({ ahead: false }); // on sale today → no waiting
+    expect(f.legs[1]!.plan!.waits).toBe(0);
   });
 });

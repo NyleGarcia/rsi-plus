@@ -115,6 +115,10 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
   - `PlanOptions.via` (stops) also works in the single planner. Stops and forced CCUs are walked in MSRP order.
   - Goals live in `local:ccuGoals`. *Save plan* writes one `SavedChain` per goal with `group`, replacing the same group.
   - *Open* loads a goal into the single planner for verify and cart.
+- **Auto plan-ahead**:
+  - When `plan()` with today's sales returns null and `planAhead` is off, the single planner re-plans with `planAhead: true` (`planned.ahead`, notice above the stats). The chain is saved with those options.
+  - `planFleet` does the same per goal: its second pass is tried only when no candidate source works with today's sales, so a buyable-now chain always wins. That sets `FleetLeg.ahead`.
+  - `ShipSelect saleTag` tags hulls with no available CCU / standalone SKU.
 - Not done: speculative prices (needs a price-history store), k-best alternatives, a sale calendar, a global optimum over goal order.
 ## Items (`src/lib/items.ts`)
 - Flattens `Pledge.items` → `ItemRow` (merged by category + title, with pledges and ×count). Categories from RSI item kinds (Ship, Skin, FPS Equipment → armor/weapon/fps by title, Component, Hangar decoration, Hangar, Insurance) + titles (Digital Download = game, paint/livery).

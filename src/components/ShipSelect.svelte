@@ -11,6 +11,7 @@
     ariaLabel,
     onlyMine = false,
     price = true,
+    saleTag = false,
     onpick,
   }: {
     ships: CatalogShip[];
@@ -22,13 +23,15 @@
     /** Offer only `mine` (the "ship in my hangar" source mode). */
     onlyMine?: boolean;
     price?: boolean;
+    /** Tag hulls nothing sells today (no CCU, no standalone) — "not on sale", "concept". */
+    saleTag?: boolean;
     onpick?: (id: number | null) => void;
   } = $props();
 
   const opt = (s: CatalogShip, group?: string): Option<number> => ({
     value: s.id,
     label: s.name,
-    sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : ''].filter(Boolean).join(' · '),
+    sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : '', saleTag && !s.ccu.some((k) => k.available) && !s.standalone.some((k) => k.available) ? (s.flyable === 'Concept' ? 'concept · not on sale' : 'not on sale') : ''].filter(Boolean).join(' · '),
     group,
   });
   const options = $derived.by(() => {

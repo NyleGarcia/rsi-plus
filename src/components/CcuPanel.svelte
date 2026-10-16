@@ -105,7 +105,17 @@
     exclude: excludeSaved ? [...new Set([...opt.exclude, ...reservedBy.keys()])] : opt.exclude,
   });
   const startId = $derived(mode === 'store' ? STORE_START : fromId);
-  const result = $derived(startId != null && toId != null ? plan(ships, ccus.owned, startId, toId, effective) : null);
+  /** Chain with today's sales; when there is none (target not on sale — Orion, Arrastra…) plan ahead without asking. */
+  const planned = $derived.by(() => {
+    if (startId == null || toId == null) return { result: null, ahead: false };
+    const r = plan(ships, ccus.owned, startId, toId, effective);
+    if (r || effective.planAhead) return { result: r, ahead: false };
+    const a = plan(ships, ccus.owned, startId, toId, { ...effective, planAhead: true });
+    return { result: a, ahead: !!a };
+  });
+  const result = $derived(planned.result);
+  /** The options the shown chain was planned with (saved with it). */
+  const used = $derived<PlanOptions>(planned.ahead ? { ...effective, planAhead: true } : effective);
   /** Running spend after each step. */
   const running = $derived(result ? result.steps.reduce<number[]>((acc, s) => [...acc, (acc.at(-1) ?? 0) + s.cost], []) : []);
   const creditCents = $derived(hangar?.credits ? Math.round(hangar.credits.usd * 100) : null);
@@ -240,7 +250,7 @@
       steps: $state.snapshot(result.steps),
       total: result.total,
       cash: result.cash,
-      opt: $state.snapshot(effective),
+      opt: $state.snapshot(used),
     };
     await persist([...chains, c]);
     chainName = '';
@@ -316,7 +326,7 @@
         hint: result
           ? `${steps.length} steps · pay ${usd(payNow)} now${waits ? ` · ${usd(result.later)} later (${waits} step${waits === 1 ? '' : 's'} wait for a sale)` : ''} · ${usd(result.savings)} under MSRP`
           : 'Source = a ship you own (or buy the cheapest from the store), target = the ship you want. Then pick what to optimise for.',
-        warn: startId != null && toId != null && !result ? (opt.planAhead ? 'No chain found with these options — allow buyback / warbond CCUs, or pick another source.' : 'No chain found with today\'s sales — turn on Plan ahead to route through ships that are not on sale now, or allow buyback / warbond CCUs.') : undefined,
+        warn: startId != null && toId != null && !result ? 'No chain found, not even planning ahead through ships not on sale — allow buyback / warbond CCUs, or pick a cheaper source.' : undefined,
       },
       {
         id: 'verify',
@@ -436,7 +446,7 @@
         </fieldset>
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
           <legend class="text-muted-foreground px-1 text-xs">4 · Target</legend>
-          <ShipSelect {ships} {mine} bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+          <ShipSelect {ships} {mine} saleTag bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <span class="text-muted-foreground" title="Hulls the chain must pass through — to fly them for a while on the way to the target">Stops</span>
             {#each opt.via ?? [] as v (v)}
@@ -452,9 +462,14 @@
           <p class="text-destructive m-0">
             No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
             it's not pricier than the start.
-            {#if !opt.planAhead}<button type="button" class="text-primary cursor-pointer border-0 bg-transparent p-0 underline-offset-4 hover:underline" onclick={() => (opt.planAhead = true)}>Turn on Plan ahead</button> to route through ships that are not on sale now.{/if}
+            Ships not on sale were tried too (Plan ahead) — pick a cheaper source or allow buyback / warbond CCUs.
           </p>
         {:else}
+          {#if planned.ahead}
+            <p class="border-warning/40 bg-warning/10 m-0 rounded-lg border px-3 py-2 text-sm">
+              <strong>Planned ahead.</strong> Nothing on sale today gets to the {name(toId)} — {byId.get(toId)?.ccu.length ? 'its CCUs are sold out or excluded' : 'RSI sells no CCU to it right now'}{byId.get(toId)?.flyable === 'Concept' ? ' (concept ship: CCUs and sales come with events)' : ''}. Steps marked <em>Later</em> are priced at MSRP, to buy when the CCU returns ({seen(toId)}). Save the chain and the Feed tells you when it is in the store.
+            </p>
+          {/if}
           <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
             <Stat value={usd(payNow)} label="to pay now" />
             {#if result.waits}<Stat value={usd(result.later)} label={`later · ${result.waits} step${result.waits === 1 ? '' : 's'} wait for a sale`} tone="accent" />{/if}

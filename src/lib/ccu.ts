@@ -297,6 +297,8 @@ export interface FleetLeg {
   startId: number | null;
   plan: Plan | null;
   auto: boolean;
+  /** Planned ahead although the option is off: no chain with today's sales (target not on sale — an Orion, an Arrastra). */
+  ahead: boolean;
 }
 export interface FleetPlan {
   legs: FleetLeg[];
@@ -340,19 +342,24 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
     const o: PlanOptions = { ...opt, include: [], via: goal.via, exclude: [...new Set([...opt.exclude, ...used])] };
     let startId = goal.fromId;
     let best: Plan | null = null;
-    if (startId != null) best = plan(ships, owned, startId, goal.targetId, o);
-    else {
-      const target = byId.get(goal.targetId);
-      const cands = [...free].filter(([id, n]) => n > 0 && !keep.has(id) && (byId.get(id)?.msrp ?? Infinity) < (target?.msrp ?? 0)).map(([id]) => id);
-      if (fo.storeStart) cands.push(STORE_START);
+    let ahead = false;
+    const target = byId.get(goal.targetId);
+    const cands = goal.fromId != null ? [goal.fromId] : [...free].filter(([id, n]) => n > 0 && !keep.has(id) && (byId.get(id)?.msrp ?? Infinity) < (target?.msrp ?? 0)).map(([id]) => id);
+    if (goal.fromId == null && fo.storeStart) cands.push(STORE_START);
+    // Today's sales first; only when no source gets there, plan ahead (waiting for the target's CCU to return).
+    for (const pass of o.planAhead ? [o] : [o, { ...o, planAhead: true }]) {
       for (const c of cands) {
-        const p = plan(ships, owned, c, goal.targetId, o);
+        const p = plan(ships, owned, c, goal.targetId, pass);
         if (p && (!best || better(p, best))) (best = p), (startId = c);
       }
-      if (startId != null && startId !== STORE_START) free.set(startId, free.get(startId)! - 1);
+      if (best) {
+        ahead = pass !== o;
+        break;
+      }
     }
+    if (goal.fromId == null && best && startId != null && startId !== STORE_START) free.set(startId, free.get(startId)! - 1);
     for (const r of reservedRefs(best ? [best] : [])) used.add(r);
-    legs.push({ goal, startId: best ? startId : goal.fromId, plan: best, auto: goal.fromId == null });
+    legs.push({ goal, startId: best ? startId : goal.fromId, plan: best, auto: goal.fromId == null, ahead });
   }
   const sum = (f: (p: Plan) => number) => legs.reduce((n, l) => n + (l.plan ? f(l.plan) : 0), 0);
   return { legs, total: sum((p) => p.total), cash: sum((p) => p.cash), paid: sum((p) => p.paid), later: sum((p) => p.later), waits: sum((p) => p.waits), msrpDiff: sum((p) => p.msrpDiff), savings: sum((p) => p.savings), failed: legs.filter((l) => !l.plan).length };

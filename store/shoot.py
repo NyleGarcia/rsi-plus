@@ -148,6 +148,11 @@ def main():
                const cat = (await chrome.storage.local.get('catalog')).catalog; const t = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 30000 && x.msrp <= 60000).sort((a, b) => b.msrp - a.msrp)[0];
                await pick('From ship', 'Cutlass Black'); if (t) await pick('Target ship', t.name); await sleep(2500);
                const el = [...document.querySelectorAll('span')].find((e) => e.innerText === 'to pay now'); (el?.closest('[data-slot=card]')?.parentElement ?? document.querySelector('fieldset, [role=group]'))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -240); return t?.name; }})()"""),
+            ('ccu-orion', '#ccu', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const pick = async (label, text) => {{ document.querySelector(`button[aria-label="${{label}}"]`)?.click(); await sleep(600); const inp = document.querySelector(`input[aria-label="${{label}}"]`); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, text); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(700); const opt = [...document.querySelectorAll('[role=option]')].find((o) => o.innerText.trim().startsWith(text)); opt?.click(); await sleep(800); }};
+               await pick('From ship', 'Cutlass Black'); await pick('Target ship', 'Orion'); await sleep(2000);
+               const el = [...document.querySelectorAll('strong')].find((e) => e.innerText === 'Planned ahead.'); el?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -330); }})()"""),
             ('ccu-fleet', '#ccu', {},
              f"""(async () => {{ const sleep = {SLEEP};
                const cat = (await chrome.storage.local.get('catalog')).catalog; const by = (n) => cat.ships.find((x) => x.name === n);

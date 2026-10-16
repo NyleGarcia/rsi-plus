@@ -6,6 +6,7 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **CCU planner: ships nothing sells today.** Pick an Orion, an Arrastra or any concept / event-only hull as the target and you get a chain anyway. When nothing on sale today reaches it, the planner plans ahead automatically, with a notice saying why and when the hull was last seen on sale. *Plan ahead* no longer has to be turned on first. Fleet-plan goals do the same and are marked *planned ahead*. The target pickers tag such hulls *not on sale* / *concept · not on sale*.
 - **CCU fleet plan.** The planner has a *Fleet plan* mode for long-term goals.
   - **Goals:** add every ship you want, near-term and long-term, in priority order. Each goal has a source (*Auto*, *My ship* or *Store*), optional *stops* (ships to fly on the way), and its own chain.
   - **Sharing:** an earlier goal gets first pick of your CCUs and hulls. No CCU is used twice, and each hull copy you own is upgraded at most once.
