@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
-import { ccuOverview, fleetValue, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, spendByFunding, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
+import { ccuOverview, fleetValue, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, paymentOf, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
 
 const pledge = (id: number, value: number, date: string, type: Pledge['type'] = 'ship', warbond = false): Pledge => ({
   id,
@@ -88,9 +88,29 @@ describe('personal spend', () => {
       ['paint', 20.5],
       ['gear', 10],
     ]);
-    expect(spendByFunding(hangar)).toEqual([
-      { key: 'credit', label: 'Store credit / regular', value: 475, count: 4 },
-      { key: 'warbond', label: 'Warbond (cash)', value: 20.5, count: 1 },
+    // No currency on these saves: everything but the warbond is unknown.
+    expect(spendByPayment(hangar)).toEqual([
+      { key: 'warbond', label: 'Warbond', value: 20.5, count: 1 },
+      { key: 'unknown', label: 'Unknown', value: 475, count: 4 },
+    ]);
+  });
+
+  it('splits by payment: warbond, cash, store credit, unknown, free', () => {
+    const p = (value: number, paidWith?: 'cash' | 'credit', warbond = false): Pledge => ({ ...pledge(1, value, 'May 01, 2024', 'ship', warbond), ...(paidWith ? { paidWith } : {}) });
+    expect([p(50, 'cash', true), p(50, 'credit', true), p(50, 'cash'), p(50, 'credit'), p(50), p(0, 'credit'), p(50, undefined, true)].map(paymentOf)).toEqual([
+      'warbond',
+      'credit',
+      'cash',
+      'credit',
+      'unknown',
+      'free',
+      'warbond',
+    ]);
+    expect(spendByPayment([p(0), p(30, 'credit'), p(20, 'cash'), p(10, 'cash', true), p(5, 'credit')]).map((b) => [b.key, b.value, b.count])).toEqual([
+      ['warbond', 10, 1],
+      ['cash', 20, 1],
+      ['credit', 35, 2],
+      ['free', 0, 1],
     ]);
   });
 

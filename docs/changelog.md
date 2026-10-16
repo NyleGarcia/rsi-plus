@@ -6,6 +6,8 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **Wallet → Your spend redesigned.** Four headline cards (melt value, last 12 months with change vs the year before, new money, ships) and a widget board: *Customize* lets you drag widgets around, change their size (small, wide, tall, large) or move them with Alt + arrows; *Reset* restores the default. The board fills gaps at any width, and your layout is remembered in this browser.
+- **Fix: *How you paid* replaces *Warbond vs credit*.** Uses RSI's per-pledge currency: Warbond, Cash, Store credit, Free / gifted ($0) and Unknown. Before, everything that wasn't named "Warbond" counted as store credit. Saves made before RSI+ read the currency show as Unknown until you refresh *Pledges*.
 - **Fix: CCU chains never step down in price.** An owned or buyback CCU whose target now lists at or below the ship it starts from (a price change, a name matched to the wrong hull) is no longer used; buyback ones showed as a free downgrade. Store CCUs also require the target's MSRP to be above the start.
 - **Your own labels on pledges.** On *Pledges*, a *Labels* column with a 🏷 button on every row: tick a preset or type your own label. Stacked rows label every copy; unstack to label just one. Filter the list by label, and *My ships* shows each hull's labels. Presets that drive the planners:
   - **Keep:** the melt calculator's *Pick duplicates* / target planner never pick it, and a fleet plan never auto-upgrades its hull copy.

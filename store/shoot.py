@@ -24,7 +24,8 @@ random.seed(7)
 def day(y, m, d): return date(y, m, d).strftime('%B %d, %Y')
 def pledge(id, name, value, when, type, items, ships, *, lti=False, ins='', wb=False, gift=True, melt=True, game=False, up=False, upgrade=None, nick=''):
     return dict(id=id, name=name, value=value, date=when, type=type, items=items, ships=ships, upgrade=upgrade, lti=lti,
-                insurance=ins or ('LTI' if lti else ''), warbond=wb, giftable=gift, meltable=melt, hasGame=game, upgraded=up, nickname=nick, page=1 + id // 50)
+                insurance=ins or ('LTI' if lti else ''), warbond=wb, giftable=gift, meltable=melt, hasGame=game, upgraded=up, nickname=nick, page=1 + id // 50,
+                **({'paidWith': 'cash' if wb or id % 3 == 0 else 'credit'} if value > 0 else {}))
 S = lambda t: dict(title=t, kind='Ship')
 P = lambda t: dict(title=t, kind='Paints')
 I = lambda t, k='Item': dict(title=t, kind=k)
@@ -185,6 +186,10 @@ def main():
                [...document.querySelectorAll('label')].find((l) => /Plan ahead/.test(l.innerText))?.querySelector('button, [role=checkbox]')?.click(); await sleep(800);
                [...document.querySelectorAll('legend')].find((e) => /Goals/.test(e.innerText))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -80); }})()"""),
             ('wallet', '#wallet', {}, None),
+            ('wallet-spend', '#wallet', {},
+             f"""(async () => {{ const sleep = {SLEEP}; await sleep(1500); const h = [...document.querySelectorAll('[data-slot=card-title]')].find((e) => e.innerText === 'Your spend'); h?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -16); }})()"""),
+            ('wallet-edit', '#wallet', {},
+             f"""(async () => {{ const sleep = {SLEEP}; await sleep(1200); const btn = {BTN}; btn('Customize')?.click(); await sleep(500); const h = [...document.querySelectorAll('[data-slot=card-title]')].find((e) => e.innerText === 'Your spend'); h?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, 330); }})()"""),
             ('fan-footer', '#feed', {}, "window.scrollTo(0, document.body.scrollHeight); 1"),
             ('browse', '#browse', {}, f"(async () => {{ const sleep = {SLEEP}; for (let i = 0; i < 40 && !/listings · prices/.test(document.body.innerText); i++) await sleep(500); }})()"),
             ('store', '#store', {}, f"(async () => {{ const sleep = {SLEEP}; [...document.querySelectorAll('th button, th [role=button]')].find((b) => /Discount/.test(b.innerText))?.click(); await sleep(400); }})()"),

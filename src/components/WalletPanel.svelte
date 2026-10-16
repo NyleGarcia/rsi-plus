@@ -4,9 +4,21 @@
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem } from '@/lib/settings';
   import type { CatalogShip } from '@/lib/store';
-  import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByFunding, spendByMonth, spendByType, spendByYear, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
+  import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
   import { AreaChart, BarChart, PieChart } from 'layerchart';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import Wallet from '@lucide/svelte/icons/wallet';
+  import CalendarRange from '@lucide/svelte/icons/calendar-range';
+  import Banknote from '@lucide/svelte/icons/banknote';
+  import Rocket from '@lucide/svelte/icons/rocket';
+  import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import Check from '@lucide/svelte/icons/check';
+  import Flame from '@lucide/svelte/icons/flame';
+  import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import WidgetGrid from './WidgetGrid.svelte';
+  import { mergeLayout, type WidgetItem, type WidgetSize } from '@/lib/widgets';
   import { Button } from '@/components/ui/button';
   import * as Card from '@/components/ui/card';
   import * as Chart from '@/components/ui/chart';
@@ -16,6 +28,8 @@
   import Stat from './Stat.svelte';
   import ConciergeCard from './ConciergeCard.svelte';
   import { own, ownMoney } from '@/lib/privacy.svelte';
+  import { Badge } from '@/components/ui/badge';
+  import type { Snippet } from 'svelte';
 
   type Saved = NonNullable<Awaited<ReturnType<typeof hangarItem.getValue>>>;
   let hangar = $state<Saved | null>(null);
@@ -101,7 +115,61 @@
   let months = $state(24);
   const byMonth = $derived(spendByMonth(all, months));
   const byType = $derived(spendByType(all));
-  const byFunding = $derived(spendByFunding(all));
+  const byPayment = $derived(spendByPayment(all));
+  const payment = $derived(Object.fromEntries(byPayment.map((b) => [b.key, b])) as Partial<Record<string, (typeof byPayment)[number]>>);
+  /** New money = warbond + regular cash (store credit and $0 pledges aren't). */
+  const newMoney = $derived((payment.warbond?.value ?? 0) + (payment.cash?.value ?? 0));
+  const last24 = $derived(spendByMonth(all, 24).map((b) => b.value));
+  const prev12 = $derived(last24.slice(0, 12).reduce((a, b) => a + b, 0));
+  const this12 = $derived(last24.slice(12).reduce((a, b) => a + b, 0));
+
+  // ---- spend widgets: order + size per viewer (localStorage), rearranged in "Customize" mode ----
+  const WIDGETS: WidgetItem[] = [
+    { id: 'year', size: 'wide' },
+    { id: 'month', size: 'wide' },
+    { id: 'payment', size: 'wide' },
+    { id: 'type', size: 'wide' },
+    { id: 'time', size: 'wide' },
+    { id: 'facts', size: 'sm' },
+    { id: 'actions', size: 'sm' },
+  ];
+  const WIDGET_LABELS: Record<string, string> = { year: 'By year', month: 'By month', payment: 'How you paid', type: 'By type', time: 'Backing over time', facts: 'At a glance', actions: 'Quick actions' };
+  const LAYOUT_KEY = 'rsiplus:spend:layout';
+  const PAY_COLORS: Record<string, string> = { warbond: '#ffb547', cash: 'var(--success)', credit: 'var(--chart-1)', unknown: 'var(--muted-foreground)', free: '#c77dff' };
+  const ACTIONS = [
+    { href: '#hangar', label: 'Pledges', hint: 'refresh your hangar', icon: Wallet },
+    { href: '#melt', label: 'Melt calculator', hint: 'pick what to melt', icon: Flame },
+    { href: '#buyback', label: 'Buyback', hint: 'what you can rebuy', icon: ArchiveRestore },
+    { href: '#ccu', label: 'CCU planner', hint: 'cheapest upgrade chains', icon: Pencil },
+  ];
+  let layout = $state<WidgetItem[]>(
+    mergeLayout(
+      (() => {
+        try {
+          return JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? 'null');
+        } catch {
+          return null;
+        }
+      })(),
+      WIDGETS,
+    ),
+  );
+  let editing = $state(false);
+  function saveLayout(next: WidgetItem[]) {
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
+    } catch {
+      /* private window: layout just isn't remembered */
+    }
+  }
+  function resetLayout() {
+    layout = WIDGETS.map((w) => ({ ...w }));
+    try {
+      localStorage.removeItem(LAYOUT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
   const share = $derived(funding ? shareOfFunding(sum.value, funding.funds) : 0);
   /** Running total of melt value by month over the whole backing history (for the cumulative line). */
   const cumulative = $derived.by(() => {
@@ -138,6 +206,15 @@
   const delta = $derived(period && prev && prev.usd > 0 ? ((period.usd - prev.usd) / prev.usd) * 100 : null);
   const shown = $derived(funding ? funding.points.reduce((s, p) => s + p.usd, 0) : 0);
   const fstats = $derived(funding ? fundingStats(funding) : null);
+  const facts = $derived<[string, string][]>([
+    ['Backing since', sum.since ? `${new Date(sum.since).getFullYear()} · ${sum.years} yr` : '—'],
+    ['Per year', money0(sum.perYear)],
+    ['Pledges', String(sum.pledges)],
+    ['Average pledge', sum.pledges ? money0(sum.value / sum.pledges) : '—'],
+    ['Ships · LTI', `${tot.ships} · ${tot.lti}`],
+    ['In buyback', String(buybacks)],
+    ...(funding ? ([['Share of all funding', share ? `${share.toPrecision(2)}%` : '—']] as [string, string][]) : []),
+  ]);
 
   // ---- charts (LayerChart) ----
   /** One bar: `key` is unique (x domain), `label` is what the axis shows, `last` = running period (yellow). */
@@ -164,7 +241,7 @@
   const monthBars = $derived<BarPoint[]>(byMonth.map((b) => ({ key: b.key, label: months > 12 ? (b.key.endsWith('-01') ? b.key.slice(0, 4) : b.label) : b.label, value: b.value, hint: `${b.key} · ${plural(b.count)}` })));
   const fundingBars = $derived<BarPoint[]>(funding ? funding.points.map((p, i, a) => ({ key: p.key, label: p.label, value: p.usd, hint: p.key, last: i === a.length - 1 })) : []);
   const typeSlices = $derived<Slice[]>(byType.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
-  const fundingSlices = $derived<Slice[]>(byFunding.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
+  const paymentSlices = $derived<Slice[]>(byPayment.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
   /** Running total as dated points for the big area chart. */
   const cumulativeDated = $derived(cumulative.map((c) => ({ date: new Date(Number(c.key.slice(0, 4)), Number(c.key.slice(5, 7)) - 1, 1), key: c.key, value: c.value })));
   /** Hovered donut slice per chart (legend row or arc): the others dim, the centre shows its share. */
@@ -179,7 +256,7 @@
     <div class="text-muted-foreground py-3 text-xs">No data for this range.</div>
   {:else}
     {@const byKey = new Map(points.map((p) => [p.key, p]))}
-    <Chart.Container config={barConfig} class="aspect-auto w-full" style={`height:${height}px`} role="img" aria-label={points.map((p) => `${p.label}: ${fmt(p.value)}`).join(', ')}>
+    <Chart.Container config={barConfig} class="aspect-auto w-full" style={height ? `height:${height}px` : 'height:100%'} role="img" aria-label={points.map((p) => `${p.label}: ${fmt(p.value)}`).join(', ')}>
       <BarChart
         data={points}
         x="key"
@@ -214,7 +291,8 @@
   {/if}
 {/snippet}
 
-{#snippet donut(id: string, slices: Slice[], fmt: (n: number) => string)}
+{#snippet donut(id: string, slices: Slice[], fmt: (n: number) => string, colors: Record<string, string> = {})}
+  {@const color = (s: Slice, i: number) => colors[s.key] ?? PALETTE[i % PALETTE.length]}
   {@const total = slices.reduce((s, x) => s + x.value, 0)}
   {#if !slices.length || total <= 0}
     <div class="text-muted-foreground py-3 text-xs">Nothing to chart.</div>
@@ -225,14 +303,14 @@
     {@const data = slices.map((s, i) => ({
       ...s,
       props: {
-        fill: PALETTE[i % PALETTE.length],
+        fill: color(s, i),
         opacity: on == null || on === s.key ? 1 : 0.35,
         onpointerenter: () => (hot[id] = s.key),
         onpointerleave: () => (hot[id] = null),
       },
     }))}
-    <div class="flex flex-wrap items-center gap-4">
-      <div class="relative size-[132px] shrink-0">
+    <div class="flex flex-wrap items-start gap-x-6 gap-y-3">
+      <div class="relative size-[124px] shrink-0">
         <Chart.Container config={{}} class="aspect-square size-full" role="img" aria-label={slices.map((s) => `${s.label} ${pct(s.value)}`).join(', ')}>
           <PieChart {data} key="key" label="label" value="value" innerRadius={0.68} padAngle={0.015} cornerRadius={2}>
             {#snippet tooltip()}
@@ -254,7 +332,7 @@
           {#if cur}<span class="text-muted-foreground max-w-20 truncate text-[10px] capitalize">{cur.label}</span>{/if}
         </div>
       </div>
-      <ul class="grid min-w-[200px] flex-1 gap-1 text-xs" onmouseleave={() => (hot[id] = null)}>
+      <ul class="grid max-w-[380px] min-w-[180px] flex-1 gap-1 text-xs" onmouseleave={() => (hot[id] = null)}>
         {#each slices as s, i (s.key)}
           <li class={cn('transition-opacity', on != null && on !== s.key && 'opacity-45')}>
             <button
@@ -266,7 +344,7 @@
               onfocus={() => (hot[id] = s.key)}
               onblur={() => (hot[id] = null)}
             >
-              <i class="size-2.5 rounded-[3px]" style={`background:${PALETTE[i % PALETTE.length]}`}></i>
+              <i class="size-2.5 rounded-[3px]" style={`background:${color(s, i)}`}></i>
               <span class="truncate capitalize">{s.label}</span>
               <span class="text-muted-foreground tabular-nums">{fmt(s.value)}</span>
               <span class="text-muted-foreground min-w-[42px] text-right tabular-nums">{pct(s.value)}</span>
@@ -275,6 +353,120 @@
         {/each}
       </ul>
     </div>
+  {/if}
+{/snippet}
+
+{#snippet hero(Icon: typeof Wallet, title: string, value: string, sub: string, change: { pct: number; against: string } | null, trend: number[], tone: 'auto' | 'accent' | 'muted')}
+  <Card.Root class="gap-0 overflow-hidden rounded-xl py-0 shadow-none">
+    <div class="flex items-start justify-between gap-3 px-4 pt-4">
+      <div class="grid min-w-0 gap-1">
+        <span class="text-muted-foreground text-xs font-medium">{title}</span>
+        <strong class="text-2xl leading-none font-semibold tracking-tight tabular-nums">{value}</strong>
+      </div>
+      <span class="bg-primary/10 text-primary inline-flex size-9 shrink-0 items-center justify-center rounded-lg"><Icon class="size-[18px]" /></span>
+    </div>
+    <div class="flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-2 pb-3 text-xs">
+      {#if change}
+        <Badge variant="secondary" class={cn('h-5 px-1.5 text-[11px] font-semibold tabular-nums', change.pct >= 0 ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive')}>
+          <span aria-hidden="true">{change.pct >= 0 ? '↑' : '↓'}</span>{Math.abs(change.pct).toFixed(0)}%<span class="sr-only"> {change.against}</span>
+        </Badge>
+      {/if}
+      <span class="text-muted-foreground truncate">{sub}</span>
+    </div>
+    {#if trend.length > 1}<div class="-mt-1 px-1 pb-1">{@render spark(trend, tone)}</div>{/if}
+  </Card.Root>
+{/snippet}
+
+{#snippet panel(title: string, sub: string, body: Snippet, aside?: Snippet)}
+  <Card.Root class="flex h-full min-w-0 flex-col gap-2 overflow-hidden rounded-xl py-3.5 shadow-none">
+    <div class="flex min-h-7 flex-wrap items-start justify-between gap-2 px-4">
+      <div class="grid min-w-0 gap-0.5">
+        <h3 class="text-sm leading-none font-semibold">{title}</h3>
+        {#if sub}<span class="text-muted-foreground truncate text-[11.5px]">{sub}</span>{/if}
+      </div>
+      {#if aside}{@render aside()}{/if}
+    </div>
+    <div class="relative min-h-0 flex-1 px-4">{@render body()}</div>
+  </Card.Root>
+{/snippet}
+
+{#snippet fill(content: Snippet)}
+  <div class="absolute inset-0 px-2">{@render content()}</div>
+{/snippet}
+
+{#snippet tile(id: string, size: WidgetSize)}
+  {#if id === 'year'}
+    {#snippet b()}{@render fill(yearChart)}{/snippet}
+    {@render panel('By year', 'melt value per year pledged', b)}
+  {:else if id === 'month'}
+    {#snippet b()}{@render fill(monthChart)}{/snippet}
+    {#snippet a()}<Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />{/snippet}
+    {@render panel('By month', `last ${months} months`, b, a)}
+  {:else if id === 'time'}
+    {#snippet b()}{@render fill(timeChart)}{/snippet}
+    {@render panel('Backing over time', 'running total since your first pledge', b)}
+  {:else if id === 'type'}
+    {#snippet b()}<div class="h-full overflow-auto">{@render donut('type', typeSlices, money0)}</div>{/snippet}
+    {@render panel('By type', `${byType.length} kinds of pledge`, b)}
+  {:else if id === 'payment'}
+    {#snippet b()}<div class="sens h-full overflow-auto">{@render donut('payment', paymentSlices, money0, PAY_COLORS)}</div>{/snippet}
+    {@render panel('How you paid', 'warbond and cash are new money; store credit is recycled', b)}
+  {:else if id === 'facts'}
+    {#snippet b()}
+      <dl class="grid h-full content-start gap-1.5 overflow-auto text-xs">
+        {#each facts as [k, v] (k)}
+          <div class="flex items-baseline justify-between gap-3 border-b border-dashed pb-1.5 last:border-0">
+            <dt class="text-muted-foreground truncate">{k}</dt>
+            <dd class="font-medium tabular-nums">{v}</dd>
+          </div>
+        {/each}
+      </dl>
+    {/snippet}
+    {@render panel('At a glance', '', b)}
+  {:else if id === 'actions'}
+    {#snippet b()}
+      <div class={cn('grid h-full content-start gap-1.5 overflow-auto', size !== 'sm' && size !== 'tall' && 'grid-cols-2')}>
+        {#each ACTIONS as act (act.href)}
+          <a href={act.href} class="hover:bg-muted/60 group/act flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-xs transition-colors">
+            <span class="bg-muted text-muted-foreground group-hover/act:text-primary inline-flex size-7 shrink-0 items-center justify-center rounded-md"><act.icon class="size-3.5" /></span>
+            <span class="grid min-w-0"><strong class="truncate font-medium">{act.label}</strong><span class="text-muted-foreground truncate text-[11px]">{act.hint}</span></span>
+          </a>
+        {/each}
+      </div>
+    {/snippet}
+    {@render panel('Quick actions', '', b)}
+  {/if}
+{/snippet}
+
+{#snippet yearChart()}<div class="sens h-full">{@render bars(yearBars, short, 0, 'Melt value')}</div>{/snippet}
+{#snippet monthChart()}<div class="sens h-full">{@render bars(monthBars, short, 0, 'Melt value')}</div>{/snippet}
+{#snippet timeChart()}
+  {#if cumulativeDated.length > 1}
+    <Chart.Container config={{ value: { label: 'Running total', color: 'var(--chart-1)' } }} class="sens aspect-auto h-full w-full">
+      <AreaChart
+        data={cumulativeDated}
+        x="date"
+        series={[{ key: 'value', label: 'Running total', value: 'value', color: 'var(--color-value)' }]}
+        padding={{ top: 8, right: 8, bottom: 20, left: 44 }}
+        grid={{ x: false, y: true }}
+        props={{
+          area: { fillOpacity: 0.25, line: { strokeWidth: 2 } },
+          xAxis: { format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), ticks: 6, tickOcclusion: true },
+          yAxis: { format: (n: number) => (n ? short(n) : '0'), ticks: 3 },
+        }}
+      >
+        {#snippet tooltip()}
+          <Chart.Tooltip labelFormatter={(d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} indicator="line">
+            {#snippet formatter({ value, name })}
+              <div class="flex w-full items-center justify-between gap-3">
+                <span class="text-muted-foreground">{name}</span>
+                <span class="text-foreground font-mono font-medium tabular-nums">{money0(Number(value))}</span>
+              </div>
+            {/snippet}
+          </Chart.Tooltip>
+        {/snippet}
+      </AreaChart>
+    </Chart.Container>
   {/if}
 {/snippet}
 
@@ -336,88 +528,52 @@
           Load your hangar on the <a class="text-primary hover:underline" href="#hangar">Pledges</a> page first.
         {/if}
       </Card.Description>
+      {#if all.length}
+        <Card.Action class="flex flex-wrap items-center gap-2">
+          {#if editing}
+            <Button variant="ghost" size="sm" onclick={resetLayout}><RotateCcw /> Reset</Button>
+            <Button size="sm" onclick={() => (editing = false)}><Check /> Done</Button>
+          {:else}
+            <Button variant="outline" size="sm" onclick={() => (editing = true)}><LayoutDashboard /> Customize</Button>
+          {/if}
+        </Card.Action>
+      {/if}
     </Card.Header>
     {#if all.length}
       <Card.Content class="grid gap-4">
-        <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
-          <Stat value={money(sum.value)} label={`${sum.pledges} pledges`}>{@render spark(cumulative.map((c) => c.value), 'accent')}</Stat>
-          <Stat value={money(sum.warbond)} label={`warbond (${sum.value ? Math.round((100 * sum.warbond) / sum.value) : 0}%)`} />
-          {#if sum.payKnown}
-            <Stat value={money(sum.cash)} label={`paid with cash${sum.payKnown < sum.pledges ? ` · ${sum.pledges - sum.payKnown} unknown` : ''}`} />
-            <Stat value={money(sum.credit)} label="paid with store credit" />
-          {/if}
-          <Stat value={sum.since ? new Date(sum.since).getFullYear() : '—'} label={`backing since${sum.years ? ` · ${sum.years} yr` : ''}`} />
-          <Stat value={money0(sum.perYear)} label="per year">{@render spark(byYear.filter((b) => b.key !== '?').map((b) => b.value), 'muted')}</Stat>
-          <Stat value={money0(last12.reduce((a, b) => a + b, 0))} label="last 12 months">{@render spark(last12, 'auto')}</Stat>
-          <Stat value={tot.ships} label={`ships · ${tot.lti} LTI`} />
-          <Stat value={buybacks} label="in buyback" />
-          {#if funding}<Stat value={share ? `${share.toPrecision(2)}%` : '—'} label="of all funding ever" />{/if}
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {@render hero(Wallet, 'Hangar melt value', money(sum.value), `${sum.pledges} pledges · since ${sum.since ? new Date(sum.since).getFullYear() : '—'}`, null, cumulative.map((c) => c.value), 'accent')}
+          {@render hero(
+            CalendarRange,
+            'Last 12 months',
+            money0(this12),
+            `${money0(sum.perYear)} a year on average`,
+            prev12 > 0 ? { pct: ((this12 - prev12) / prev12) * 100, against: 'vs the 12 months before' } : null,
+            last12,
+            'auto',
+          )}
+          {@render hero(
+            Banknote,
+            'New money',
+            money0(newMoney),
+            sum.payKnown ? `${sum.value ? Math.round((100 * newMoney) / sum.value) : 0}% · warbond + cash` : 'warbond only · refresh Pledges',
+            null,
+            [],
+            'muted',
+          )}
+          {@render hero(Rocket, 'Ships', String(tot.ships), `${tot.lti} with LTI · ${buybacks} in buyback`, null, [], 'muted')}
         </div>
-        <div class="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] items-start gap-4">
-          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
-            <Card.Content class="grid gap-1.5">
-              <h3 class="text-muted-foreground text-[13px] font-semibold">By year</h3>
-              <div class="sens">{@render bars(yearBars, short, 200, 'Melt value')}</div>
-            </Card.Content>
-          </Card.Root>
-          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
-            <Card.Content class="grid gap-1.5">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="text-muted-foreground text-[13px] font-semibold">By month</h3>
-                <Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />
-              </div>
-              <div class="sens">{@render bars(monthBars, short, 200, 'Melt value')}</div>
-            </Card.Content>
-          </Card.Root>
-          <Card.Root size="sm" class="col-span-full min-w-0 gap-1.5 shadow-none">
-            <Card.Content class="grid gap-1.5">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="text-muted-foreground text-[13px] font-semibold">Backing over time</h3>
-                <span class="text-muted-foreground text-xs">running total of melt value, by month since your first pledge</span>
-              </div>
-              {#if cumulativeDated.length > 1}
-                <Chart.Container config={{ value: { label: 'Running total', color: 'var(--chart-1)' } }} class="sens aspect-auto h-[140px] w-full">
-                  <AreaChart
-                    data={cumulativeDated}
-                    x="date"
-                    series={[{ key: 'value', label: 'Running total', value: 'value', color: 'var(--color-value)' }]}
-                    padding={{ top: 8, right: 8, bottom: 20, left: 44 }}
-                    grid={{ x: false, y: true }}
-                    props={{
-                      area: { fillOpacity: 0.25, line: { strokeWidth: 2 } },
-                      xAxis: { format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), ticks: 6, tickOcclusion: true },
-                      yAxis: { format: (n: number) => (n ? short(n) : '0'), ticks: 3 },
-                    }}
-                  >
-                    {#snippet tooltip()}
-                      <Chart.Tooltip labelFormatter={(d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} indicator="line">
-                        {#snippet formatter({ value, name })}
-                          <div class="flex w-full items-center justify-between gap-3">
-                            <span class="text-muted-foreground">{name}</span>
-                            <span class="text-foreground font-mono font-medium tabular-nums">{money0(Number(value))}</span>
-                          </div>
-                        {/snippet}
-                      </Chart.Tooltip>
-                    {/snippet}
-                  </AreaChart>
-                </Chart.Container>
-              {/if}
-            </Card.Content>
-          </Card.Root>
-          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
-            <Card.Content class="grid gap-1.5">
-              <h3 class="text-muted-foreground text-[13px] font-semibold">By type</h3>
-              {@render donut('type', typeSlices, money0)}
-            </Card.Content>
-          </Card.Root>
-          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
-            <Card.Content class="grid gap-1.5">
-              <h3 class="text-muted-foreground text-[13px] font-semibold">Warbond vs credit</h3>
-              {@render donut('funding', fundingSlices, money0)}
-              <span class="text-muted-foreground text-xs">Warbond pledges needed new money; the rest could have been bought with store credit (RSI doesn't say which were).</span>
-            </Card.Content>
-          </Card.Root>
-        </div>
+        {#if !sum.payKnown || sum.payKnown < sum.pledges - (payment.free?.count ?? 0)}
+          <div class="border-warning/30 bg-warning/5 text-muted-foreground rounded-lg border px-3 py-2 text-xs">
+            <strong class="text-foreground">{sum.payKnown ? `${payment.unknown?.count ?? 0} pledges` : 'Your saved pledges'} don't say how they were paid.</strong>
+            RSI shows cash vs store credit per pledge; your save predates RSI+ reading it. Refresh on the <a class="text-primary hover:underline" href="#hangar">Pledges</a> page to fill in <em>How you paid</em>.
+          </div>
+        {/if}
+        <WidgetGrid bind:items={layout} editable={editing} labels={WIDGET_LABELS} onchange={saveLayout}>
+          {#snippet widget(id: string, size: WidgetSize)}
+            {@render tile(id, size)}
+          {/snippet}
+        </WidgetGrid>
       </Card.Content>
     {/if}
   </Card.Root>

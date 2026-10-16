@@ -113,9 +113,26 @@ export function spendByType(pledges: Pledge[]): Bucket[] {
   return bucket(pledges, (p) => p.type).sort((a, b) => b.value - a.value);
 }
 
-/** Warbond (new money) vs store-credit pledges. */
-export function spendByFunding(pledges: Pledge[]): Bucket[] {
-  return bucket(pledges, (p) => (p.warbond ? 'warbond' : 'credit'), { warbond: 'Warbond (cash)', credit: 'Store credit / regular' });
+export type PaymentKey = 'warbond' | 'cash' | 'credit' | 'unknown' | 'free';
+const PAYMENT_LABELS: Record<PaymentKey, string> = { warbond: 'Warbond', cash: 'Cash', credit: 'Store credit', unknown: 'Unknown', free: 'Free / gifted' };
+const PAYMENT_ORDER: PaymentKey[] = ['warbond', 'cash', 'credit', 'unknown', 'free'];
+
+/**
+ * How each pledge was paid, from RSI's per-pledge currency (`paidWith`) plus the warbond name:
+ * $0 → free (subscriber flair, referral rewards, gifts with no melt value); store credit → credit (a warbond rebought
+ * from buyback with credit counts as credit); otherwise a warbond → warbond (new money only); cash → regular cash;
+ * no currency on the save (hangar read before RSI+ kept it) → unknown. Fixed order, empty buckets left out.
+ */
+export function paymentOf(p: Pledge): PaymentKey {
+  if (!(p.value > 0)) return 'free';
+  if (p.paidWith === 'credit') return 'credit';
+  if (p.warbond) return 'warbond';
+  return p.paidWith === 'cash' ? 'cash' : 'unknown';
+}
+
+export function spendByPayment(pledges: Pledge[]): Bucket[] {
+  const m = new Map(bucket(pledges, paymentOf, PAYMENT_LABELS).map((b) => [b.key, b]));
+  return PAYMENT_ORDER.flatMap((k) => m.get(k) ?? []);
 }
 
 function bucket(pledges: Pledge[], keyOf: (p: Pledge) => string | PledgeType, labels: Record<string, string> = {}): Bucket[] {
