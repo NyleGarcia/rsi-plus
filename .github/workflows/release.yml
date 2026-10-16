@@ -1,4 +1,4 @@
-# Release: release-please opens the release PR; on merge, attach the Chrome, Edge and Firefox zips (+ Firefox sources zip).
+# Release: release-please opens the release PR; on merge, attach the Chrome, Edge, Brave and Firefox zips (+ Firefox sources zip).
 name: Release
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [chrome, edge, firefox]
+        target: [chrome, edge, brave, firefox]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

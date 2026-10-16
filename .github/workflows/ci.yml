@@ -1,4 +1,4 @@
-# CI: type-check, test, then build and zip the extension for chrome, edge and firefox (Brave uses the Chrome zip).
+# CI: type-check, test, then build and zip the extension for chrome, edge, brave and firefox.
 name: CI
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [chrome, edge, firefox]
+        target: [chrome, edge, brave, firefox]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
