@@ -6,6 +6,7 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **Fix: CCU chains never step down in price.** An owned or buyback CCU whose target now lists at or below the ship it starts from (a price change, a name matched to the wrong hull) is no longer used; buyback ones showed as a free downgrade. Store CCUs also require the target's MSRP to be above the start.
 - **Your own labels on pledges.** On *Pledges*, a *Labels* column with a 🏷 button on every row: tick a preset or type your own label. Stacked rows label every copy; unstack to label just one. Filter the list by label, and *My ships* shows each hull's labels. Presets that drive the planners:
   - **Keep:** the melt calculator's *Pick duplicates* / target planner never pick it, and a fleet plan never auto-upgrades its hull copy.
   - **LTI token / CCU fodder:** a fleet plan's *Auto* upgrades these hulls first (shown as *+ from labels* next to *Prefer to upgrade*).

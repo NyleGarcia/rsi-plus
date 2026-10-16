@@ -1,7 +1,7 @@
 /**
  * Cheapest CCU chain to a target ship, from a ship you own, any ship, or a ship bought from the store.
  * Edges out of ship A (msrp in cents):
- * - store: every on-sale CCU SKU of ship B with sku.price > msrp(A) → cost sku.price − msrp(A)
+ * - store: every on-sale CCU SKU of ship B with sku.price > msrp(A) and msrp(B) > msrp(A) → cost sku.price − msrp(A)
  *   (warbond SKUs need new money; standard/limited can be paid with store credit);
  * - owned: a CCU in your hangar A→B → cost 0 now; `paid` = its melt value (what it cost you);
  * - buyback (optional): a melted CCU A→B → cost ≈ msrp(B) − msrp(A) (buyback price; credit or cash);
@@ -168,16 +168,19 @@ function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeS
     if (!a) return [];
     const out: Step[] = [];
     for (const o of offers) {
-      if (o.to.id === a.id || o.price <= a.msrp) continue;
+      // RSI only sells CCUs up: the target must be worth more than the hull it starts from.
+      if (o.to.id === a.id || o.price <= a.msrp || o.to.msrp <= a.msrp) continue;
       const cost = o.price - a.msrp;
       out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, ...(o.skuId != null ? { skuId: o.skuId } : {}) });
     }
     for (const o of ownedFrom.get(a.id) ?? []) {
       const to = byId.get(o.toId);
-      if (!to) continue;
+      // Never step down: a CCU whose target now lists at or below its source (a price change, a name mapped to the
+      // wrong hull) can't be applied usefully, and a buyback one would show as a free downgrade. Unpriced targets pass.
+      if (!to || (to.msrp > 0 && to.msrp <= a.msrp)) continue;
       if (o.source === 'hangar') out.push({ fromId: a.id, toId: to.id, kind: 'owned', cost: 0, cash: 0, paid: o.value, label: 'Owned CCU', ref: o.ref });
       else {
-        const cost = Math.max(0, to.msrp - a.msrp);
+        const cost = to.msrp - a.msrp;
         out.push({ fromId: a.id, toId: to.id, kind: 'buyback', cost, cash: opt.storeCredit ? 0 : cost, paid: 0, label: 'Buyback CCU', ref: o.ref });
       }
     }

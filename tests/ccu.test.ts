@@ -48,6 +48,15 @@ describe('ccu planner', () => {
     expect(plan([...ships, E], owned, 1, 5, o({ buyback: true }))?.steps.at(-1)).toMatchObject({ kind: 'buyback', cost: 6000 });
   });
 
+  it('never steps down in price', () => {
+    // A cheaper target with an oddly priced sku, an owned CCU and a buyback CCU that all go down: none are edges.
+    const X = ship(5, 'Cheaper', 9000, [sku('Odd', 12000)]);
+    const owned = [own(3, 5, 1), own(3, 2, 2, { source: 'buyback' })];
+    expect(plan([...ships, X], owned, 3, 5, o({ buyback: true }))).toBeNull();
+    expect(plan([...ships, X], owned, 3, 2, o({ buyback: true }))).toBeNull();
+    for (const st of plan([...ships, X], owned, 1, 4, o({ buyback: true }))!.steps) expect([...ships, X].find((x) => x.id === st.toId)!.msrp).toBeGreaterThan([...ships, X].find((x) => x.id === st.fromId)!.msrp);
+  });
+
   it('maps hangar CCUs and ships by name', () => {
     const r = ownedCcus(
       [{ id: 10, name: 'Upgrade - Aurora MR to Cutlass Black Warbond Edition', value: 0, upgrade: { fromId: null, fromName: 'Aurora MR', toId: null, toName: 'Cutlass Black' } }],
