@@ -1,8 +1,8 @@
-# CI: type-check, test, then build and zip the extension for chrome, edge, brave and firefox.
+# CI: type-check, test, then build and zip the extension for chrome, edge, brave and firefox (main, dev, PRs).
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 jobs:
