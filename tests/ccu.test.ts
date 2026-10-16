@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planFleet, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
-import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, type CatalogShip, type Sku } from '@/lib/store';
+import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
 const ship = (id: number, name: string, msrp: number, ccu: Sku[] = [], standalone: Sku[] = []): CatalogShip => ({
@@ -251,5 +251,27 @@ describe('plan ahead (long-term goals)', () => {
     expect(f.legs[0]!.plan!.steps.at(-1)).toMatchObject({ toId: 6, kind: 'future' });
     expect(f.legs[1]).toMatchObject({ ahead: false }); // on sale today → no waiting
     expect(f.legs[1]!.plan!.waits).toBe(0);
+  });
+
+  it('fleet plan: auto upgrades a preferred hull (LTI token) first, even when another saves more', () => {
+    const goals = [{ id: 'd', fromId: null, targetId: 4, via: [] }];
+    const hulls = [{ id: 1, count: 1 }, { id: 2, count: 1 }];
+    const free = planFleet(ships, [], goals, o({ warbond: false }), { hulls });
+    const pref = planFleet(ships, [], goals, o({ warbond: false }), { hulls, prefer: [2] });
+    expect(pref.legs[0]!.startId).toBe(2);
+    expect(free.legs[0]!.plan).not.toBeNull();
+    // a preferred hull that can't get there is skipped, not forced
+    const up = planFleet(ships, [], [{ id: 'b', fromId: null, targetId: 2, via: [] }], o({}), { hulls: [{ id: 1, count: 1 }, { id: 3, count: 1 }], prefer: [3] });
+    expect(up.legs[0]!.startId).toBe(1);
+  });
+
+  it('extra hulls RSI does not list (Kraken, Javelin) join the catalog and plan ahead', () => {
+    const all = withExtraShips(ships);
+    const kraken = all.find((s) => s.name === 'Kraken')!;
+    expect(kraken).toMatchObject({ msrp: 165000, msrpSource: 'wiki' });
+    expect(withExtraShips([...ships, { ...kraken, id: 999, msrpSource: undefined }]).filter((s) => s.name === 'Kraken')).toHaveLength(1);
+    expect(matchShip('Kraken Privateer', all)?.name).toBe('Kraken Privateer');
+    const p = plan(all, [], 4, kraken.id, o({ planAhead: true }))!;
+    expect(p.steps.at(-1)).toMatchObject({ toId: kraken.id, kind: 'future', cost: 165000 - 24000 });
   });
 });

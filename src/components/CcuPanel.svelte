@@ -93,6 +93,8 @@
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
   const hulls = $derived(ownedHulls(hangar?.pledges ?? [], ships));
+  /** Hulls on LTI pledges (LTI tokens): one click to prefer them in a fleet plan. */
+  const ltiHulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => p.lti), ships).map((h) => h.id));
   let stopPick = $state<number | null>(null);
   const sortedShips = $derived([...ships].sort((a, b) => a.name.localeCompare(b.name)));
   const ccus = $derived(ownedCcus(hangar?.pledges ?? [], buyback?.items ?? [], ships));
@@ -222,7 +224,7 @@
   function link(s: Step): string | null {
     if (s.kind === 'owned' && hangar && s.ref != null) return hangarUrl(hangar.pledges, s.ref);
     if (s.kind === 'buyback' && s.ref != null) return buybackUrl.get(s.ref) ?? null;
-    if (s.kind === 'standalone' || s.kind === 'future') return byId.get(s.toId)?.link ?? null;
+    if (s.kind === 'standalone' || s.kind === 'future') return byId.get(s.toId)?.msrpSource ? null : (byId.get(s.toId)?.link ?? null);
     return UPGRADES;
   }
   const forceOf = (ref: number): 'include' | 'exclude' | '' => (opt.include.includes(ref) ? 'include' : opt.exclude.includes(ref) ? 'exclude' : '');
@@ -424,7 +426,7 @@
       </fieldset>
 
       {#if planner === 'fleet'}
-        <CcuFleet {ships} {mine} {hulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
+        <CcuFleet {ships} {mine} {hulls} lti={ltiHulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
       {:else}
       <div class="flex flex-wrap gap-4">
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
@@ -467,7 +469,7 @@
         {:else}
           {#if planned.ahead}
             <p class="border-warning/40 bg-warning/10 m-0 rounded-lg border px-3 py-2 text-sm">
-              <strong>Planned ahead.</strong> Nothing on sale today gets to the {name(toId)} — {byId.get(toId)?.ccu.length ? 'its CCUs are sold out or excluded' : 'RSI sells no CCU to it right now'}{byId.get(toId)?.flyable === 'Concept' ? ' (concept ship: CCUs and sales come with events)' : ''}. Steps marked <em>Later</em> are priced at MSRP, to buy when the CCU returns ({seen(toId)}). Save the chain and the Feed tells you when it is in the store.
+              <strong>Planned ahead.</strong> Nothing on sale today gets to the {name(toId)} — {byId.get(toId)?.msrpSource ? `RSI's upgrade catalog doesn't list it at all (MSRP ${usd(byId.get(toId)?.msrp ?? 0)} from starcitizen.tools; RSI sells it in rare packages / events)` : byId.get(toId)?.ccu.length ? 'its CCUs are sold out or excluded' : 'RSI sells no CCU to it right now'}{byId.get(toId)?.flyable === 'Concept' ? ' (concept ship: CCUs and sales come with events)' : ''}. Steps marked <em>Later</em> are priced at MSRP, to buy when the CCU returns ({seen(toId)}). Save the chain and the Feed tells you when it is in the store.
             </p>
           {/if}
           <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">

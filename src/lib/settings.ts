@@ -94,8 +94,8 @@ export const hangarItem = storage.defineItem<{ at: number; pledges: Pledge[]; co
 export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]; complete?: boolean; page?: number } | null>(acct('local:buyback'), { fallback: null });
 /** Saved CCU chains (planner): the CCUs they use are kept out of new plans when *Exclude saved chains* is on. */
 export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuChains'), { fallback: [] });
-/** Fleet plan (CCU planner, several goals): the goals in priority order, hulls never auto-upgraded, store start allowed. */
-export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; storeStart: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], storeStart: false } });
+/** Fleet plan (CCU planner, several goals): the goals in priority order, hulls never / preferably auto-upgraded, store start allowed. */
+export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; prefer?: number[]; storeStart: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], prefer: [], storeStart: false } });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */

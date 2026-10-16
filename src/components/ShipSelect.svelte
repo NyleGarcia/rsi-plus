@@ -31,7 +31,7 @@
   const opt = (s: CatalogShip, group?: string): Option<number> => ({
     value: s.id,
     label: s.name,
-    sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : '', saleTag && !s.ccu.some((k) => k.available) && !s.standalone.some((k) => k.available) ? (s.flyable === 'Concept' ? 'concept · not on sale' : 'not on sale') : ''].filter(Boolean).join(' · '),
+    sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : '', saleTag && !s.ccu.some((k) => k.available) && !s.standalone.some((k) => k.available) ? (s.msrpSource ? 'not in RSI CCU list · MSRP via wiki' : s.flyable === 'Concept' ? 'concept · not on sale' : 'not on sale') : ''].filter(Boolean).join(' · '),
     group,
   });
   const options = $derived.by(() => {

@@ -27,6 +27,7 @@
     ships,
     mine,
     hulls,
+    lti = [],
     owned,
     opt,
     sales,
@@ -39,6 +40,8 @@
     mine: CatalogShip[];
     /** Hull copies you own (`ownedHulls`). */
     hulls: { id: number; count: number }[];
+    /** Hulls you own on an LTI pledge — offered as "prefer" in one click (LTI tokens). */
+    lti?: number[];
     owned: OwnedCcu[];
     /** Planner options (objective, warbond, buyback…, saved-chain exclusions) shared with the single planner. */
     opt: PlanOptions;
@@ -51,24 +54,26 @@
 
   let goals = $state<Goal[]>([]);
   let keep = $state<number[]>([]);
+  let prefer = $state<number[]>([]);
   let storeStart = $state(false);
   let loaded = $state(false);
   $effect(() => {
     ccuGoalsItem.getValue().then((v) => {
       goals = v.goals;
       keep = v.keep;
+      prefer = v.prefer ?? [];
       storeStart = v.storeStart;
       loaded = true;
     });
   });
   $effect(() => {
-    const v = { goals: $state.snapshot(goals), keep: $state.snapshot(keep), storeStart };
+    const v = { goals: $state.snapshot(goals), keep: $state.snapshot(keep), prefer: $state.snapshot(prefer), storeStart };
     if (loaded) ccuGoalsItem.setValue(v);
   });
 
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const name = (id: number | null) => (id == null ? 'Auto' : id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
-  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, storeStart }));
+  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer, storeStart }));
   const payNow = $derived(fleet.total - fleet.later);
   /** Every CCU the plan waits for, cheapest first: hull, which goal, planned cost, when last seen on sale. */
   const waiting = $derived(
@@ -107,7 +112,12 @@
     edit(i, { fromId: s === 'auto' ? null : s === 'store' ? STORE_START : (mine.find((m) => m.msrp < (byId.get(g.targetId)?.msrp ?? 0))?.id ?? mine[0]?.id ?? null) });
   }
   const sortedShips = $derived([...ships].sort((a, b) => a.name.localeCompare(b.name)));
+  // A hull is in at most one of the two lists: adding it to one takes it out of the other.
   const keepable = $derived(mine.filter((m) => !keep.includes(m.id)));
+  const preferable = $derived(mine.filter((m) => !prefer.includes(m.id)));
+  const addKeep = (id: number) => ((keep = [...keep, id]), (prefer = prefer.filter((x) => x !== id)));
+  const addPrefer = (ids: number[]) => ((prefer = [...new Set([...prefer, ...ids])]), (keep = keep.filter((x) => !ids.includes(x))));
+  const ltiToAdd = $derived(lti.filter((id) => !prefer.includes(id) && mine.some((m) => m.id === id)));
 
   // ---- save ----
   let planName = $state('');
@@ -205,9 +215,17 @@
       {#each keep as k (k)}
         <Badge variant="secondary" class="gap-1 pr-0.5">{name(k)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Allow ${name(k)}`} onclick={() => (keep = keep.filter((x) => x !== k))}><X /></Button></Badge>
       {/each}
-      <div class="w-[220px]"><ShipSelect ships={keepable} mine={keepable} onlyMine bind:value={() => picks.keep ?? null, (v) => (picks.keep = v)} price={false} onpick={(id) => (id != null && (keep = [...keep, id]), (picks.keep = null))} ariaLabel="Ship to keep" placeholder="+ ship to keep flying" /></div>
-      <span class="text-muted-foreground">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain</span>
+      <div class="w-[220px]"><ShipSelect ships={keepable} mine={keepable} onlyMine bind:value={() => picks.keep ?? null, (v) => (picks.keep = v)} price={false} onpick={(id) => (id != null && addKeep(id), (picks.keep = null))} ariaLabel="Ship to keep" placeholder="+ ship to keep flying" /></div>
     </div>
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="text-muted-foreground" title="Auto upgrades one of these first whenever it gets to the target — cheap LTI tokens, ships you don't fly">Prefer to upgrade</span>
+      {#each prefer as k (k)}
+        <Badge variant="secondary" class="text-success gap-1 pr-0.5">{name(k)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Stop preferring ${name(k)}`} onclick={() => (prefer = prefer.filter((x) => x !== k))}><X /></Button></Badge>
+      {/each}
+      <div class="w-[220px]"><ShipSelect ships={preferable} mine={preferable} onlyMine bind:value={() => picks.prefer ?? null, (v) => (picks.prefer = v)} price={false} onpick={(id) => (id != null && addPrefer([id]), (picks.prefer = null))} ariaLabel="Ship to upgrade first" placeholder="+ ship to upgrade first" /></div>
+      {#if ltiToAdd.length}<Button variant="outline" size="xs" onclick={() => addPrefer(ltiToAdd)} title={ltiToAdd.map((id) => name(id)).join(', ')}><Plus /> my LTI hulls ({ltiToAdd.length})</Button>{/if}
+    </div>
+    <span class="text-muted-foreground text-xs">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain · Auto tries preferred hulls first, never the kept ones</span>
   </fieldset>
 
   {#if goals.length}

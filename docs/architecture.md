@@ -119,6 +119,13 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
   - When `plan()` with today's sales returns null and `planAhead` is off, the single planner re-plans with `planAhead: true` (`planned.ahead`, notice above the stats). The chain is saved with those options.
   - `planFleet` does the same per goal: its second pass is tried only when no candidate source works with today's sales, so a buyable-now chain always wins. That sets `FleetLeg.ahead`.
   - `ShipSelect saleTag` tags hulls with no available CCU / standalone SKU.
+- **Extra hulls** (`src/lib/data/extra-ships.ts`): `EXTRA_SHIPS` covers Kraken, Kraken Privateer, Javelin and Idris-M.
+  - Negative ids, `msrpSource: 'wiki'`, starcitizen.tools pledge cost, link to the wiki page.
+  - `withExtraShips` adds them in `fetchCatalog` and on the background's cached catalog, unless RSI lists the name itself.
+  - They have no SKUs, so they only appear as `future` targets. The planner shows no store link for them.
+- **Fleet `prefer`**: auto candidates are tried in two groups, preferred hulls first, within each pass (today's sales, then plan ahead). So a preferred hull that gets there beats any other hull, but never beats buying today vs waiting.
+  - `ccuGoals.prefer` is stored next to `keep`.
+  - *+ my LTI hulls* = `ownedHulls` of LTI pledges.
 - Not done: speculative prices (needs a price-history store), k-best alternatives, a sale calendar, a global optimum over goal order.
 ## Items (`src/lib/items.ts`)
 - Flattens `Pledge.items` → `ItemRow` (merged by category + title, with pledges and ×count). Categories from RSI item kinds (Ship, Skin, FPS Equipment → armor/weapon/fps by title, Component, Hangar decoration, Hangar, Insurance) + titles (Digital Download = game, paint/livery).

@@ -317,6 +317,8 @@ export interface FleetOptions {
   hulls: { id: number; count: number }[];
   /** Hulls an auto goal never upgrades (ones you want to keep flying). */
   keep?: number[];
+  /** Hulls an auto goal upgrades first when one of them gets there (cheap LTI tokens, ships you don't fly). */
+  prefer?: number[];
   /** An auto goal may start by buying a ship from the store. */
   storeStart?: boolean;
 }
@@ -347,14 +349,19 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
     const cands = goal.fromId != null ? [goal.fromId] : [...free].filter(([id, n]) => n > 0 && !keep.has(id) && (byId.get(id)?.msrp ?? Infinity) < (target?.msrp ?? 0)).map(([id]) => id);
     if (goal.fromId == null && fo.storeStart) cands.push(STORE_START);
     // Today's sales first; only when no source gets there, plan ahead (waiting for the target's CCU to return).
-    for (const pass of o.planAhead ? [o] : [o, { ...o, planAhead: true }]) {
-      for (const c of cands) {
-        const p = plan(ships, owned, c, goal.targetId, pass);
-        if (p && (!best || better(p, best))) (best = p), (startId = c);
-      }
-      if (best) {
-        ahead = pass !== o;
-        break;
+    // Within a pass, preferred hulls first: the best of them wins over any other hull.
+    const pref = new Set(fo.prefer ?? []);
+    const groups = [cands.filter((c) => pref.has(c)), cands.filter((c) => !pref.has(c))];
+    search: for (const pass of o.planAhead ? [o] : [o, { ...o, planAhead: true }]) {
+      for (const group of groups) {
+        for (const c of group) {
+          const p = plan(ships, owned, c, goal.targetId, pass);
+          if (p && (!best || better(p, best))) (best = p), (startId = c);
+        }
+        if (best) {
+          ahead = pass !== o;
+          break search;
+        }
       }
     }
     if (goal.fromId == null && best && startId != null && startId !== STORE_START) free.set(startId, free.get(startId)! - 1);

@@ -24,7 +24,7 @@ import {
 } from '@/lib/settings';
 import { ding } from '@/lib/sound';
 import { chainEvents } from '@/lib/ccu';
-import { fetchCatalog, fetchPaints, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
+import { fetchCatalog, fetchPaints, recordSales, wishlistEvents, withExtraShips, type Catalog, type PaintCatalog } from '@/lib/store';
 import { threadUrl } from '@/lib/types';
 import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
 
@@ -301,7 +301,7 @@ let catalogPromise: Promise<Catalog> | null = null;
 /** Public pledge-store catalog; cached 30 min unless `fresh`. */
 async function catalog(fresh: boolean): Promise<Catalog> {
   const cached = await catalogItem.getValue();
-  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return cached;
+  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return { ...cached, ships: withExtraShips(cached.ships) };
   catalogPromise ??= fetchCatalog()
     .then(async (c) => {
       await catalogItem.setValue(c);
