@@ -1,5 +1,7 @@
 # RSI+
 
+[![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases)
+
 Chrome/Firefox MV3 extension for the whole [Roberts Space Industries](https://robertsspaceindustries.com) site — Spectrum, hangar, buyback and the pledge store. Sibling of Crunchy+ (same stack: WXT + Svelte 5 + TS; hub UI on shadcn-svelte + Tailwind v4, charts on LayerChart). Ideas from [Hangar XPLORer](https://github.com/dolkensp/HangarXPLOR) (MIT) and [CCU Game](https://ccugame.app); no data is sent anywhere but RSI.
 
 ## RSI site

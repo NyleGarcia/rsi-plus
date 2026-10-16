@@ -23,4 +23,5 @@ jobs:
         with:
           name: rsi-plus-chrome
           path: .output/*.zip
+          include-hidden-files: true
           retention-days: 14
