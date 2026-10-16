@@ -38,7 +38,7 @@
   const TONE: Record<string, string> = { keep: 'border-success/40 text-success', 'lti token': 'border-warning/40 text-warning', 'ccu fodder': 'border-primary/40 text-primary', melt: 'border-destructive/40 text-destructive' };
 </script>
 
-<div class="mt-1 flex flex-wrap items-center gap-1">
+<div class="flex flex-wrap items-center gap-1">
   {#each here as h (h.name)}
     <Badge variant="outline" class={`gap-0.5 pr-0.5 ${TONE[norm(h.name)] ?? ''}`}>
       {h.name}{#if ids.length > 1 && h.n < ids.length}<span class="opacity-70"> {h.n}/{ids.length}</span>{/if}
@@ -48,7 +48,7 @@
   <Popover.Root bind:open>
     <Popover.Trigger>
       {#snippet child({ props })}
-        <Button {...props} variant="ghost" size="xs" class="text-muted-foreground h-5 px-1.5" title={ids.length > 1 ? `Label all ${ids.length} copies (unstack to label one)` : 'Add your own label'}><Tag class="size-3" />{here.length ? '' : ' label'}</Button>
+        <Button {...props} variant="ghost" size="xs" class="text-muted-foreground h-5 px-1.5" aria-label="Edit labels" title={ids.length > 1 ? `Label all ${ids.length} copies (unstack to label one)` : 'Add your own label'}><Tag class="size-3" /></Button>
       {/snippet}
     </Popover.Trigger>
     <Popover.Content align="start" class="w-72 gap-1.5 p-2">

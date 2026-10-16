@@ -600,6 +600,7 @@
                 <SortTh key="value" bind:sort firstDir="desc">Value</SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
+                <Table.Head title="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners">Labels</Table.Head>
                 {#if melting}
                   <Table.Head>
                     <Tooltip.Root>
@@ -633,7 +634,6 @@
                   {/if}
                   <Table.Cell class="min-w-[200px] whitespace-normal">
                     <strong>{p.name}</strong>
-                    <LabelEdit ids={s.entries.map((e) => e.id)} {labels} onchange={saveLabels} />
                     {#if p.upgrade}<div class="text-muted-foreground text-xs">{p.upgrade.fromName} → {p.upgrade.toName}</div>{/if}
                     {#if p.upgraded}
                       {@const up = upgradedFrom(p, cat?.ships ?? [])}
@@ -676,6 +676,7 @@
                       {#if p.reservedNames?.length}<Badge variant="secondary" title="Ship name reserved on RSI">name: {p.reservedNames.join(', ')}</Badge>{:else if p.nameable?.length}<Badge variant="outline" class="text-muted-foreground" title="RSI lets you name this ship">nameable</Badge>{/if}
                     </div>
                   </Table.Cell>
+                  <Table.Cell class="min-w-[90px] whitespace-normal"><LabelEdit ids={s.entries.map((e) => e.id)} {labels} onchange={saveLabels} /></Table.Cell>
                   {#if melting}
                     <Table.Cell class="text-xs whitespace-normal">
                       {#if !nMelt}<span class="text-muted-foreground">—</span>

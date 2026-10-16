@@ -224,7 +224,7 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
   - `LTI token` / `CCU fodder` → their hulls join the fleet plan's `prefer` (`labelPrefer`).
   - `Melt` → *Pick labelled "Melt"* in the melt calculator.
 - UI:
-  - Pledges: `LabelEdit` under each name (a stack labels all its entries, chips show n/m) and a label filter Select.
+  - Pledges: `LabelEdit` in its own *Labels* column after Flags (a stack labels all its entries, chips show n/m) and a label filter Select.
   - My ships: read-only chips from the pledges holding the hull.
 
 ## Melt (`src/lib/melt.ts`)

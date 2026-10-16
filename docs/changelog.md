@@ -6,7 +6,7 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
-- **Your own labels on pledges.** On *Pledges*, every row has a 🏷 button: tick a preset or type your own label. Stacked rows label every copy; unstack to label just one. Filter the list by label, and *My ships* shows each hull's labels. Presets that drive the planners:
+- **Your own labels on pledges.** On *Pledges*, a *Labels* column with a 🏷 button on every row: tick a preset or type your own label. Stacked rows label every copy; unstack to label just one. Filter the list by label, and *My ships* shows each hull's labels. Presets that drive the planners:
   - **Keep:** the melt calculator's *Pick duplicates* / target planner never pick it, and a fleet plan never auto-upgrades its hull copy.
   - **LTI token / CCU fodder:** a fleet plan's *Auto* upgrades these hulls first (shown as *+ from labels* next to *Prefer to upgrade*).
   - **Melt:** *Pick labelled "Melt"* in the melt calculator picks them all in one click.
