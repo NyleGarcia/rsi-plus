@@ -153,6 +153,10 @@ def main():
                const pick = async (label, text) => {{ document.querySelector(`button[aria-label="${{label}}"]`)?.click(); await sleep(600); const inp = document.querySelector(`input[aria-label="${{label}}"]`); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, text); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(700); const opt = [...document.querySelectorAll('[role=option]')].find((o) => o.innerText.trim().startsWith(text)); opt?.click(); await sleep(800); }};
                await pick('From ship', 'Cutlass Black'); await pick('Target ship', 'Orion'); await sleep(2000);
                const el = [...document.querySelectorAll('strong')].find((e) => e.innerText === 'Planned ahead.'); el?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -330); }})()"""),
+            ('ccu-picker', '#ccu', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === 'Fleet plan')?.click(); await sleep(1500);
+               const b = document.querySelector('button[aria-label="Add a goal ship"]'); b?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -60); await sleep(300); b?.click(); await sleep(900); }})()"""),
             ('ccu-fleet', '#ccu', {},
              f"""(async () => {{ const sleep = {SLEEP};
                const cat = (await chrome.storage.local.get('catalog')).catalog; const by = (n) => cat.ships.find((x) => x.name === n);

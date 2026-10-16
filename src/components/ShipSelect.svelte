@@ -31,7 +31,14 @@
   const opt = (s: CatalogShip, group?: string): Option<number> => ({
     value: s.id,
     label: s.name,
-    sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : '', saleTag && !s.ccu.some((k) => k.available) && !s.standalone.some((k) => k.available) ? (s.msrpSource ? 'not in RSI CCU list · MSRP via wiki' : s.flyable === 'Concept' ? 'concept · not on sale' : 'not on sale') : ''].filter(Boolean).join(' · '),
+    sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : ''].filter(Boolean).join(' · '),
+    ...(saleTag && !s.ccu.some((k) => k.available) && !s.standalone.some((k) => k.available)
+      ? s.msrpSource
+        ? { tag: 'wiki MSRP', tagHint: "RSI's CCU list doesn't include this hull — MSRP from starcitizen.tools; planned ahead" }
+        : s.flyable === 'Concept'
+          ? { tag: 'concept', tagHint: 'Concept ship, nothing on sale now — planned ahead at MSRP' }
+          : { tag: 'not on sale', tagHint: 'No CCU or standalone on sale now — planned ahead at MSRP' }
+      : {}),
     group,
   });
   const options = $derived.by(() => {
