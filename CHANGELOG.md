@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.3.0...v0.4.0) (2026-10-16)
+
+
+### Features
+
+* **ccu:** fleet plan — several goals at once with shared CCUs and hulls, auto source, stops, grouped saved chains ([b1573b1](https://github.com/NyleGarcia/rsi-plus/commit/b1573b120b393a485aebc654530297ec7f59c938))
+* **ccu:** plan ahead through ships not on sale (long-term goals), sale alerts for saved chains, ship catalog filters + last-seen-on-sale ([37a20d5](https://github.com/NyleGarcia/rsi-plus/commit/37a20d5d471dda39c749ed972da246210de79545))
+* Edge and Firefox builds — per-browser manifest, Firefox-safe sound and badge, CI/release matrix over chrome, edge, firefox ([4206595](https://github.com/NyleGarcia/rsi-plus/commit/42065959baa15567768817effe48703b3a498c8f))
+* Made By The Community badge and fan-project trademark notice (sidebar, page footer, popup) ([414edfb](https://github.com/NyleGarcia/rsi-plus/commit/414edfbab3966ec411bd72cbddb1988295521471))
+* **ships:** track in-game ships (aUEC-bought / earned) so paints, melt and rebuy count them as owned hulls ([f3bca9f](https://github.com/NyleGarcia/rsi-plus/commit/f3bca9fe6b3de88b98ca05597a82971708a7951c))
+
 ## [0.3.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.2.0...v0.3.0) (2026-10-16)
 
 
