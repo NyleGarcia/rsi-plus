@@ -224,6 +224,10 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
   - The workflow sets `package.json` to `<next>-dev.<run>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev.<run>` (`--prerelease --latest=false`). It keeps the newest 10 such prereleases.
   - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev.<run>`. Firefox gets only `<next>`.
   - Real bumps: open a PR `dev` → `main`, merge, then release-please's PR → `vX.Y.Z` with assets as above.
+  - `dev` is the GitHub default branch, and `release.yml` pins release-please to `target-branch: main`.
+  - Branch protection:
+    - `main`: no force push or deletion; status check `verify` required, not enforced for admins, because release-please PRs get no CI with `GITHUB_TOKEN`.
+    - `dev`: no force push or deletion.
 - CI does not auto-run on the release PR with the default `GITHUB_TOKEN` (GitHub limitation); re-run manually or switch to a PAT later.
 - `docs/changelog.md` stays the hand-written user-facing log; `CHANGELOG.md` is generated.
 
