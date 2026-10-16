@@ -6,6 +6,11 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **Your own labels on pledges.** On *Pledges*, every row has a 🏷 button: tick a preset or type your own label. Stacked rows label every copy; unstack to label just one. Filter the list by label, and *My ships* shows each hull's labels. Presets that drive the planners:
+  - **Keep:** the melt calculator's *Pick duplicates* / target planner never pick it, and a fleet plan never auto-upgrades its hull copy.
+  - **LTI token / CCU fodder:** a fleet plan's *Auto* upgrades these hulls first (shown as *+ from labels* next to *Prefer to upgrade*).
+  - **Melt:** *Pick labelled "Melt"* in the melt calculator picks them all in one click.
+  - **Gift**, or anything you type, is for filtering.
 - **One chain → Fleet plan**: *Add to fleet plan* next to *Save chain* adds the current source → target, with its stops, as the last goal of your fleet plan. *open Fleet plan* jumps there.
 - **Fleet plan: options per goal.**
   - **Insurance:** *Any* / *Prefer LTI* / *LTI only*. A CCU keeps the pledge's insurance, so an LTI goal upgrades an LTI copy of a hull. *Any* uses a non-LTI copy first, leaving your LTI tokens for the goals that want them. The chain line shows an *LTI* badge, or *no LTI copy* when a prefer-LTI goal had to settle.

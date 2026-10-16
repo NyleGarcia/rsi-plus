@@ -217,6 +217,16 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 - **Unverified live**: that the tier applies on top of a paint's sale price; how a pack line behaves in the tier (`Pack in the bundle` select); the cart add for a paint SKU.
 - UI: Store → *Paint rebuy* (`#paint-rebuy`, rendered by `ShipsPanel view="bundle"`): three money tiles (melt credit incl. melt-only → rebuy cost with "bundle saves vs list" → credit you end up ahead) + a one-line strip (paints in cart, tier, next tier, cap), options (cap, melt toggles, pack select) folded behind *Options*, a compact *Do it* row with the cart buttons, **Best value by cart size** table (★ highest net, *Use* applies that set), candidates table (auto-picked, tick to override, Auto-pick / Clear / Pick all), *New paints to buy* search (store paints not owned, count toward the tier), Do-it steps, *Add N paint lines to RSI cart*, *Open RSI cart*, folded "Not counted" list by reason. Prefs (`wanted`, `limit`) in `localStorage` `rsiplus:paintbundle`. Ships for sale and Browse link here (*Paint rebuy value →*).
 
+## Labels (`src/lib/labels.ts`, `LabelEdit.svelte`, `local:pledgeLabels`)
+- Pledge id → user labels (per account, in `ACCOUNT_ITEMS`). Matching is case-insensitive and keeps the first spelling (a preset's spelling wins). `setLabel` / `idsWith` / `allLabels`.
+- Presets with effects:
+  - `Keep` → `DedupeOptions.never` (dedupe + target planners skip it), and the CCU panel leaves its pledges out of `ownedHulls` for fleet plans.
+  - `LTI token` / `CCU fodder` → their hulls join the fleet plan's `prefer` (`labelPrefer`).
+  - `Melt` → *Pick labelled "Melt"* in the melt calculator.
+- UI:
+  - Pledges: `LabelEdit` under each name (a stack labels all its entries, chips show n/m) and a label filter Select.
+  - My ships: read-only chips from the pledges holding the hull.
+
 ## Melt (`src/lib/melt.ts`)
 - `meltSummary(all, picked)`: credit (= sum of pledge values), items lost for good vs still owned via another kept pledge; LTI hull counts as its own thing; a CCU pledge counts as "upgrade A → B".
 - `duplicatePlan(all)`: greedy by value — a pledge is pickable only if every item (and LTI hull) in it still has another copy among the pledges not yet picked; skips non-meltable, $0 (`canMelt`), CCUs, game packages. Result: melt everything redundant, lose nothing.

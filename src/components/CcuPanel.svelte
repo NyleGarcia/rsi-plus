@@ -3,7 +3,8 @@
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, saleHistoryItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
+  import { idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
   import { lastSale, matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -34,6 +35,7 @@
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let chains = $state<SavedChain[]>([]);
   let sales = $state<SaleHistory>({});
+  let labels = $state<Labels>({});
   let error = $state('');
 
   type Mode = 'store' | 'hangar' | 'any';
@@ -66,10 +68,12 @@
     catalogItem.getValue().then((c) => (cat = c));
     ccuChainsItem.getValue().then((c) => (chains = c));
     saleHistoryItem.getValue().then((h) => (sales = h));
+    pledgeLabelsItem.getValue().then((l) => (labels = l));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
-    return hangarItem.watch((h) => (hangar = h));
+    const offs = [hangarItem.watch((h) => (hangar = h)), pledgeLabelsItem.watch((l) => (labels = l ?? {}))];
+    return () => offs.forEach((o) => o());
   });
   /** Load the hangar right here (same pages and storage as the Hangar tab). */
   let hangarLoading = $state<HangarProgress | null>(null);
@@ -92,7 +96,11 @@
   const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
-  const hulls = $derived(ownedHulls(hangar?.pledges ?? [], ships));
+  /** Hull copies a fleet plan may upgrade: pledges labelled *Keep* are left out (`lib/labels.ts`). */
+  const keepIds = $derived(idsWith(labels, KEEP));
+  const hulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => !keepIds.has(p.id)), ships));
+  /** Hulls on pledges labelled *LTI token* / *CCU fodder*: Auto upgrades them first. */
+  const labelPrefer = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => idsWith(labels, PREFER).has(p.id)), ships).map((h) => h.id));
   /** Hulls on LTI pledges (LTI tokens): one click to prefer them in a fleet plan. */
   const ltiHulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => p.lti), ships).map((h) => h.id));
   let stopPick = $state<number | null>(null);
@@ -439,7 +447,7 @@
       </fieldset>
 
       {#if planner === 'fleet'}
-        <CcuFleet {ships} {mine} {hulls} lti={ltiHulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
+        <CcuFleet {ships} {mine} {hulls} {labelPrefer} keptByLabel={keepIds.size} lti={ltiHulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
       {:else}
       <div class="flex flex-wrap gap-4">
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">

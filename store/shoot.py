@@ -76,7 +76,7 @@ BUYBACK = dict(at=HANGAR['at'], complete=True, page=1, items=[
     bb(505, 'Carrack - Stormbringer Paint', day(2023, 11, 24), [P('Carrack - Stormbringer Paint')], 2000, 2500, type='paint'),
     bb(506, 'Syulen', day(2024, 5, 24), [S('Syulen'), I('120 Month Insurance', 'Insurance')], 8000, 8000),
 ])
-SEED = dict(hangar=HANGAR, buyback=BUYBACK)
+SEED = dict(hangar=HANGAR, buyback=BUYBACK, pledgeLabels={'2': ['Keep', 'Main flyer'], '3': ['CCU fodder'], '5': ['LTI token'], '20': ['Melt']})
 WISH = [dict(id=62, name='Carrack', lowest=None), dict(id=116, name='Polaris', lowest=None)]
 
 # ---------------------------------------------------------------- tiny CDP client
@@ -131,6 +131,11 @@ def main():
         SLEEP = "(ms) => new Promise((r) => setTimeout(r, ms))"
         shots = [
             ('hangar', '#hangar', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}}, None),
+            ('hangar-labels', '#hangar', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const inp = document.querySelector('input[aria-label=Search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, 'Cutlass Black'); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(600);
+               const t = document.querySelector('table'); t?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -20); await sleep(200);
+               [...document.querySelectorAll('table button')].find((b) => /Label|label/.test(b.getAttribute('title') ?? ''))?.click(); await sleep(700); }})()"""),
             ('hangar-by-ship', '#hangar', {'rsiplus:hangar': {'byShip': True, 'hiddenSets': []}}, None),
             ('melt-calculator', '#melt', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
              f"(async () => {{ const btn = {BTN}, sleep = {SLEEP}; btn('Pick duplicates')?.click(); await sleep(300); btn('Pick paints without a ship')?.click(); await sleep(500); btn('Pick duplicates')?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -70); }})()"),

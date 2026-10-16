@@ -5,7 +5,9 @@
   import { canMelt, copiesElsewhere, duplicatePlan, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
   import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, upgradedFrom, type GameShip } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { catalogItem, gameShipsItem, hangarItem } from '@/lib/settings';
+  import { catalogItem, gameShipsItem, hangarItem, pledgeLabelsItem } from '@/lib/settings';
+  import { allLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
+  import LabelEdit from './LabelEdit.svelte';
   import type { Catalog } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
@@ -39,6 +41,12 @@
   let loading = $state<{ page: number; count: number; pages?: number } | null>(null);
   let error = $state('');
   let q = $state('');
+  /** Your labels (`lib/labels.ts`) and the label filter ('' = any). */
+  let labels = $state<Labels>({});
+  let labelFilter = $state('');
+  const labelList = $derived(allLabels(labels));
+  const labelIds = $derived(labelFilter ? idsWith(labels, labelFilter) : null);
+  const saveLabels = (next: Labels) => ((labels = next), pledgeLabelsItem.setValue(next));
   let type = $state<PledgeType | 'all'>('all');
   let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'cash' | 'credit' | 'named'>('');
   /** Flag filter. "Meltable" means it can actually be melted for credit (Reclaim button *and* a value) — RSI puts a
@@ -53,10 +61,11 @@
     hangarItem.getValue().then((v) => (data = v)).catch((e) => (error = `Couldn't read saved hangar: ${(e as Error).message}`));
     catalogItem.getValue().then((c) => (cat = c));
     gameShipsItem.getValue().then((g) => (game = g));
+    pledgeLabelsItem.getValue().then((l) => (labels = l));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch(() => {}); // only needed to know which hulls a paint fits
-    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? []))];
+    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = l ?? {}))];
     return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
@@ -90,6 +99,8 @@
   }
 
   const all = $derived(data?.pledges ?? []);
+  /** Meltable pledges labelled *Melt* (one-click pick in the melt calculator). */
+  const meltLabelled = $derived(all.filter((p) => idsWith(labels, MELT).has(p.id) && canMelt(p)));
   /** Total pages while loading: the page's own pagination, else ~ last known size / 50 (a reload of a known hangar). */
   const totalPages = $derived(loading?.pages ?? (all.length ? Math.max(loading?.page ?? 0, Math.ceil(all.length / 50)) : undefined));
 
@@ -112,6 +123,7 @@
         !hiddenBySet.has(p.id) &&
         (type === 'all' || p.type === type) &&
         flagPass(p) &&
+        (!labelIds || labelIds.has(p.id)) &&
         (!query || [p.name, p.nickname, ...p.items.map((i) => i.title)].some((s) => s.toLowerCase().includes(query))),
     );
     return list;
@@ -261,7 +273,8 @@
     return all.filter((p) => canMelt(p) && noShip.has(p.id) && paintOnly(p) && inv.rows.filter((r) => r.pledges.some((x) => x.id === p.id)).every((r) => paintStatus(r, inv.ownedIds) === 'no-ship'));
   });
   const orphanCredit = $derived(orphanPaints.reduce((n, p) => n + p.value, 0));
-  const opts = $derived({ types: dedupe, keepLti, keep });
+  /** Pledges labelled *Keep* are never picked by the dedupe / target planners. */
+  const opts = $derived({ types: dedupe, keepLti, keep, never: idsWith(labels, KEEP) });
   const melt = $derived(meltSummary(all, picked, opts));
   /** One kept-count table per pick change for every row's "Would lose" (instead of one per row). */
   const kept = $derived(keptCounts(all, picked));
@@ -384,6 +397,11 @@
                 </Tooltip.Trigger>
                 {#if dupes.length}<Tooltip.Content class="whitespace-pre-line">{dupes.map((p) => `${p.name} · ${money(p.value)}`).join('\n')}</Tooltip.Content>{/if}
               </Tooltip.Root>
+              {#if meltLabelled.length}
+                <Button variant="outline" size="sm" title={meltLabelled.map((p) => `${p.name} · ${money(p.value)}`).join('\n')} onclick={() => ((picked = new Set([...picked, ...meltLabelled.map((p) => p.id)])), (pickView = 'picked'))}>
+                  Pick labelled “Melt” · {meltLabelled.length} · {money(meltLabelled.reduce((n, p) => n + p.value, 0))}
+                </Button>
+              {/if}
               <Tooltip.Root>
                 <Tooltip.Trigger>
                   {#snippet child({ props })}
@@ -537,6 +555,15 @@
                 {#each FLAGS as f (f.value)}<Select.Item value={f.value || 'any'} label={f.label} />{/each}
               </Select.Content>
             </Select.Root>
+            {#if labelList.length}
+              <Select.Root type="single" bind:value={() => labelFilter || 'any', (v) => (labelFilter = v === 'any' ? '' : v)}>
+                <Select.Trigger aria-label="Label">{labelFilter ? `Label: ${labelFilter}` : 'Any label'}</Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="any" label="Any label" />
+                  {#each labelList as l (l.name)}<Select.Item value={l.name} label={`${l.name} · ${l.count}`} />{/each}
+                </Select.Content>
+              </Select.Root>
+            {/if}
             {#if setOptions.length}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
@@ -606,6 +633,7 @@
                   {/if}
                   <Table.Cell class="min-w-[200px] whitespace-normal">
                     <strong>{p.name}</strong>
+                    <LabelEdit ids={s.entries.map((e) => e.id)} {labels} onchange={saveLabels} />
                     {#if p.upgrade}<div class="text-muted-foreground text-xs">{p.upgrade.fromName} → {p.upgrade.toName}</div>{/if}
                     {#if p.upgraded}
                       {@const up = upgradedFrom(p, cat?.ships ?? [])}

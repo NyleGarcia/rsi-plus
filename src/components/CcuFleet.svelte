@@ -28,6 +28,8 @@
     mine,
     hulls,
     lti = [],
+    labelPrefer = [],
+    keptByLabel = 0,
     owned,
     opt,
     sales,
@@ -42,6 +44,10 @@
     hulls: { id: number; count: number }[];
     /** Hulls you own on an LTI pledge — offered as "prefer" in one click (LTI tokens). */
     lti?: number[];
+    /** Hulls on pledges labelled *LTI token* / *CCU fodder* — preferred on top of the list here. */
+    labelPrefer?: number[];
+    /** Pledges labelled *Keep* (left out of `hulls`), for the note. */
+    keptByLabel?: number;
     owned: OwnedCcu[];
     /** Planner options (objective, warbond, buyback…, saved-chain exclusions) shared with the single planner. */
     opt: PlanOptions;
@@ -72,7 +78,7 @@
 
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const name = (id: number | null) => (id == null ? 'Auto' : id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
-  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer }));
+  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer: [...new Set([...prefer, ...labelPrefer])] }));
   const payNow = $derived(fleet.total - fleet.later);
   /** Every CCU the plan waits for, cheapest first: hull, which goal, planned cost, when last seen on sale. */
   const waiting = $derived(
@@ -250,8 +256,9 @@
       <div class="w-[220px]"><ShipSelect ships={preferable} mine={preferable} onlyMine bind:value={() => picks.prefer ?? null, (v) => (picks.prefer = v)} price={false} onpick={(id) => (id != null && addPrefer([id]), (picks.prefer = null))} ariaLabel="Ship to upgrade first" placeholder="+ ship to upgrade first" /></div>
       {#if ltiToAdd.length}<Button variant="outline" size="xs" onclick={() => addPrefer(ltiToAdd)} title={ltiToAdd.map((id) => name(id)).join(', ')}><Plus /> my LTI hulls ({ltiToAdd.length})</Button>{/if}
       {#if prefer.length}<Button variant="ghost" size="xs" onclick={() => (prefer = [])}><X /> Clear all</Button>{/if}
+      {#if labelPrefer.length}<span class="text-muted-foreground" title="Pledges you labelled LTI token / CCU fodder on the Pledges page">+ from labels: {labelPrefer.map((id) => name(id)).join(', ')}</span>{/if}
     </div>
-    <span class="text-muted-foreground text-xs">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain · Auto tries preferred hulls first, never the kept ones</span>
+    <span class="text-muted-foreground text-xs">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain · Auto tries preferred hulls first, never the kept ones{keptByLabel ? ` · ${keptByLabel} pledge${keptByLabel === 1 ? '' : 's'} labelled Keep left out` : ''}</span>
   </fieldset>
 
   {#if goals.length}
