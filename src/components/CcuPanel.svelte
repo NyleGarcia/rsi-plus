@@ -4,9 +4,27 @@
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, hangarItem } from '@/lib/settings';
-  import { usd, type Catalog } from '@/lib/store';
+  import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
+  import { matchShip, usd, type Catalog } from '@/lib/store';
+  import { ownUsd } from '@/lib/privacy.svelte';
+  import Wizard, { type WizardStep } from './Wizard.svelte';
   import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
+  import Stat from './Stat.svelte';
+  import * as Card from '@/components/ui/card';
+  import * as Table from '@/components/ui/table';
+  import * as Collapsible from '@/components/ui/collapsible';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { Input } from '@/components/ui/input';
+  import { cn } from '@/lib/utils';
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
+  import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
   let { initialTo = null }: { initialTo?: number | null } = $props();
 
@@ -33,7 +51,21 @@
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
+    return hangarItem.watch((h) => (hangar = h));
   });
+  /** Load the hangar right here (same pages and storage as the Hangar tab). */
+  let hangarLoading = $state<HangarProgress | null>(null);
+  async function loadHangarHere() {
+    if (hangarLoading) return;
+    hangarLoading = { page: 0, count: 0 };
+    try {
+      await refreshHangar((p) => (hangarLoading = p));
+    } catch (e) {
+      error = `Hangar: ${(e as Error).message}`;
+    } finally {
+      hangarLoading = null;
+    }
+  }
   $effect(() => {
     if (initialTo != null) toId = initialTo;
   });
@@ -139,6 +171,7 @@
 
   const name = (id: number) => (id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
   const KIND: Record<string, string> = { warbond: 'Warbond CCU', standard: 'Standard CCU', limited: 'Limited CCU', owned: 'You own it', buyback: 'Buyback', standalone: 'Buy ship' };
+  const KIND_TONE: Record<string, string> = { warbond: 'text-warning', owned: 'text-success', standalone: 'text-primary' };
   const OBJECTIVES: { id: Objective; label: string; hint: string }[] = [
     { id: 'spend', label: 'Current highest savings', hint: 'least to pay now — CCUs you own are free' },
     { id: 'cash', label: 'Lowest new money', hint: 'least that store credit cannot cover, then least to pay' },
@@ -195,265 +228,357 @@
     const others = reservedRefs(chains.filter((x) => x.id !== c.id));
     return plan(ships, ccus.owned, c.startId, c.targetId, { ...c.opt, exclude: [...new Set([...c.opt.exclude, ...others])] });
   }
+  /** Badge tints for verify / cart states. */
+  const TONE = {
+    ok: 'bg-success/15 text-success',
+    warn: 'bg-warning/15 text-warning',
+    err: 'bg-destructive/15 text-destructive',
+  } as const;
+  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted'; label: string }[] = [
+    { key: 'warbond', label: 'Warbond CCUs' },
+    { key: 'buyback', label: 'Buyback CCUs' },
+    { key: 'inStockOnly', label: 'Skip sold-out limited' },
+    { key: 'storeCredit', label: 'Pay with store credit' },
+    { key: 'excludeGifted', label: 'Exclude gifted CCUs' },
+  ];
+  const storeSteps = $derived(addableSteps.filter((s) => s.kind !== 'buyback').length);
+  let openSaved = $state(true);
+  let openMine = $state(true);
+  let openUnmapped = $state(true);
+  // ---- guided flow: each step judged from the state above (verify, save, cart, hangar reload) ----
+  const HANGAR = 'https://robertsspaceindustries.com/account/pledges';
+  const guide = $derived.by((): WizardStep[] => {
+    const steps = result?.steps ?? [];
+    const store = steps.filter((s) => s.kind !== 'owned' && s.kind !== 'buyback');
+    const inCart = store.filter((s) => cart[cartKey(s)]?.st === 'added').length;
+    const allVerified = steps.length > 0 && confirmed === steps.length;
+    const savedThis = startId != null && toId != null && chains.some((c) => c.startId === startId && c.targetId === toId);
+    const ownedNow = (s: Step) => (s.kind === 'standalone' ? mine.some((m) => m.id === s.toId) : ccus.owned.some((o) => o.source === 'hangar' && o.fromId === s.fromId && o.toId === s.toId));
+    const fromPledge = fromId != null && hangar ? hangar.pledges.find((p) => p.ships.some((t) => matchShip(t, ships)?.id === fromId)) : null;
+    const order = steps.map((s) => `${name(s.fromId)} → ${name(s.toId)}`).join(' · ');
+    return [
+      {
+        id: 'load',
+        title: 'Load the store catalog and your hangar',
+        done: !!cat && !!hangar,
+        hint: !cat ? 'Fetching the store catalog…' : !hangar ? 'Without the hangar the planner cannot use the CCUs you already own (free steps) or your store credit.' : `${ccus.owned.filter((o) => o.source === 'hangar').length} owned CCUs · ${mine.length} ships`,
+        action: !hangar ? { label: hangarLoading ? `Loading page ${hangarLoading.page}${hangarLoading.pages ? ` / ${hangarLoading.pages}` : ''}…` : 'Load hangar', onclick: loadHangarHere, busy: !!hangarLoading } : undefined,
+      },
+      {
+        id: 'route',
+        title: 'Pick the source and the target',
+        done: !!result,
+        hint: result ? `${steps.length} steps · pay ${usd(result.total)} now · ${usd(result.savings)} under MSRP` : 'Source = a ship you own (or buy the cheapest from the store), target = the ship you want. Then pick what to optimise for.',
+        warn: startId != null && toId != null && !result ? 'No chain found with these options — allow buyback / warbond CCUs, or pick another source.' : undefined,
+      },
+      {
+        id: 'verify',
+        title: 'Verify every step with RSI',
+        done: allVerified,
+        hint: 'Asks RSI, step by step, whether it really sells that CCU from that ship and at what price — stock and prices change daily.',
+        warn: verified.length && !verifying && confirmed < steps.length ? `${steps.length - confirmed} step${steps.length - confirmed === 1 ? '' : 's'} not confirmed — fix the chain (force-exclude that CCU) before buying.` : undefined,
+        action: result ? { label: verifying ? 'Checking with RSI…' : verified.length ? 'Re-check with RSI' : 'Verify chain with RSI', onclick: verifyChain, disabled: verifying || cartBusy, busy: verifying } : undefined,
+      },
+      {
+        id: 'save',
+        title: 'Save the chain',
+        done: savedThis,
+        hint: 'Keeps the step list for applying later and reserves its CCUs so your other chains cannot plan with the same ones.',
+        action: result ? { label: 'Save chain', onclick: saveChain } : undefined,
+      },
+      {
+        id: 'cart',
+        title: 'Add the store steps to your RSI cart',
+        done: store.length === 0 ? !!result : inCart === store.length,
+        hint: store.length ? `${inCart} / ${store.length} store steps in the cart — nothing is paid here.` : 'Nothing to buy: every step is a CCU you already own.',
+        warn: hasBuyback ? 'A buy-back checks out alone: add it from its row and pay it in a cart of its own.' : undefined,
+        action: store.length ? { label: cartBusy ? 'Adding…' : `Add ${storeSteps} store step${storeSteps === 1 ? '' : 's'}`, onclick: addAll, disabled: cartBusy, busy: cartBusy } : undefined,
+      },
+      {
+        id: 'pay',
+        title: 'Check out on RSI, then reload the hangar',
+        done: store.length === 0 ? !!result : store.every(ownedNow),
+        hint: 'Pay in the RSI cart (store credit applies there). After a hangar reload the bought CCUs show up as owned and this step ticks itself.',
+        action: { label: 'Open RSI cart', href: CART_URL },
+      },
+      {
+        id: 'apply',
+        title: 'Apply the CCUs in order',
+        done: toId != null && mine.some((s) => s.id === toId),
+        hint: `In the hangar open the pledge holding the source ship → Upgrade → apply the CCUs one after another, cheapest hull first: ${order || '—'}. Each apply changes that pledge's ship; the next CCU starts from it. Reload the hangar when the target is in.`,
+        action: { label: fromPledge ? `Open pledge #${fromPledge.id}` : 'Open hangar', href: fromPledge && hangar ? hangarUrl(hangar.pledges, fromPledge.id) : HANGAR },
+      },
+    ];
+  });
   const changed = (c: SavedChain, p: ReturnType<typeof plan>) =>
     !p || p.total !== c.total || p.steps.length !== c.steps.length || p.steps.some((s, i) => s.toId !== c.steps[i]?.toId || s.kind !== c.steps[i]?.kind);
 </script>
 
-<div class="stack">
-  <section class="card stack">
-    <div>
-      <h2>CCU chain planner</h2>
-      <span class="muted">Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money.</span>
-    </div>
-    {#if error}<span class="err">{error}</span>{/if}
+{#snippet foldTitle(title: string, count: number, open: boolean)}
+  <Collapsible.Trigger class="flex w-full cursor-pointer items-center justify-between gap-2 text-left">
+    <Card.Title class="text-lg font-semibold">{title} <span class="text-muted-foreground font-normal">({count})</span></Card.Title>
+    <ChevronDown class={cn('text-muted-foreground size-4 transition-transform', open && 'rotate-180')} />
+  </Collapsible.Trigger>
+{/snippet}
 
-    <fieldset class="group">
-      <legend>1 · Optimise for</legend>
-      <Segmented options={OBJECTIVES} bind:value={opt.objective} ariaLabel="Optimisation target" />
-      <span class="muted small">{OBJECTIVES.find((o) => o.id === opt.objective)?.hint}</span>
-    </fieldset>
+<div class="grid gap-4">
+  <Card.Root>
+    <Card.Header>
+      <Card.Title class="text-lg font-semibold">CCU chain planner</Card.Title>
+      <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money.</Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-4">
+      {#if error}<span class="text-destructive">{error}</span>{/if}
 
-    <fieldset class="group">
-      <legend>2 · Options</legend>
-      <div class="row">
-        <label class="row"><input type="checkbox" bind:checked={opt.warbond} /> Warbond CCUs</label>
-        <label class="row"><input type="checkbox" bind:checked={opt.buyback} /> Buyback CCUs</label>
-        <label class="row"><input type="checkbox" bind:checked={opt.inStockOnly} /> Skip sold-out limited</label>
-        <label class="row"><input type="checkbox" bind:checked={opt.storeCredit} /> Pay with store credit</label>
-        <label class="row"><input type="checkbox" bind:checked={opt.excludeGifted} /> Exclude gifted CCUs</label>
-        <label class="row"><input type="checkbox" bind:checked={excludeSaved} disabled={!chains.length} /> Exclude saved chains{chains.length ? ` (${reservedBy.size} CCUs)` : ''}</label>
-      </div>
-      <span class="muted small">
-        {hangar ? `${ccus.owned.filter((o) => o.source === 'hangar').length} owned CCUs` : 'Load your hangar to use owned CCUs'}
-        {buyback ? ` · ${ccus.owned.filter((o) => o.source === 'buyback').length} buyback CCUs` : ''}
-        {creditCents != null ? ` · store credit ${usd(creditCents)}` : ''}
-      </span>
-    </fieldset>
+      <Wizard title="Guided CCU chain" steps={guide} storageKey="ccu" doneText="The target ship is in your hangar." />
 
-    <div class="row">
-      <fieldset class="group grow">
-        <legend>3 · Source</legend>
-        <Segmented
-          options={[
-            { id: 'hangar', label: 'Ship in my hangar' },
-            { id: 'store', label: 'Buy from the store', hint: 'Start by buying the cheapest standalone ship on sale' },
-            { id: 'any', label: 'Any ship' },
-          ]}
-          bind:value={mode}
-          ariaLabel="Source"
-        />
-        {#if mode === 'store'}
-          <span class="muted small">Picks the cheapest standalone ship on sale to start from.</span>
-        {:else}
-          <ShipSelect {ships} {mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? 'Pick a ship you own…' : 'Pick a ship…'} />
-        {/if}
+      <fieldset class="border-border m-0 grid min-w-0 gap-2 rounded-lg border px-3 py-2.5">
+        <legend class="text-muted-foreground px-1 text-xs">1 · Optimise for</legend>
+        <Segmented options={OBJECTIVES} bind:value={opt.objective} ariaLabel="Optimisation target" />
+        <span class="text-muted-foreground text-[11px]">{OBJECTIVES.find((o) => o.id === opt.objective)?.hint}</span>
       </fieldset>
-      <fieldset class="group grow">
-        <legend>4 · Target</legend>
-        <ShipSelect {ships} {mine} bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
-      </fieldset>
-    </div>
 
-    {#if startId != null && toId != null}
-      {#if !result}
-        <p class="err">
-          No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
-          it's not pricier than the start.
-        </p>
-      {:else}
-        <div class="stats">
-          <div><strong>{usd(result.total)}</strong><span>to pay now</span></div>
-          <div><strong>{usd(result.cash)}</strong><span>new money</span></div>
-          {#if cashNeeded != null}<div><strong class:ok={cashNeeded === 0}>{usd(cashNeeded)}</strong><span>cash after store credit</span></div>{/if}
-          {#if result.paid}<div><strong>{usd(result.paid)}</strong><span>already paid (owned CCUs)</span></div>{/if}
-          <div><strong>{usd(result.msrpDiff)}</strong><span>{mode === 'store' ? 'target MSRP' : 'MSRP difference'}</span></div>
-          <div><strong class:ok={result.savings > 0} class:err={result.savings < 0}>{usd(result.savings)}</strong><span>saved vs MSRP</span>{#if result.msrpDiff > 0}<span class="delta" class:up={result.savings > 0} class:down={result.savings < 0}>{result.savings >= 0 ? '▼' : '▲'} {Math.abs((100 * result.savings) / result.msrpDiff).toFixed(0)}%</span>{/if}</div>
-        </div>
-        <ol class="chain" aria-label="Chain steps">
-          {#each result.steps as s, i (i)}
-            {@const a = addable(s, byId)}
-            {@const c = cart[cartKey(s)]}
-            {@const done = s.kind === 'owned' || c?.st === 'added'}
-            {@const v = verify[cartKey(s)]}
-            <li class="step" class:done class:busy={c?.st === 'adding' || v?.st === 'checking'} class:bad={c?.st === 'error' || v?.st === 'no'}>
-              <div class="rail">
-                <span class="dot">{#if done}✓{:else if c?.st === 'error' || v?.st === 'no'}!{:else}{i + 1}{/if}</span>
-                {#if i < result.steps.length - 1}<span class="line"></span>{/if}
-              </div>
-              <div class="body">
-                <div class="row spread">
-                  <div class="title">
-                    {#if s.fromId !== STORE_START}<span class="muted">{name(s.fromId)}</span> <span class="arrow">→</span> {/if}<strong>{name(s.toId)}</strong>
-                    <span class="chip k-{s.kind}">{KIND[s.kind]}</span>
-                    {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback'}<span class="muted small">{s.label}</span>{/if}
-                    {#if v?.st === 'checking'}<span class="badge">checking…</span>
-                    {:else if v?.st === 'ok'}<span class="badge ok">✓ RSI confirmed{v.note ? ` · ${v.note}` : ''}</span>
-                    {:else if v?.st === 'price'}<span class="badge warn">⚠ RSI price {usd(v.price)}</span>
-                    {:else if v?.st === 'no'}<span class="badge err">✗ {v.why}</span>
-                    {:else if v?.st === 'error'}<span class="badge err" title={v.msg}>? could not check</span>{/if}
-                  </div>
-                  <div class="row actions">
-                    {#if a.kind === 'none'}
-                      {#if s.kind !== 'owned'}<span class="muted small">{a.why}</span>{/if}
-                    {:else if c?.st === 'adding'}
-                      <span class="muted small">Adding…</span>
-                    {:else if c?.st === 'added'}
-                      <span class="ok small">In cart{c.price != null && c.price !== s.cost ? ` · RSI says ${usd(c.price)}` : ''}</span>
-                    {:else}
-                      <button class="btn small" disabled={cartBusy} onclick={() => addOne(s)} title={s.kind === 'buyback' ? 'Buy-backs check out alone: one per cart, nothing else in it.' : 'Adds this CCU to your RSI cart (nothing is paid)'}>
-                        {s.kind === 'buyback' ? 'Add buy-back' : 'Add to cart'}
-                      </button>
-                      {#if c?.st === 'error'}<span class="err small" title={c.msg}>{c.code === 'signed-out' ? 'Sign in to RSI' : c.code === 'conflict' ? 'Cart busy' : c.code === 'network' ? 'No answer — check cart' : 'Refused'}</span>{/if}
-                    {/if}
-                    {#if link(s)}
-                      <a class="btn small ghost" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' ? 'Store' : 'Upgrades'} ↗</a>
-                    {/if}
-                  </div>
-                </div>
-                {#if c?.st === 'error'}<div class="err small reason">{c.msg}</div>{/if}
-                <dl class="meta">
-                  <div><dt>Cost</dt><dd>{s.cost ? usd(s.cost) : 'free'}{s.paid ? ` · paid ${usd(s.paid)}` : ''}</dd></div>
-                  <div><dt>New money</dt><dd class:warn={s.cash > 0}>{s.cash ? usd(s.cash) : '—'}</dd></div>
-                  <div><dt>Running</dt><dd>{usd(running[i] ?? 0)}</dd></div>
-                  <div><dt>Hull value</dt><dd class="muted">{usd(byId.get(s.toId)?.msrp ?? 0)}</dd></div>
-                </dl>
-              </div>
-            </li>
+      <fieldset class="border-border m-0 grid min-w-0 gap-2 rounded-lg border px-3 py-2.5">
+        <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {#each OPTIONS as o (o.key)}
+            <label class="flex cursor-pointer items-center gap-2 text-sm"><Checkbox bind:checked={opt[o.key]} /> {o.label}</label>
           {/each}
-        </ol>
-        <div class="row spread">
-          <div class="row">
-            <button class="btn small" disabled={verifying || cartBusy} onclick={verifyChain} title="Asks RSI, step by step, whether it sells each CCU from that ship and at what price. Read-only.">
-              {verifying ? 'Checking with RSI…' : verified.length ? 'Re-check with RSI' : 'Verify chain with RSI'}
-            </button>
-            {#if verified.length && !verifying}
-              <span class="small" class:ok={confirmed === result.steps.length} class:warn={confirmed !== result.steps.length}>{confirmed}/{result.steps.length} steps confirmed</span>
-            {/if}
-            {#if addableSteps.some((s) => s.kind !== 'buyback')}
-              <button class="btn primary small" disabled={cartBusy} onclick={addAll}>{cartBusy ? 'Adding…' : `Add ${addableSteps.filter((s) => s.kind !== 'buyback').length} store step${addableSteps.filter((s) => s.kind !== 'buyback').length === 1 ? '' : 's'} to RSI cart`}</button>
-            {/if}
-            <a class="btn small" href={CART_URL} target="_blank" rel="noopener">Open RSI cart ↗</a>
-            <span class="muted small">
-              Lines are added to your RSI cart in your signed-in session; nothing is paid here. Check the cart before checkout.
-              {#if hasBuyback} A buy-back must be the only line in the cart — add it separately and check it out alone.{/if}
-            </span>
-          </div>
-          <form class="row" onsubmit={(e) => (e.preventDefault(), saveChain())}>
-            <input placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
-            <button class="btn small" type="submit">Save chain</button>
-            {#if saved}<span class="ok small">Saved “{saved}”</span>{/if}
-          </form>
+          <label class="flex cursor-pointer items-center gap-2 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-60">
+            <Checkbox bind:checked={excludeSaved} disabled={!chains.length} /> Exclude saved chains{chains.length ? ` (${reservedBy.size} CCUs)` : ''}
+          </label>
         </div>
-        <span class="muted small">Or buy by hand on the RSI <a href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
+        <span class="text-muted-foreground text-[11px]">
+          {hangar ? `${ccus.owned.filter((o) => o.source === 'hangar').length} owned CCUs` : 'Load your hangar to use owned CCUs'}
+          {buyback ? ` · ${ccus.owned.filter((o) => o.source === 'buyback').length} buyback CCUs` : ''}
+          {creditCents != null ? ` · store credit ${ownUsd(creditCents)}` : ''}
+        </span>
+      </fieldset>
+
+      <div class="flex flex-wrap gap-4">
+        <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
+          <legend class="text-muted-foreground px-1 text-xs">3 · Source</legend>
+          <Segmented
+            options={[
+              { id: 'hangar', label: 'Ship in my hangar' },
+              { id: 'store', label: 'Buy from the store', hint: 'Start by buying the cheapest standalone ship on sale' },
+              { id: 'any', label: 'Any ship' },
+            ]}
+            bind:value={mode}
+            ariaLabel="Source"
+          />
+          {#if mode === 'store'}
+            <span class="text-muted-foreground text-[11px]">Picks the cheapest standalone ship on sale to start from.</span>
+          {:else}
+            <ShipSelect {ships} {mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? 'Pick a ship you own…' : 'Pick a ship…'} />
+          {/if}
+        </fieldset>
+        <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
+          <legend class="text-muted-foreground px-1 text-xs">4 · Target</legend>
+          <ShipSelect {ships} {mine} bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+        </fieldset>
+      </div>
+
+      {#if startId != null && toId != null}
+        {#if !result}
+          <p class="text-destructive m-0">
+            No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
+            it's not pricier than the start.
+          </p>
+        {:else}
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
+            <Stat value={usd(result.total)} label="to pay now" />
+            <Stat value={usd(result.cash)} label="new money" />
+            {#if cashNeeded != null}<Stat value={ownUsd(cashNeeded)} label="cash after store credit" valueTone={cashNeeded === 0 ? 'ok' : null} />{/if}
+            {#if result.paid}<Stat value={ownUsd(result.paid)} label="already paid (owned CCUs)" />{/if}
+            <Stat value={usd(result.msrpDiff)} label={mode === 'store' ? 'target MSRP' : 'MSRP difference'} />
+            <Stat
+              value={usd(result.savings)}
+              label="saved vs MSRP"
+              valueTone={result.savings > 0 ? 'ok' : result.savings < 0 ? 'err' : null}
+              delta={result.msrpDiff > 0
+                ? { text: `${result.savings >= 0 ? '▼' : '▲'} ${Math.abs((100 * result.savings) / result.msrpDiff).toFixed(0)}%`, tone: result.savings > 0 ? 'up' : result.savings < 0 ? 'down' : 'neutral' }
+                : null}
+            />
+          </div>
+          <ol class="chain" aria-label="Chain steps">
+            {#each result.steps as s, i (i)}
+              {@const a = addable(s, byId)}
+              {@const c = cart[cartKey(s)]}
+              {@const done = s.kind === 'owned' || c?.st === 'added'}
+              {@const v = verify[cartKey(s)]}
+              <li class="step" class:done class:busy={c?.st === 'adding' || v?.st === 'checking'} class:bad={c?.st === 'error' || v?.st === 'no'}>
+                <div class="rail">
+                  <span class="dot">{#if done}✓{:else if c?.st === 'error' || v?.st === 'no'}!{:else}{i + 1}{/if}</span>
+                  {#if i < result.steps.length - 1}<span class="line"></span>{/if}
+                </div>
+                <div class="min-w-0 pt-0.5 pb-4">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-1.5 text-sm">
+                      {#if s.fromId !== STORE_START}<span class="text-muted-foreground">{name(s.fromId)}</span> <span class="text-muted-foreground">→</span> {/if}<strong>{name(s.toId)}</strong>
+                      <Badge variant="outline" class={KIND_TONE[s.kind]}>{KIND[s.kind]}</Badge>
+                      {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback'}<span class="text-muted-foreground text-[11px]">{s.label}</span>{/if}
+                      {#if v?.st === 'checking'}<Badge variant="secondary" class="text-muted-foreground">checking…</Badge>
+                      {:else if v?.st === 'ok'}<Badge variant="secondary" class={TONE.ok}><Check />RSI confirmed{v.note ? ` · ${v.note}` : ''}</Badge>
+                      {:else if v?.st === 'price'}<Badge variant="secondary" class={TONE.warn}><TriangleAlert />RSI price {usd(v.price)}</Badge>
+                      {:else if v?.st === 'no'}<Badge variant="secondary" class={TONE.err}><X />{v.why}</Badge>
+                      {:else if v?.st === 'error'}<Badge variant="secondary" class={TONE.err} title={v.msg}>? could not check</Badge>{/if}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      {#if a.kind === 'none'}
+                        {#if s.kind !== 'owned'}<span class="text-muted-foreground text-[11px]">{a.why}</span>{/if}
+                      {:else if c?.st === 'adding'}
+                        <span class="text-muted-foreground text-[11px]">Adding…</span>
+                      {:else if c?.st === 'added'}
+                        <Badge variant="secondary" class={TONE.ok}><ShoppingCart />In cart{c.price != null && c.price !== s.cost ? ` · RSI says ${usd(c.price)}` : ''}</Badge>
+                      {:else}
+                        <Button variant="outline" size="xs" disabled={cartBusy} onclick={() => addOne(s)} title={s.kind === 'buyback' ? 'Buy-backs check out alone: one per cart, nothing else in it.' : 'Adds this CCU to your RSI cart (nothing is paid)'}>
+                          <ShoppingCart />{s.kind === 'buyback' ? 'Add buy-back' : 'Add to cart'}
+                        </Button>
+                        {#if c?.st === 'error'}<Badge variant="secondary" class={TONE.err} title={c.msg}>{c.code === 'signed-out' ? 'Sign in to RSI' : c.code === 'conflict' ? 'Cart busy' : c.code === 'network' ? 'No answer — check cart' : 'Refused'}</Badge>{/if}
+                      {/if}
+                      {#if link(s)}
+                        <Button variant="ghost" size="xs" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' ? 'Store' : 'Upgrades'} <ExternalLink /></Button>
+                      {/if}
+                    </div>
+                  </div>
+                  {#if c?.st === 'error'}<div class="text-destructive mt-1 text-[11px]">{c.msg}</div>{/if}
+                  <dl class="mt-1.5 mb-0 flex flex-wrap gap-x-[18px] gap-y-1.5">
+                    {#each [{ dt: 'Cost', dd: `${s.cost ? usd(s.cost) : 'free'}${s.paid ? ` · paid ${ownUsd(s.paid)}` : ''}`, cls: '' }, { dt: 'New money', dd: s.cash ? usd(s.cash) : '—', cls: s.cash > 0 ? 'text-warning' : '' }, { dt: 'Running', dd: usd(running[i] ?? 0), cls: '' }, { dt: 'Hull value', dd: usd(byId.get(s.toId)?.msrp ?? 0), cls: 'text-muted-foreground' }] as m (m.dt)}
+                      <div class="flex items-baseline gap-1.5">
+                        <dt class="text-muted-foreground text-[11px] tracking-[0.04em] uppercase">{m.dt}</dt>
+                        <dd class={cn('m-0 tabular-nums', m.cls)}>{m.dd}</dd>
+                      </div>
+                    {/each}
+                  </dl>
+                </div>
+              </li>
+            {/each}
+          </ol>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" disabled={verifying || cartBusy} onclick={verifyChain} title="Asks RSI, step by step, whether it sells each CCU from that ship and at what price. Read-only.">
+                {verifying ? 'Checking with RSI…' : verified.length ? 'Re-check with RSI' : 'Verify chain with RSI'}
+              </Button>
+              {#if verified.length && !verifying}
+                <Badge variant="secondary" class={confirmed === result.steps.length ? TONE.ok : TONE.warn}>{confirmed}/{result.steps.length} steps confirmed</Badge>
+              {/if}
+              {#if storeSteps > 0}
+                <Button size="sm" disabled={cartBusy} onclick={addAll}><ShoppingCart />{cartBusy ? 'Adding…' : `Add ${storeSteps} store step${storeSteps === 1 ? '' : 's'} to RSI cart`}</Button>
+              {/if}
+              <Button variant="outline" size="sm" href={CART_URL} target="_blank" rel="noopener">Open RSI cart <ExternalLink /></Button>
+              <span class="text-muted-foreground text-[11px]">
+                Lines are added to your RSI cart in your signed-in session; nothing is paid here. Check the cart before checkout.
+                {#if hasBuyback} A buy-back must be the only line in the cart — add it separately and check it out alone.{/if}
+              </span>
+            </div>
+            <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
+              <Input class="h-7 w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
+              <Button variant="outline" size="sm" type="submit">Save chain</Button>
+              {#if saved}<span class="text-success text-[11px]">Saved “{saved}”</span>{/if}
+            </form>
+          </div>
+          <span class="text-muted-foreground text-[11px]">Or buy by hand on the RSI <a class="text-primary underline-offset-4 hover:underline" href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
+        {/if}
       {/if}
-    {/if}
-  </section>
+    </Card.Content>
+  </Card.Root>
 
   {#if chains.length}
-    <section class="card stack">
-      <h2>Saved chains <span class="muted">({chains.length})</span></h2>
-      <span class="muted">Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. “Now” re-prices each chain on today's store + hangar.</span>
-      <table>
-        <thead><tr><th>Name</th><th>Chain</th><th>Saved</th><th>Now</th><th></th></tr></thead>
-        <tbody>
-          {#each chains as c (c.id)}
-            {@const p = now(c)}
-            <tr>
-              <td><strong>{c.name}</strong><br /><span class="muted small">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></td>
-              <td class="small">{[name(c.startId), ...c.steps.map((s) => name(s.toId))].join(' → ')}</td>
-              <td>{usd(c.total)}<br /><span class="muted small">{usd(c.cash)} new money</span></td>
-              <td>
-                {#if !p}<span class="err">no longer possible</span>
-                {:else}<span class:ok={p.total < c.total} class:warn={p.total > c.total}>{usd(p.total)}</span>{#if changed(c, p)}<br /><span class="muted small">chain changed</span>{/if}{/if}
-              </td>
-              <td class="row">
-                <button class="btn small" onclick={() => loadChain(c)}>Load</button>
-                <button class="btn small" onclick={() => persist(chains.filter((x) => x.id !== c.id))}>Delete</button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </section>
+    <Collapsible.Root bind:open={openSaved}>
+      <Card.Root>
+        <Card.Header>
+          {@render foldTitle('Saved chains', chains.length, openSaved)}
+          <Card.Description>Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. “Now” re-prices each chain on today's store + hangar.</Card.Description>
+        </Card.Header>
+        <Collapsible.Content>
+          <Card.Content>
+            <Table.Root>
+              <Table.Header>
+                <Table.Row><Table.Head>Name</Table.Head><Table.Head>Chain</Table.Head><Table.Head>Saved</Table.Head><Table.Head>Now</Table.Head><Table.Head></Table.Head></Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each chains as c (c.id)}
+                  {@const p = now(c)}
+                  <Table.Row>
+                    <Table.Cell><strong>{c.name}</strong><br /><span class="text-muted-foreground text-[11px]">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
+                    <Table.Cell class="text-[11px] whitespace-normal">{[name(c.startId), ...c.steps.map((s) => name(s.toId))].join(' → ')}</Table.Cell>
+                    <Table.Cell>{usd(c.total)}<br /><span class="text-muted-foreground text-[11px]">{usd(c.cash)} new money</span></Table.Cell>
+                    <Table.Cell>
+                      {#if !p}<span class="text-destructive">no longer possible</span>
+                      {:else}<span class={cn(p.total < c.total && 'text-success', p.total > c.total && 'text-warning')}>{usd(p.total)}</span>{#if changed(c, p)}<br /><span class="text-muted-foreground text-[11px]">chain changed</span>{/if}{/if}
+                    </Table.Cell>
+                    <Table.Cell>
+                      <div class="flex items-center gap-1.5">
+                        <Button variant="outline" size="xs" onclick={() => loadChain(c)}>Load</Button>
+                        <Button variant="destructive" size="xs" onclick={() => persist(chains.filter((x) => x.id !== c.id))}>Delete</Button>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </Card.Content>
+        </Collapsible.Content>
+      </Card.Root>
+    </Collapsible.Root>
   {/if}
 
   {#if ccus.owned.length}
-    <section class="card stack">
-      <h2>Your CCUs <span class="muted">({ccus.owned.length})</span></h2>
-      <span class="muted">Click <em>Force</em> to require a CCU in the chain (include), click again to keep it out (exclude), again to reset.</span>
-      <table>
-        <thead><tr><th>CCU</th><th>Source</th><th>Paid</th><th>Upgrade value</th><th>Reserved by</th><th>Force</th></tr></thead>
-        <tbody>
-          {#each ccus.owned.sort((a, b) => (byId.get(a.fromId)?.msrp ?? 0) - (byId.get(b.fromId)?.msrp ?? 0)) as o (o.source + o.ref)}
-            {@const gain = (byId.get(o.toId)?.msrp ?? 0) - (byId.get(o.fromId)?.msrp ?? 0)}
-            <tr>
-              <td><span class="muted">{name(o.fromId)} →</span> <strong>{name(o.toId)}</strong></td>
-              <td>{o.source}{o.gifted ? ' · gift' : ''}</td>
-              <td>{o.value ? usd(o.value) : o.source === 'hangar' ? '—' : '?'}</td>
-              <td class:ok={o.value && gain > o.value}>{usd(gain)}</td>
-              <td class="small">{reservedBy.get(o.ref)?.name ?? ''}</td>
-              <td>
-                <button class="btn small f-{forceOf(o.ref)}" onclick={() => cycleForce(o.ref)}>{forceOf(o.ref) || 'auto'}</button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </section>
+    <Collapsible.Root bind:open={openMine}>
+      <Card.Root>
+        <Card.Header>
+          {@render foldTitle('Your CCUs', ccus.owned.length, openMine)}
+          <Card.Description>Click <em>Force</em> to require a CCU in the chain (include), click again to keep it out (exclude), again to reset.</Card.Description>
+        </Card.Header>
+        <Collapsible.Content>
+          <Card.Content>
+            <Table.Root>
+              <Table.Header>
+                <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Source</Table.Head><Table.Head>Paid</Table.Head><Table.Head>Upgrade value</Table.Head><Table.Head>Reserved by</Table.Head><Table.Head>Force</Table.Head></Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each ccus.owned.sort((a, b) => (byId.get(a.fromId)?.msrp ?? 0) - (byId.get(b.fromId)?.msrp ?? 0)) as o (o.source + o.ref)}
+                  {@const gain = (byId.get(o.toId)?.msrp ?? 0) - (byId.get(o.fromId)?.msrp ?? 0)}
+                  {@const f = forceOf(o.ref)}
+                  <Table.Row>
+                    <Table.Cell><span class="text-muted-foreground">{name(o.fromId)} →</span> <strong>{name(o.toId)}</strong></Table.Cell>
+                    <Table.Cell>{o.source}{o.gifted ? ' · gift' : ''}</Table.Cell>
+                    <Table.Cell>{o.value ? ownUsd(o.value) : o.source === 'hangar' ? '—' : '?'}</Table.Cell>
+                    <Table.Cell class={cn(o.value && gain > o.value && 'text-success')}>{usd(gain)}</Table.Cell>
+                    <Table.Cell class="text-[11px]">{reservedBy.get(o.ref)?.name ?? ''}</Table.Cell>
+                    <Table.Cell>
+                      <Button variant="outline" size="xs" class={cn('min-w-16', f === 'include' && 'text-success', f === 'exclude' && 'text-destructive')} onclick={() => cycleForce(o.ref)}>{f || 'auto'}</Button>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </Card.Content>
+        </Collapsible.Content>
+      </Card.Root>
+    </Collapsible.Root>
   {/if}
 
   {#if ccus.unmapped.length}
-    <section class="card stack">
-      <h2>CCUs not matched to a ship <span class="muted">({ccus.unmapped.length})</span></h2>
-      <span class="muted">Ignored by the planner (name didn't match a store ship).</span>
-      <div class="row">{#each ccus.unmapped as u, i (i)}<span class="chip">{u.name} · {u.source}</span>{/each}</div>
-    </section>
+    <Collapsible.Root bind:open={openUnmapped}>
+      <Card.Root>
+        <Card.Header>
+          {@render foldTitle('CCUs not matched to a ship', ccus.unmapped.length, openUnmapped)}
+          <Card.Description>Ignored by the planner (name didn't match a store ship).</Card.Description>
+        </Card.Header>
+        <Collapsible.Content>
+          <Card.Content class="flex flex-wrap gap-1.5">
+            {#each ccus.unmapped as u, i (i)}<Badge variant="secondary">{u.name} · {u.source}</Badge>{/each}
+          </Card.Content>
+        </Collapsible.Content>
+      </Card.Root>
+    </Collapsible.Root>
   {/if}
 </div>
 
 <style>
-  .group {
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: grid;
-    gap: 8px;
-    margin: 0;
-    min-width: 0;
-  }
-  .group legend {
-    color: var(--muted);
-    font-size: 12px;
-    padding: 0 4px;
-  }
-  .grow {
-    flex: 1 1 300px;
-  }
-  .ok {
-    color: var(--ok);
-  }
-  .warn {
-    color: #ffd166;
-  }
-  .k-warbond {
-    color: #ffd166;
-  }
-  .k-owned {
-    color: var(--ok);
-  }
-  .k-standalone {
-    color: var(--accent);
-  }
-  .f-include {
-    color: var(--ok);
-  }
-  .f-exclude {
-    color: var(--err);
-  }
-  .small {
-    font-size: 11px;
-  }
-  /* vertical stepper (pattern after 21st.dev's titled steppers) */
+  /* vertical stepper rail (pattern after 21st.dev's titled steppers) */
   .chain {
     list-style: none;
     margin: 0;
@@ -479,22 +604,24 @@
     font-size: 12px;
     font-weight: 700;
     border: 1px solid rgb(255 255 255 / 0.18);
-    background: var(--surface-2);
-    color: var(--text);
-    transition: background 150ms, border-color 150ms;
+    background: var(--popover);
+    color: var(--foreground);
+    transition:
+      background 150ms,
+      border-color 150ms;
   }
   .step.done .dot {
-    background: rgb(61 220 151 / 0.18);
-    border-color: rgb(61 220 151 / 0.6);
-    color: var(--ok);
+    background: color-mix(in srgb, var(--success) 18%, transparent);
+    border-color: color-mix(in srgb, var(--success) 60%, transparent);
+    color: var(--success);
   }
   .step.busy .dot {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgb(60 200 255 / 0.18);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
   }
   .step.bad .dot {
-    border-color: var(--err);
-    color: var(--err);
+    border-color: var(--destructive);
+    color: var(--destructive);
   }
   .line {
     width: 2px;
@@ -505,70 +632,6 @@
     border-radius: 1px;
   }
   .step.done .line {
-    background: rgb(61 220 151 / 0.45);
-  }
-  .body {
-    padding: 2px 0 16px;
-    min-width: 0;
-  }
-  .title {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-  }
-  .arrow {
-    color: var(--muted);
-  }
-  .actions {
-    gap: 6px;
-  }
-  .btn.ghost {
-    background: none;
-  }
-  .reason {
-    margin-top: 4px;
-  }
-  .badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 0.07);
-    color: var(--muted);
-  }
-  .badge.ok {
-    background: rgb(61 220 151 / 0.14);
-    color: var(--ok);
-  }
-  .badge.warn {
-    background: rgb(255 209 102 / 0.14);
-    color: #ffd166;
-  }
-  .badge.err {
-    background: rgb(255 84 112 / 0.14);
-    color: var(--err);
-  }
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 18px;
-    margin: 6px 0 0;
-  }
-  .meta div {
-    display: flex;
-    gap: 6px;
-    align-items: baseline;
-  }
-  .meta dt {
-    color: var(--muted);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .meta dd {
-    margin: 0;
-    font-variant-numeric: tabular-nums;
+    background: color-mix(in srgb, var(--success) 45%, transparent);
   }
 </style>

@@ -23,6 +23,8 @@
 .sp-row.sp-muted:hover { opacity: 0.8; max-height: none; }
 .sp-mute-hide .sp-row.sp-muted { display: none !important; }
 .sp-dev .sp-row.sp-dev-row { box-shadow: inset 3px 0 0 #ffb547; }
+.sp-row.sp-keyword { box-shadow: inset 3px 0 0 #c084fc; }
+.sp-dev .sp-row.sp-dev-row.sp-keyword { box-shadow: inset 3px 0 0 #ffb547, inset 6px 0 0 #c084fc; }
 .sp-focus { outline: 2px solid #3cc8ff !important; outline-offset: 2px; border-radius: 4px; }
 
 /* ---- replies ---- */

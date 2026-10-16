@@ -2,6 +2,12 @@
   // Sortable table header: click to sort, click again to flip. aria-sort for screen readers.
   import { nextSort, type Dir, type SortState } from '@/lib/sort';
   import type { Snippet } from 'svelte';
+  import * as Table from '@/components/ui/table';
+  import { Button } from '@/components/ui/button';
+  import { cn } from '@/lib/utils';
+  import ArrowUp from '@lucide/svelte/icons/arrow-up';
+  import ArrowDown from '@lucide/svelte/icons/arrow-down';
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
 
   let {
     key,
@@ -13,40 +19,20 @@
   const active = $derived(sort.key === key);
 </script>
 
-<th aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-  <button type="button" class:active onclick={() => (sort = nextSort(sort, key, firstDir))}>
+<Table.Head aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+  <Button
+    variant="ghost"
+    size="xs"
+    class={cn('-ml-2 font-semibold text-muted-foreground hover:text-foreground', active && 'text-foreground')}
+    onclick={() => (sort = nextSort(sort, key, firstDir))}
+  >
     {@render children()}
-    <span class="arrow" aria-hidden="true">{active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
-  </button>
-</th>
-
-<style>
-  button {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    gap: 5px;
-    align-items: center;
-    color: var(--muted);
-    font-weight: 600;
-    font-size: 12px;
-    white-space: nowrap;
-  }
-  button:hover,
-  button.active {
-    color: var(--text);
-  }
-  button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-  .arrow {
-    font-size: 10px;
-    opacity: 0.45;
-  }
-  .active .arrow {
-    opacity: 1;
-    color: var(--accent);
-  }
-</style>
+    {#if active && sort.dir === 'asc'}
+      <ArrowUp class="text-primary" aria-hidden="true" />
+    {:else if active}
+      <ArrowDown class="text-primary" aria-hidden="true" />
+    {:else}
+      <ArrowUpDown class="opacity-45" aria-hidden="true" />
+    {/if}
+  </Button>
+</Table.Head>

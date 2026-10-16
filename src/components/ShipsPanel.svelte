@@ -1,14 +1,16 @@
 <script lang="ts">
   import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
+  import PaintBundlePanel from './PaintBundlePanel.svelte';
   import { hangarUrl } from '@/lib/hangar';
   import {
-    family,
+    line,
     familyLabel,
     inventory,
     itemsCsv,
     ownedShipsWithPaints,
     paintGroups,
+    shipsFor,
     storePaintFor,
     storePaintIndex,
     storePaintsByFamily,
@@ -16,14 +18,28 @@
     type PaintGroup,
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
   import { usd, type Catalog, type CatalogShip, type PaintCatalog, type StorePaint } from '@/lib/store';
+  import { ownUsd } from '@/lib/privacy.svelte';
   import SortTh from './SortTh.svelte';
+  import Thumb from './Thumb.svelte';
+  import * as Card from '@/components/ui/card';
+  import * as Table from '@/components/ui/table';
+  import * as Collapsible from '@/components/ui/collapsible';
+  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Input } from '@/components/ui/input';
+  import { cn } from '@/lib/utils';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { ArrowDown, Check, ChevronDown, ChevronRight, Download, ExternalLink, House, ShoppingCart, X } from '@lucide/svelte';
+  import * as DropdownMenu from '@/components/ui/dropdown-menu';
+  import { shipLines, xplorCsv, xplorRows } from '@/lib/export';
 
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
   let storePaints = $state<PaintCatalog | null>(null);
+  let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let error = $state('');
   let paintsLoading = $state(false);
 
@@ -31,11 +47,12 @@
     hangarItem.getValue().then((h) => (hangar = h));
     catalogItem.getValue().then((c) => (cat = c));
     paintCatalogItem.getValue().then((p) => (storePaints = p));
+    buybackItem.getValue().then((b) => (buyback = b));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     refreshPaints(false);
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b))];
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {
@@ -54,29 +71,32 @@
   const fleet = $derived(ownedShipsWithPaints(rows));
   const storeIdx = $derived(storePaintIndex(storePaints?.paints ?? []));
   const storeByFam = $derived(storePaintsByFamily(storePaints?.paints ?? [], ships));
+  const ownedPaints = $derived(rows.filter((r) => r.category === 'paint'));
+  /** Store paint id → the hulls it is for (exact variant when the name says one: "Hull A - Dusk Paint" → Hull A only). */
+  const storeFits = $derived(new Map((storePaints?.paints ?? []).map((sp) => [sp.id, shipsFor(sp.name, ships)])));
   /** Store paints you already have (same title in the hangar). */
   const ownedStoreIds = $derived(new Set(rows.filter((r) => r.category === 'paint').map((r) => storePaintFor(r, storeIdx)?.id).filter((x): x is number => x != null)));
 
   // ---- view prefs ----
-  type View = 'paints' | 'ships';
+  type View = 'paints' | 'ships' | 'bundle';
   type Own = 'both' | 'owned' | 'not-owned';
   type GroupShow = '' | 'owned' | 'not-owned' | 'unknown';
   const PREFS = 'rsiplus:ships';
   const saved = (() => {
     try {
-      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ view: View; own: Own; groupShow: GroupShow; withEmpty: boolean }>;
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ own: Own; groupShow: GroupShow; withEmpty: boolean }>;
     } catch {
       return {};
     }
   })();
-  const hashView = new URLSearchParams(location.hash.split('?')[1] ?? '').get('view');
-  let view = $state<View>(hashView === 'ships' || hashView === 'paints' ? hashView : (saved.view ?? 'paints'));
+  /** Which page the hub shows: Paints by ship (`#paints`), My ships (`#fleet`) or Paint rebuy (`#paint-rebuy`). One instance for all three. */
+  let { view = 'paints' }: { view?: View } = $props();
   let own = $state<Own>(saved.own ?? 'both');
   let groupShow = $state<GroupShow>(saved.groupShow ?? '');
   let withEmpty = $state(saved.withEmpty ?? true);
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ view, own, groupShow, withEmpty }));
+      localStorage.setItem(PREFS, JSON.stringify({ own, groupShow, withEmpty }));
     } catch {
       /* no persistence — fine */
     }
@@ -88,27 +108,41 @@
     if (r.ship) return r.ship.name;
     if (!r.fits.length) return '';
     if (r.fits.length === 1) return r.fits[0]!.name;
-    const fams = [...new Set(r.fits.map((s) => family(s.name)))];
+    const fams = [...new Set(r.fits.map((s) => line(s.name, ships)))];
     return fams
       .map((f) => {
-        const inFam = ships.filter((s) => family(s.name) === f).length;
-        const hit = r.fits.filter((s) => family(s.name) === f);
+        const inFam = ships.filter((s) => line(s.name, ships) === f).length;
+        const hit = r.fits.filter((s) => line(s.name, ships) === f);
         return hit.length >= inFam && inFam > 1 ? `All ${familyLabel(f, hit)}` : hit.map((s) => s.name).join(', ');
       })
       .join(' · ');
   };
-  function download(name: string, body: string) {
-    const url = URL.createObjectURL(new Blob([body], { type: 'text/csv' }));
+  function download(name: string, body: string, type = 'text/csv') {
+    const url = URL.createObjectURL(new Blob([body], { type }));
     Object.assign(document.createElement('a'), { href: url, download: name }).click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   const stamp = () => new Date().toISOString().slice(0, 10);
+  // ---- fleet export (HangarXPLOR shape: FleetYards, myfleet.gg, Starjump read it) ----
+  const fleetRows = () => xplorRows(hangar?.pledges ?? [], ships);
+  function exportFleet(kind: 'json' | 'csv') {
+    const rows = fleetRows();
+    if (kind === 'json') download(`hangarxplor-shiplist-${stamp()}.json`, JSON.stringify(rows, null, 2), 'application/json');
+    else download(`hangarxplor-shiplist-${stamp()}.csv`, xplorCsv(rows));
+  }
+  let copiedNames = $state(false);
+  async function copyNames() {
+    await navigator.clipboard.writeText(shipLines(fleetRows()));
+    copiedNames = true;
+    setTimeout(() => (copiedNames = false), 1500);
+  }
   let collapsed = $state<Set<string>>(new Set());
   const toggle = (k: string) => {
     const s = new Set(collapsed);
     s.has(k) ? s.delete(k) : s.add(k);
     collapsed = s;
   };
+  const setOpen = (k: string, open: boolean) => collapsed.has(k) === open && toggle(k);
   const setAll = (keys: string[], close: boolean) => (collapsed = close ? new Set([...collapsed, ...keys]) : new Set([...collapsed].filter((k) => !keys.includes(k))));
 
   // ---- paints by ship ----
@@ -122,10 +156,14 @@
   interface Group extends PaintGroup {
     rows: Row[];
     fam: string;
+    /** Variant group (store paints for hulls of the family you don't own): exactly those hulls, for Plan CCU. */
+    variants?: CatalogShip[];
   }
   const pgStatus = (g: PaintGroup): Exclude<GroupShow, ''> => (g.key === '~' ? 'unknown' : g.owned.length ? 'owned' : 'not-owned');
   const groupsAll = $derived.by((): Group[] => {
-    const base = paintGroups(rows, fleet, withEmpty);
+    // Always attach the hulls you own to their family, or a ship with no paints in the hangar would read "no ship
+    // owned" next to its store paints; `withEmpty` only decides whether families with nothing to list still show.
+    const base = paintGroups(rows, fleet, true, ships);
     const byKey = new Map(base.map((g) => [g.key, g]));
     // Families that only exist on the store side (you own neither ship nor paint) still get a group when
     // showing not-owned paints — that's how you browse paints for ships you don't have.
@@ -134,18 +172,41 @@
         const key = f === '~' ? 'packs' : `f:${f}`;
         if (!byKey.has(key)) byKey.set(key, { key, label: f === '~' ? 'Paint packs & collections (store)' : familyLabel(f, ships), owned: [], paints: [] });
       }
-    return [...byKey.values()].map((g) => {
+    const out: Group[] = [];
+    for (const g of byKey.values()) {
       const fam = g.key === '~' || g.key === 'packs' ? g.key : g.key.slice(2);
       const rowsOut: Row[] = g.paints.map((r) => ({ key: r.key, title: r.title, owned: r, store: storePaintFor(r, storeIdx) }));
       const seen = new Set(rowsOut.map((r) => r.store?.id).filter((x) => x != null));
-      for (const sp of storeByFam.get(fam === 'packs' ? '~' : fam) ?? [])
-        if (!seen.has(sp.id) && !ownedStoreIds.has(sp.id)) rowsOut.push({ key: `s:${sp.id}`, title: sp.name, owned: null, store: sp });
-      return { ...g, fam, rows: rowsOut };
-    });
+      // Store paints for a variant you don't own (you have a Hull B; the store sells Hull A / Hull C paints) get their
+      // own "no ship owned" group per variant instead of padding the family you do own.
+      const ownedIds = new Set(g.owned.map((o) => o.ship.id));
+      const variants = new Map<string, { label: string; rows: Row[]; ships: CatalogShip[] }>();
+      for (const sp of storeByFam.get(fam === 'packs' ? '~' : fam) ?? []) {
+        if (seen.has(sp.id) || ownedStoreIds.has(sp.id)) continue;
+        const row: Row = { key: `s:${sp.id}`, title: sp.name, owned: null, store: sp };
+        const fits = storeFits.get(sp.id) ?? [];
+        if (!ownedIds.size || !fits.length || fits.some((x) => ownedIds.has(x.id))) rowsOut.push(row);
+        else {
+          const label = fits.map((x) => x.name).join(', ');
+          const v = variants.get(label) ?? { label, rows: [], ships: fits };
+          v.rows.push(row);
+          variants.set(label, v);
+        }
+      }
+      out.push({ ...g, fam, rows: rowsOut });
+      for (const [label, v] of variants) out.push({ key: `${g.key}|${label}`, label, owned: [], paints: [], fam, rows: v.rows, variants: v.ships });
+    }
+    return out;
   });
   const counts = $derived.by(() => {
     const c = { owned: 0, 'not-owned': 0 };
     for (const g of groupsAll) for (const r of g.rows) r.owned ? (c.owned += r.owned.count) : c['not-owned']++;
+    return c;
+  });
+  /** Ship groups per status, for the Ships control: hulls you own / families you don't / packs + paints with no known ship. */
+  const shipCounts = $derived.by(() => {
+    const c = { owned: 0, 'not-owned': 0, unknown: 0 };
+    for (const g of groupsAll) c[g.key === 'packs' ? 'unknown' : pgStatus(g)]++;
     return c;
   });
   const groups = $derived.by(() => {
@@ -162,13 +223,13 @@
   });
   const groupKeys = $derived(groups.map((g) => `p|${g.key}`));
   const cheapest = (fits: CatalogShip[]) => [...fits].filter((s) => s.msrp).sort((a, b) => a.msrp - b.msrp)[0] ?? fits[0];
-  const familyShips = (g: Group) => ships.filter((s) => family(s.name) === g.fam);
+  const familyShips = (g: Group) => g.variants ?? ships.filter((s) => line(s.name, ships) === g.fam);
   const price = (sp: StorePaint) => (sp.discounted < sp.price ? `${usd(sp.discounted)} (was ${usd(sp.price)})` : usd(sp.price));
 
   function openPaintsFor(name: string) {
-    paintQ = familyLabel(family(name), ships);
+    paintQ = familyLabel(line(name, ships), ships);
     groupShow = '';
-    view = 'paints';
+    location.hash = '#paints';
   }
 
   // ---- my ships + compare ----
@@ -192,415 +253,319 @@
   const toggleCompare = (id: number) => (compare = compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id]);
   const unmatchedShips = $derived(rows.filter((r) => r.category === 'ship' && !r.ship));
   const storeFor = (fam: string) => (storeByFam.get(fam) ?? []).filter((sp) => !ownedStoreIds.has(sp.id));
+  const linkCls = 'text-primary inline-flex items-center gap-1 whitespace-nowrap no-underline hover:underline';
 </script>
 
 {#snippet links(r: Row)}
-  <span class="links">
-    {#if r.store}<a href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Buy on the store'}>🛒 {r.owned ? 'store' : `buy ${price(r.store)}`}</a>{/if}
+  <span class="inline-flex flex-wrap gap-2">
+    {#if r.store}<a class={linkCls} href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Buy on the store'}><ShoppingCart class="size-3" /> {r.owned ? 'store' : `buy ${price(r.store)}`}</a>{/if}
     {#if r.owned}
       {#each [...new Map(r.owned.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-        <a href={hangarUrl(hangar?.pledges ?? [], p.id)} target="_blank" rel="noopener" title={`Open the hangar page with ${p.name} (gift / melt)`}>🏠 #{p.id}</a>
+        <a class={linkCls} href={hangarUrl(hangar?.pledges ?? [], p.id)} target="_blank" rel="noopener" title={`Open the hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
       {/each}
     {/if}
   </span>
 {/snippet}
 
+{#snippet insBadges(ins: string[], empty: string)}
+  {#each ins as i (i)}<Badge variant="outline" class={cn('m-px', i === 'LTI' && 'border-warning/40 text-warning')}>{i}</Badge>{:else}<span class={empty}>—</span>{/each}
+{/snippet}
+
 {#if !hangar}
-  <section class="card"><p class="empty">Load your hangar first (Hangar tab) — ships and paints are built from it.</p></section>
+  <Card.Root><Card.Content><p class="text-muted-foreground py-6 text-center">Load your hangar first (<a class="text-primary hover:underline" href="#hangar">Pledges</a>) — ships and paints are built from it.</p></Card.Content></Card.Root>
 {:else}
-  <div class="stack">
-    {#if error}<section class="card"><span class="err">{error}</span></section>{/if}
+  <div class="grid gap-4">
+    {#if error}<Card.Root><Card.Content><span class="text-destructive">{error}</span></Card.Content></Card.Root>{/if}
 
-    <div class="seg" role="tablist" aria-label="Ships view">
-      <button role="tab" aria-selected={view === 'paints'} class:on={view === 'paints'} onclick={() => (view = 'paints')}>Paints by ship</button>
-      <button role="tab" aria-selected={view === 'ships'} class:on={view === 'ships'} onclick={() => (view = 'ships')}>My ships · {fleet.length}</button>
-      {#if compared.length}<button onclick={() => document.getElementById('compare')?.scrollIntoView({ behavior: 'smooth' })}>Compare · {compared.length} ↓</button>{/if}
-    </div>
+      {#if view === 'ships' && compared.length}
+        <div class="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onclick={() => document.getElementById('compare')?.scrollIntoView({ behavior: 'smooth' })}>Compare · {compared.length} <ArrowDown /></Button>
+        </div>
+      {/if}
 
-    {#if view === 'paints'}
-      <section class="card stack">
-        <div class="row spread">
-          <div>
-            <h2>Paints by ship</h2>
-            <span class="muted">
-              Your paints and the store's, per ship. 🛒 opens the store page, 🏠 the hangar page holding it (gift / melt).
-              {#if storePaints}· {storePaints.paints.length} store paints from {new Date(storePaints.at).toLocaleString()}{/if}
-            </span>
-          </div>
-          <button class="btn small" disabled={paintsLoading} onclick={() => refreshPaints(true)}>{paintsLoading ? 'Loading…' : 'Refresh store paints'}</button>
-        </div>
-        <div class="row">
-          <Segmented
-            options={[
-              { id: 'both', label: 'Both' },
-              { id: 'owned', label: `Owned · ${counts.owned}` },
-              { id: 'not-owned', label: `Not owned · ${counts['not-owned']}` },
-            ]}
-            bind:value={own}
-            ariaLabel="Paint ownership"
-            size="sm"
-          />
-          <span class="muted">Ships:</span>
-          {#each [['', 'All'], ['owned', 'I own'], ['not-owned', "I don't own"], ['unknown', 'Unknown / packs']] as [k, label] (k)}
-            <button class="chip" class:on={groupShow === k} onclick={() => (groupShow = k as GroupShow)}>{label}</button>
-          {/each}
-        </div>
-        <div class="row">
-          <input placeholder="Search paint or ship" bind:value={paintQ} aria-label="Search paints" />
-          {#if paintQ}<button class="btn small" onclick={() => (paintQ = '')}>× clear</button>{/if}
-          <label class="row muted"><input type="checkbox" bind:checked={withEmpty} /> Include my ships with no paints</label>
-          <span class="spacer"></span>
-          <button class="btn small" onclick={() => setAll(groupKeys, false)}>Expand all</button>
-          <button class="btn small" onclick={() => setAll(groupKeys, true)}>Collapse all</button>
-          <button class="btn small" disabled={!groups.length} onclick={() => download(`rsi-paints-${stamp()}.csv`, itemsCsv([...new Set(groups.flatMap((g) => g.rows.map((r) => r.owned).filter((x): x is ItemRow => !!x)))]))}>CSV (owned)</button>
-        </div>
-
-        {#if !groups.length}
-          <p class="empty">No paints match.</p>
-        {:else}
-          <div class="groups">
-            {#each groups as g (g.key)}
-              {@const k = `p|${g.key}`}
-              {@const st = g.key === 'packs' ? 'unknown' : pgStatus(g)}
-              {@const nOwned = g.rows.filter((r) => r.owned).length}
-              <div class="grp" class:dim={st !== 'owned'}>
-                <button class="grp-head" aria-expanded={!collapsed.has(k)} onclick={() => toggle(k)}>
-                  <span class="caret" aria-hidden="true">{collapsed.has(k) ? '▸' : '▾'}</span>
-                  <strong>{g.label}</strong>
-                  {#if st === 'owned'}
-                    <span class="chip ok">✓ {g.owned.map((o) => `${o.ship.name}${o.count > 1 ? ` ×${o.count}` : ''}`).join(', ')}</span>
-                  {:else if st === 'not-owned'}
-                    <span class="chip warn">no ship owned</span>
+        {#if view === 'paints'}
+          <Card.Root>
+            <Card.Header>
+              <Card.Title>Paints by ship</Card.Title>
+              <Card.Description>
+                Your paints and the store's, per ship. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-label="Store" /> opens the store page, <House class="inline size-3.5 align-[-2px]" aria-label="Hangar" /> the hangar page holding it (gift / melt).
+                {#if storePaints}· {storePaints.paints.length} store paints from {new Date(storePaints.at).toLocaleString()}{/if}
+                {#if ownedPaints.length}· pictures for {ownedPaints.filter((r) => r.image || storePaintFor(r, storeIdx)).length} of {ownedPaints.length} owned paints{#if !ownedPaints.some((r) => r.image)} <span class="text-warning" title="The hangar page's item pictures are kept when the hangar is loaded — reload it on Pledges. If this stays, RSI's hangar markup differs from what the parser expects.">(none from the hangar page — reload it on Pledges)</span>{/if}{/if}
+              </Card.Description>
+              <Card.Action>
+                <Button variant="outline" size="sm" disabled={paintsLoading} onclick={() => refreshPaints(true)}>{paintsLoading ? 'Loading…' : 'Refresh store paints'}</Button>
+              </Card.Action>
+            </Card.Header>
+            <Card.Content class="grid gap-4">
+              <!-- Two independent cuts, same control, same words: which ships (groups) and which paints (rows inside them). -->
+              <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 max-sm:grid-cols-1">
+                <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Ships</span>
+                <div class="flex flex-wrap items-center gap-3">
+                  <Segmented
+                    options={[
+                      { id: 'all', label: `All · ${shipCounts.owned + shipCounts['not-owned'] + shipCounts.unknown}` },
+                      { id: 'owned', label: `I own · ${shipCounts.owned}`, hint: 'Ships in your hangar' },
+                      { id: 'not-owned', label: `I don't own · ${shipCounts['not-owned']}`, hint: 'Ships the store has paints for that are not in your hangar' },
+                      { id: 'unknown', label: `Packs & unmatched · ${shipCounts.unknown}`, hint: 'Paint packs / collections, and paints whose ship could not be worked out' },
+                    ]}
+                    bind:value={() => groupShow || 'all', (v) => (groupShow = (v === 'all' ? '' : v) as GroupShow)}
+                    ariaLabel="Ships"
+                    size="sm"
+                  />
+                  {#if groupShow !== 'not-owned' && groupShow !== 'unknown'}
+                    <label class="text-muted-foreground flex items-center gap-2 text-xs"><Checkbox bind:checked={withEmpty} /> also my ships with no paints</label>
                   {/if}
-                  <span class="muted small">{nOwned} owned · {g.rows.length - nOwned} on store</span>
-                </button>
-                {#if !collapsed.has(k)}
-                  {#if g.rows.length}
-                    <table>
-                      <tbody>
-                        {#each g.rows as r (r.key)}
-                          <tr class:store-only={!r.owned}>
-                            <td>
-                              {#if r.store?.thumb}<img class="thumb" src={r.store.thumb} alt="" width="48" height="27" loading="lazy" />{/if}
-                              <strong>{r.title}</strong>
-                              {#if r.owned}
-                                <span class="chip ok">owned{r.owned.count > 1 ? ` ×${r.owned.count}` : ''}</span>
-                                {#if r.owned.giftable}<span class="chip">gift</span>{/if}
-                                {#if r.owned.fitsVia === 'pledge'}<span class="chip" title="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</span>{/if}
-                              {:else if r.store && !r.store.available}
-                                <span class="chip muted">out of stock</span>
-                              {/if}
-                            </td>
-                            <td class="small">{r.owned ? fitsLabel(r.owned) || '—' : ''}</td>
-                            <td class="small">{@render links(r)}</td>
-                          </tr>
-                        {/each}
-                      </tbody>
-                    </table>
-                  {:else}
-                    <p class="muted small">No paints owned; none on the store right now.</p>
-                  {/if}
-                  {#if st === 'not-owned'}
-                    {@const target = cheapest(familyShips(g))}
-                    {#if target}
-                      <div class="row small get">
-                        <span class="muted">Get the ship:</span>
-                        <a class="btn small" href={`#ccu?to=${target.id}`}>Plan CCU → {target.name}{target.msrp ? ` (${usd(target.msrp)})` : ''}</a>
-                        <button class="btn small" onclick={() => !compare.includes(target.id) && (compare = [...compare, target.id])}>Compare</button>
-                      </div>
-                    {/if}
-                  {/if}
-                {/if}
+                </div>
+                <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Paints</span>
+                <Segmented
+                  options={[
+                    { id: 'both', label: `All · ${counts.owned + counts['not-owned']}` },
+                    { id: 'owned', label: `I own · ${counts.owned}`, hint: 'Paints in your hangar' },
+                    { id: 'not-owned', label: `I don't own · ${counts['not-owned']}`, hint: 'Paints the store sells that you do not have' },
+                  ]}
+                  bind:value={own}
+                  ariaLabel="Paints"
+                  size="sm"
+                />
               </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {:else}
-      <section class="card stack">
-        <div>
-          <h2>My ships <span class="muted">({fleet.length} hulls)</span></h2>
-          <span class="muted">Each ship with the paints you own for it and how many more the store has. Tick ships to compare.</span>
-        </div>
-        <div class="row">
-          <input placeholder="Search ships" bind:value={shipQ} aria-label="Search my ships" />
-          <label class="row muted"><input type="checkbox" bind:checked={noPaints} /> Only ships with no paints</label>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Compare</th>
-              <SortTh key="name" bind:sort={shipSort}>Ship</SortTh>
-              <SortTh key="maker" bind:sort={shipSort}>Maker / role</SortTh>
-              <SortTh key="count" bind:sort={shipSort} firstDir="desc">Copies</SortTh>
-              <SortTh key="msrp" bind:sort={shipSort}>MSRP</SortTh>
-              <SortTh key="insurance" bind:sort={shipSort} firstDir="desc">Insurance</SortTh>
-              <SortTh key="paints" bind:sort={shipSort} firstDir="desc">Paints</SortTh>
-              <th>Links</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each fleetShown as f (f.ship.id)}
-              {@const more = storeFor(family(f.ship.name)).length}
-              <tr>
-                <td><input type="checkbox" checked={compare.includes(f.ship.id)} onchange={() => toggleCompare(f.ship.id)} aria-label={`Compare ${f.ship.name}`} /></td>
-                <td>
-                  <div class="who">
-                    {#if f.ship.thumb}<img src={f.ship.thumb} alt="" width="64" height="36" loading="lazy" />{/if}
-                    <div><strong>{f.ship.name}</strong></div>
-                  </div>
-                </td>
-                <td class="muted small">{f.ship.manufacturer}<br />{f.ship.focus}</td>
-                <td>×{f.count}</td>
-                <td>{f.ship.msrp ? usd(f.ship.msrp) : '—'}</td>
-                <td>{#each f.insurance as i (i)}<span class="chip" class:lti={i === 'LTI'}>{i}</span>{:else}<span class="muted small">—</span>{/each}</td>
-                <td>
-                  <button class="link" onclick={() => openPaintsFor(f.ship.name)} title={f.paints.map((p) => p.title).join('\n')}>
-                    {qty(f.paints)} owned{more ? ` · ${more} more on store` : ''} →
-                  </button>
-                </td>
-                <td class="small links">
-                  {#if f.ship.link}<a href={f.ship.link} target="_blank" rel="noopener">🛒 store</a>{/if}
-                  {#each [...new Map(f.items.flatMap((i) => i.pledges).map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-                    <a href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name}`}>🏠 #{p.id}</a>
-                  {/each}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-        {#if unmatchedShips.length}
-          <p class="muted small">Not matched to a store ship (no paints / compare): {unmatchedShips.map((r) => r.title).join(', ')}</p>
-        {/if}
-      </section>
-    {/if}
+              <div class="flex flex-wrap items-center gap-2">
+                <Input class="w-64" placeholder="Search paint or ship" bind:value={paintQ} aria-label="Search paints" />
+                {#if paintQ}<Button variant="outline" size="sm" onclick={() => (paintQ = '')}><X /> clear</Button>{/if}
+                <span class="flex-1"></span>
+                <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, false)}>Expand all</Button>
+                <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, true)}>Collapse all</Button>
+                <Button variant="outline" size="sm" disabled={!groups.length} onclick={() => download(`rsi-paints-${stamp()}.csv`, itemsCsv([...new Set(groups.flatMap((g) => g.rows.map((r) => r.owned).filter((x): x is ItemRow => !!x)))]))}>CSV (owned)</Button>
+              </div>
 
-    {#if compared.length}
-      <section class="card stack" id="compare">
-        <div class="row spread">
-          <h2>Compare <span class="muted">({compared.length})</span></h2>
-          <div class="row">
-            <div class="pick"><ShipSelect ships={[...ships].sort((a, b) => a.name.localeCompare(b.name))} bind:value={addCompare} ariaLabel="Add any ship to compare" placeholder="Add any ship…" price={false} onpick={(id) => (id != null && !compare.includes(id) && (compare = [...compare, id]), (addCompare = null))} /></div>
-            <button class="btn small" onclick={() => (compare = [])}>Clear</button>
-          </div>
-        </div>
-        <div class="scroll">
-          <table class="cmp">
-            <thead>
-              <tr>
-                <th></th>
+              {#if !groups.length}
+                <p class="text-muted-foreground py-6 text-center">No paints match.</p>
+              {:else}
+                <div class="flex flex-col gap-1.5">
+                  {#each groups as g (g.key)}
+                    {@const k = `p|${g.key}`}
+                    {@const st = g.key === 'packs' ? 'unknown' : pgStatus(g)}
+                    {@const nOwned = g.rows.filter((r) => r.owned).length}
+                    <Collapsible.Root bind:open={() => !collapsed.has(k), (o) => setOpen(k, o)} class="rounded-lg border px-2 pt-0.5 pb-1.5">
+                      <Collapsible.Trigger class="focus-visible:ring-ring/50 flex w-full cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] outline-none focus-visible:ring-2">
+                        {#if collapsed.has(k)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
+                        <strong class={cn(st !== 'owned' && 'text-muted-foreground')}>{g.label}</strong>
+                        {#if st === 'owned'}
+                          <Badge variant="secondary" class="text-success"><Check /> {g.owned.map((o) => `${o.ship.name}${o.count > 1 ? ` ×${o.count}` : ''}`).join(', ')}</Badge>
+                        {:else if st === 'not-owned'}
+                          <Badge variant="outline" class="border-warning/40 text-warning">no ship owned</Badge>
+                        {/if}
+                        <span class="text-muted-foreground text-[11px]">{nOwned} owned · {g.rows.length - nOwned} on store</span>
+                      </Collapsible.Trigger>
+                      <Collapsible.Content>
+                        {#if g.rows.length}
+                          <!-- Fixed widths for the fits / links columns so "buy" lines up across every ship's table. -->
+                          <Table.Root class="table-fixed">
+                            <Table.Body>
+                              {#each g.rows as r (r.key)}
+                                <Table.Row class="border-t border-b-0">
+                                  <Table.Cell class="whitespace-normal">
+                                    <Thumb src={r.store?.thumb ?? r.owned?.image} name={r.title} class="mr-1.5" />
+                                    <strong class={cn(!r.owned && 'text-muted-foreground font-medium')}>{r.title}</strong>
+                                    {#if r.owned}
+                                      <Badge variant="secondary" class="text-success m-px">owned{r.owned.count > 1 ? ` ×${r.owned.count}` : ''}</Badge>
+                                      {#if r.owned.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
+                                      {#if r.owned.fitsVia === 'pledge'}<Badge variant="secondary" class="m-px" title="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</Badge>{/if}
+                                    {:else if r.store && !r.store.available}
+                                      <Badge variant="outline" class="text-muted-foreground m-px">out of stock</Badge>
+                                    {/if}
+                                  </Table.Cell>
+                                  <Table.Cell class="w-[260px] text-[11px] whitespace-normal max-md:hidden">{r.owned ? fitsLabel(r.owned) || '—' : ''}</Table.Cell>
+                                  <Table.Cell class="w-[220px] text-[11px] whitespace-normal">{@render links(r)}</Table.Cell>
+                                </Table.Row>
+                              {/each}
+                            </Table.Body>
+                          </Table.Root>
+                        {:else}
+                          <p class="text-muted-foreground text-[11px]">No paints owned; none on the store right now.</p>
+                        {/if}
+                        {#if st === 'not-owned'}
+                          {@const target = cheapest(familyShips(g))}
+                          {#if target}
+                            <div class="flex flex-wrap items-center gap-2 pt-1.5 text-[11px]">
+                              <span class="text-muted-foreground">Get the ship:</span>
+                              <Button variant="outline" size="xs" href={`#ccu?to=${target.id}`}>Plan CCU → {target.name}{target.msrp ? ` (${usd(target.msrp)})` : ''}</Button>
+                              <Button variant="outline" size="xs" onclick={() => !compare.includes(target.id) && (compare = [...compare, target.id])}>Compare</Button>
+                            </div>
+                          {/if}
+                        {/if}
+                      </Collapsible.Content>
+                    </Collapsible.Root>
+                  {/each}
+                </div>
+              {/if}
+            </Card.Content>
+          </Card.Root>
+        {/if}
+
+        {#if view === 'bundle'}
+          <PaintBundlePanel pledges={hangar.pledges} {rows} {fleet} {ships} storePaints={storePaints?.paints ?? []} {ownedStoreIds} buyback={buyback?.items ?? []} />
+        {/if}
+
+        {#if view === 'ships'}
+          <Card.Root>
+            <Card.Header>
+              <Card.Title>My ships <span class="text-muted-foreground">({fleet.length} hulls)</span></Card.Title>
+              <Card.Description>Each ship with the paints you own for it and how many more the store has. Tick ships to compare.</Card.Description>
+              <Card.Action>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger>
+                    {#snippet child({ props })}
+                      <Button {...props} variant="outline" size="sm" disabled={!fleet.length}><Download class="size-3.5" /> Export fleet <ChevronDown class="size-3.5" /></Button>
+                    {/snippet}
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content align="end" class="w-80">
+                    <DropdownMenu.Label class="text-muted-foreground text-[11px] font-normal">HangarXPLOR format — one row per hull, with pledge, LTI, warbond, nickname</DropdownMenu.Label>
+                    <DropdownMenu.Item onSelect={() => exportFleet('json')}>
+                      <div class="grid"><span class="font-semibold">JSON file</span><span class="text-muted-foreground text-xs">FleetYards (Hangar → Import), myfleet.gg 3D fleet view, Starjump / hangar.link</span></div>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item onSelect={() => exportFleet('csv')}>
+                      <div class="grid"><span class="font-semibold">CSV file</span><span class="text-muted-foreground text-xs">Spreadsheets — Manufacturer, Ship, LTI, Warbond, ID, Pledge, Cost, Date</span></div>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item onSelect={copyNames}>
+                      <div class="grid"><span class="font-semibold">{copiedNames ? 'Copied ✓' : 'Copy ship names'}</span><span class="text-muted-foreground text-xs">One "Maker Ship" per hull, for tools that take a plain list</span></div>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              </Card.Action>
+            </Card.Header>
+            <Card.Content class="grid gap-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <Input class="w-64" placeholder="Search ships" bind:value={shipQ} aria-label="Search my ships" />
+                <label class="text-muted-foreground flex items-center gap-2"><Checkbox bind:checked={noPaints} /> Only ships with no paints</label>
+              </div>
+              <Table.Root>
+                <Table.Header>
+                  <Table.Row>
+                    <Table.Head>Compare</Table.Head>
+                    <SortTh key="name" bind:sort={shipSort}>Ship</SortTh>
+                    <SortTh key="maker" bind:sort={shipSort}>Maker / role</SortTh>
+                    <SortTh key="count" bind:sort={shipSort} firstDir="desc">Copies</SortTh>
+                    <SortTh key="msrp" bind:sort={shipSort}>MSRP</SortTh>
+                    <SortTh key="insurance" bind:sort={shipSort} firstDir="desc">Insurance</SortTh>
+                    <SortTh key="paints" bind:sort={shipSort} firstDir="desc">Paints</SortTh>
+                    <Table.Head>Links</Table.Head>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
+                  {#each fleetShown as f (f.ship.id)}
+                    {@const more = storeFor(line(f.ship.name, ships)).length}
+                    <Table.Row>
+                      <Table.Cell><Checkbox checked={compare.includes(f.ship.id)} onCheckedChange={() => toggleCompare(f.ship.id)} aria-label={`Compare ${f.ship.name}`} /></Table.Cell>
+                      <Table.Cell>
+                        <div class="flex items-center gap-2.5">
+                          <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
+                          <strong>{f.ship.name}</strong>
+                        </div>
+                      </Table.Cell>
+                      <Table.Cell class="text-muted-foreground text-[11px]">{f.ship.manufacturer}<br />{f.ship.focus}</Table.Cell>
+                      <Table.Cell>×{f.count}</Table.Cell>
+                      <Table.Cell>{f.ship.msrp ? usd(f.ship.msrp) : '—'}</Table.Cell>
+                      <Table.Cell>{@render insBadges(f.insurance, 'text-muted-foreground text-[11px]')}</Table.Cell>
+                      <Table.Cell>
+                        <Button variant="link" size="xs" class="h-auto px-0 font-semibold" onclick={() => openPaintsFor(f.ship.name)} title={f.paints.map((p) => p.title).join('\n')}>
+                          {qty(f.paints)} owned{more ? ` · ${more} more on store` : ''} →
+                        </Button>
+                      </Table.Cell>
+                      <Table.Cell class="text-[11px]">
+                        <span class="inline-flex flex-wrap gap-2">
+                          {#if f.ship.link}<a class={linkCls} href={f.ship.link} target="_blank" rel="noopener"><ShoppingCart class="size-3" /> store</a>{/if}
+                          {#each [...new Map(f.items.flatMap((i) => i.pledges).map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
+                            <a class={linkCls} href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name}`}><House class="size-3" /> #{p.id}</a>
+                          {/each}
+                        </span>
+                      </Table.Cell>
+                    </Table.Row>
+                  {/each}
+                </Table.Body>
+              </Table.Root>
+              {#if unmatchedShips.length}
+                <p class="text-muted-foreground text-[11px]">Not matched to a store ship (no paints / compare): {unmatchedShips.map((r) => r.title).join(', ')}</p>
+              {/if}
+            </Card.Content>
+          </Card.Root>
+        {/if}
+
+    {#if view === 'ships' && compared.length}
+      <Card.Root id="compare">
+        <Card.Header>
+          <Card.Title>Compare <span class="text-muted-foreground">({compared.length})</span></Card.Title>
+          <Card.Action class="flex flex-wrap items-center gap-2">
+            <div class="w-[260px]"><ShipSelect ships={[...ships].sort((a, b) => a.name.localeCompare(b.name))} bind:value={addCompare} ariaLabel="Add any ship to compare" placeholder="Add any ship…" price={false} onpick={(id) => (id != null && !compare.includes(id) && (compare = [...compare, id]), (addCompare = null))} /></div>
+            <Button variant="outline" size="sm" onclick={() => (compare = [])}>Clear</Button>
+          </Card.Action>
+        </Card.Header>
+        <Card.Content>
+          <Table.Root>
+            <Table.Header>
+              <Table.Row>
+                <Table.Head class="min-w-[120px]"></Table.Head>
                 {#each compared as s (s.id)}
-                  <th>
-                    {#if s.thumb}<img src={s.thumb} alt="" width="120" height="68" loading="lazy" />{/if}
-                    <div>{s.name}</div>
-                    <button class="btn small" onclick={() => toggleCompare(s.id)}>Remove</button>
-                  </th>
+                  <Table.Head class="h-auto min-w-[170px] py-2 align-top">
+                    <Thumb src={s.thumb} name={s.name} width={120} height={68} class="block" />
+                    <div class="my-1.5 text-[13px]">{s.name}</div>
+                    <Button variant="outline" size="xs" onclick={() => toggleCompare(s.id)}>Remove</Button>
+                  </Table.Head>
                 {/each}
-              </tr>
-            </thead>
-            <tbody>
-              <tr><th>Manufacturer</th>{#each compared as s (s.id)}<td>{s.manufacturer}</td>{/each}</tr>
-              <tr><th>Role</th>{#each compared as s (s.id)}<td>{s.focus}</td>{/each}</tr>
-              <tr><th>Status</th>{#each compared as s (s.id)}<td>{s.flyable}</td>{/each}</tr>
-              <tr><th>MSRP</th>{#each compared as s (s.id)}<td>{s.msrp ? usd(s.msrp) : '—'}</td>{/each}</tr>
-              <tr><th>You own</th>{#each compared as s (s.id)}<td>{fleetOf(s.id) ? `×${fleetOf(s.id)!.count}` : '—'}</td>{/each}</tr>
-              <tr><th>Insurance</th>{#each compared as s (s.id)}<td>{#each fleetOf(s.id)?.insurance ?? [] as i (i)}<span class="chip" class:lti={i === 'LTI'}>{i}</span>{:else}<span class="muted">—</span>{/each}</td>{/each}</tr>
-              <tr>
-                <th>Your paints</th>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body class="[&_td]:min-w-[170px] [&_td]:align-top [&_td]:whitespace-normal [&_th]:text-muted-foreground [&_th]:align-top">
+              <Table.Row><Table.Head>Manufacturer</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.manufacturer}</Table.Cell>{/each}</Table.Row>
+              <Table.Row><Table.Head>Role</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.focus}</Table.Cell>{/each}</Table.Row>
+              <Table.Row><Table.Head>Status</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.flyable}</Table.Cell>{/each}</Table.Row>
+              <Table.Row><Table.Head>MSRP</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.msrp ? usd(s.msrp) : '—'}</Table.Cell>{/each}</Table.Row>
+              <Table.Row><Table.Head>You own</Table.Head>{#each compared as s (s.id)}<Table.Cell>{fleetOf(s.id) ? `×${fleetOf(s.id)!.count}` : '—'}</Table.Cell>{/each}</Table.Row>
+              <Table.Row><Table.Head>Insurance</Table.Head>{#each compared as s (s.id)}<Table.Cell>{@render insBadges(fleetOf(s.id)?.insurance ?? [], 'text-muted-foreground')}</Table.Cell>{/each}</Table.Row>
+              <Table.Row>
+                <Table.Head>Your paints</Table.Head>
                 {#each compared as s (s.id)}
                   {@const paints = rows.filter((r) => r.category === 'paint' && r.fits.some((x) => x.id === s.id))}
-                  <td>{#each paints as p (p.key)}<div class="small">{p.title}</div>{:else}<span class="muted">—</span>{/each}</td>
+                  <Table.Cell>{#each paints as p (p.key)}<div class="text-[11px]">{p.title}</div>{:else}<span class="text-muted-foreground">—</span>{/each}</Table.Cell>
                 {/each}
-              </tr>
-              <tr>
-                <th>Store paints</th>
+              </Table.Row>
+              <Table.Row>
+                <Table.Head>Store paints</Table.Head>
                 {#each compared as s (s.id)}
-                  {@const sp = storeFor(family(s.name))}
-                  <td>{#each sp.slice(0, 8) as p (p.id)}<div class="small"><a href={p.url} target="_blank" rel="noopener">{p.name}</a> {usd(p.discounted)}</div>{:else}<span class="muted">—</span>{/each}{#if sp.length > 8}<div class="muted small">+{sp.length - 8} more</div>{/if}</td>
+                  {@const sp = storeFor(line(s.name, ships))}
+                  <Table.Cell>{#each sp.slice(0, 8) as p (p.id)}<div class="text-[11px]"><a class="hover:underline" href={p.url} target="_blank" rel="noopener">{p.name}</a> {usd(p.discounted)}</div>{:else}<span class="text-muted-foreground">—</span>{/each}{#if sp.length > 8}<div class="text-muted-foreground text-[11px]">+{sp.length - 8} more</div>{/if}</Table.Cell>
                 {/each}
-              </tr>
-              <tr>
-                <th>Pledges with it</th>
+              </Table.Row>
+              <Table.Row>
+                <Table.Head>Pledges with it</Table.Head>
                 {#each compared as s (s.id)}
-                  <td>{#each fleetOf(s.id)?.items.flatMap((i) => i.pledges) ?? [] as p, i (i)}<div class="small"><a href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener">{p.name}</a> · {usd(p.value * 100)}</div>{:else}<span class="muted">—</span>{/each}</td>
+                  <Table.Cell>{#each fleetOf(s.id)?.items.flatMap((i) => i.pledges) ?? [] as p, i (i)}<div class="text-[11px]"><a class="hover:underline" href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener">{p.name}</a> · {ownUsd(p.value * 100)}</div>{:else}<span class="text-muted-foreground">—</span>{/each}</Table.Cell>
                 {/each}
-              </tr>
-              <tr>
-                <th>On sale now</th>
+              </Table.Row>
+              <Table.Row>
+                <Table.Head>On sale now</Table.Head>
                 {#each compared as s (s.id)}
-                  <td>
-                    {#each s.ccu as k (k.id)}<div class="small">{k.title || 'CCU'} {usd(k.price)}</div>{/each}
-                    {#each s.standalone.filter((k) => k.available) as k (k.id)}<div class="small">Standalone {usd(k.price)}</div>{/each}
-                    {#if !s.ccu.length && !s.standalone.some((k) => k.available)}<span class="muted">—</span>{/if}
-                  </td>
+                  <Table.Cell>
+                    {#each s.ccu as k (k.id)}<div class="text-[11px]">{k.title || 'CCU'} {usd(k.price)}</div>{/each}
+                    {#each s.standalone.filter((k) => k.available) as k (k.id)}<div class="text-[11px]">Standalone {usd(k.price)}</div>{/each}
+                    {#if !s.ccu.length && !s.standalone.some((k) => k.available)}<span class="text-muted-foreground">—</span>{/if}
+                  </Table.Cell>
                 {/each}
-              </tr>
-              <tr>
-                <th></th>
+              </Table.Row>
+              <Table.Row>
+                <Table.Head></Table.Head>
                 {#each compared as s (s.id)}
-                  <td class="row">{#if s.link}<a class="btn small" href={s.link} target="_blank" rel="noopener">Store</a>{/if}<a class="btn small" href={`#ccu?to=${s.id}`}>Plan CCU</a></td>
+                  <Table.Cell>
+                    <div class="flex flex-wrap items-center gap-2">
+                      {#if s.link}<Button variant="outline" size="xs" href={s.link} target="_blank" rel="noopener">Store <ExternalLink /></Button>{/if}
+                      <Button variant="outline" size="xs" href={`#ccu?to=${s.id}`}>Plan CCU</Button>
+                    </div>
+                  </Table.Cell>
                 {/each}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </Table.Row>
+            </Table.Body>
+          </Table.Root>
+        </Card.Content>
+      </Card.Root>
     {/if}
   </div>
 {/if}
-
-<style>
-  .pick {
-    width: 260px;
-  }
-
-  .seg {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    width: fit-content;
-    max-width: 100%;
-  }
-  .seg button {
-    border: 0;
-    background: none;
-    color: var(--muted);
-    padding: 6px 12px;
-    border-radius: 7px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .seg button.on {
-    background: rgb(255 255 255 / 0.08);
-    color: var(--text);
-  }
-  .spacer {
-    flex: 1;
-  }
-  .who {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-  .who img,
-  .cmp img,
-  .thumb {
-    border-radius: 6px;
-    object-fit: cover;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-  .small {
-    font-size: 11px;
-  }
-  button.chip {
-    cursor: pointer;
-    color: var(--text);
-  }
-  .chip.on {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .chip.warn {
-    color: #ffb547;
-    border-color: rgb(255 181 71 / 0.4);
-  }
-  .chip.ok {
-    color: var(--ok);
-  }
-  .chip.lti {
-    color: #ffd166;
-    border-color: rgb(255 209 102 / 0.4);
-  }
-  td .chip {
-    margin: 1px;
-  }
-  .links {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .links a {
-    color: var(--accent);
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .links a:hover {
-    text-decoration: underline;
-  }
-  tr.store-only strong {
-    color: var(--muted);
-    font-weight: 500;
-  }
-  .groups {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .grp {
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 2px 8px 6px;
-  }
-  .grp.dim .grp-head strong {
-    color: var(--muted);
-  }
-  .grp-head {
-    all: unset;
-    cursor: pointer;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    width: 100%;
-    padding: 6px 0;
-    color: var(--text);
-    font-size: 13px;
-  }
-  .grp-head:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-  .caret {
-    width: 10px;
-    color: var(--muted);
-  }
-  .grp table td {
-    border-bottom: 0;
-    border-top: 1px solid var(--line);
-  }
-  .get {
-    padding-top: 6px;
-  }
-  button.link {
-    all: unset;
-    cursor: pointer;
-    color: var(--accent);
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .scroll {
-    overflow-x: auto;
-  }
-  .cmp th,
-  .cmp td {
-    min-width: 170px;
-    vertical-align: top;
-  }
-  .cmp tbody th {
-    min-width: 120px;
-    color: var(--muted);
-  }
-  .cmp thead th div {
-    margin: 6px 0;
-    color: var(--text);
-    font-size: 13px;
-  }
-  .cmp a {
-    color: var(--text);
-  }
-</style>

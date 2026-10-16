@@ -3,6 +3,30 @@
   import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, type Settings } from '@/lib/settings';
   import { partyActive, type PartyMode } from '@/lib/friends';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
+  import * as Tooltip from '@/components/ui/tooltip';
+  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Switch } from '@/components/ui/switch';
+  import { Label } from '@/components/ui/label';
+  import { cn } from '@/lib/utils';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
+  import PartyPopper from '@lucide/svelte/icons/party-popper';
+  import { privacy, setPrivacy } from '@/lib/privacy.svelte';
+
+  const NAV: { tab: HubTab; label: string }[] = [
+    { tab: 'feed', label: 'Feed' },
+    { tab: 'friends', label: 'Friends' },
+    { tab: 'hangar', label: 'Pledges' },
+    { tab: 'melt', label: 'Melt calculator' },
+    { tab: 'fleet', label: 'My ships' },
+    { tab: 'wallet', label: 'Wallet' },
+    { tab: 'store', label: 'Ships for sale' },
+    { tab: 'browse', label: 'Browse store' },
+    { tab: 'ccu', label: 'CCU planner' },
+    { tab: 'paint-rebuy', label: 'Paint rebuy' },
+    { tab: 'watching', label: 'Watching' },
+    { tab: 'settings', label: 'Settings' },
+  ];
 
   let s = $state<Settings | null>(null);
   let unseen = $state(0);
@@ -44,100 +68,60 @@
     { key: 'theme', label: 'Modern theme' },
     { key: 'wide', label: 'Full-width threads' },
     { key: 'compact', label: 'Compact replies' },
+    { key: 'pollAuto', label: 'Check watches automatically', hint: 'Off = passive: no background checks, the Feed updates only on Check now' },
     { key: 'notify', label: 'Desktop notifications' },
     { key: 'partySound', label: 'Ding on party auto-accept', hint: 'Short sound when party mode accepts a request' },
     { key: 'siteBar', label: 'RSI+ bar on store & account pages' },
   ];
 </script>
 
-<main>
-  <header class="row spread">
-    <h1>RSI<span>+</span>{#if INCOGNITO}<em class="incog" title="Incognito: separate login, friends, hangar, reads and party mode">incognito</em>{/if}</h1>
-    <a class="btn small" href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noopener">Spectrum</a>
-  </header>
-  <AccountSwitch compact />
+<Tooltip.Provider delayDuration={300}>
+  <main class="grid w-[300px] gap-3.5 p-3.5">
+    <header class="flex items-center justify-between gap-2">
+      <h1 class="m-0 flex items-center gap-1.5 text-[17px] font-semibold">
+        <span>RSI<span class="text-primary">+</span></span>
+        {#if INCOGNITO}<Badge variant="outline" class="text-muted-foreground h-[17px] rounded-md px-1.5 text-[10px]" title="Incognito: separate login, friends, hangar, reads and party mode">incognito</Badge>{/if}
+      </h1>
+      <Button variant="outline" size="xs" href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noopener">Spectrum<ExternalLink aria-hidden="true" /></Button>
+    </header>
+    <AccountSwitch compact />
 
-  <nav class="grid">
-    <button class="btn" onclick={() => open('feed')}>Feed{unseen ? ` (${unseen})` : ''}</button>
-    <button class="btn" onclick={() => open('friends')}>Friends</button>
-    <button class="btn" onclick={() => open('hangar')}>Hangar</button>
-    <button class="btn" onclick={() => open('wallet')}>Wallet</button>
-    <button class="btn" onclick={() => open('ships')}>Ships & paints</button>
-    <button class="btn" onclick={() => open('items')}>Items</button>
-    <button class="btn" onclick={() => open('store')}>Store</button>
-    <button class="btn" onclick={() => open('ccu')}>CCU planner</button>
-    <button class="btn" onclick={() => open('watching')}>Watching</button>
-  </nav>
-
-  <button class="btn party" class:on={partyOn} onclick={toggleParty} title="Auto-accept friend requests (2 h) — details & log in Friends">
-    {partyOn ? `🎉 Party mode ON${party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''} — stop` : '🎉 Start party mode (2 h)'}
-  </button>
-
-  {#if s}
-    <section>
-      {#each TOGGLES as t (t.key)}
-        <label class="toggle">
-          <input type="checkbox" checked={!!s[t.key]} onchange={(e) => set(t.key, e.currentTarget.checked as never)} />
-          <span>{t.label}{#if t.hint}<small class="muted">{t.hint}</small>{/if}</span>
-          {#if t.key === 'partySound'}<button class="btn small" type="button" title="Play it" onclick={(e) => (e.preventDefault(), bg({ type: 'sound:ding' }).catch(() => {}))}>♪</button>{/if}
-        </label>
+    <nav class="grid grid-cols-2 gap-1.5">
+      {#each NAV as n (n.tab)}
+        <Button variant="outline" size="sm" onclick={() => open(n.tab)}>{n.label}{n.tab === 'feed' && unseen ? ` (${unseen})` : ''}</Button>
       {/each}
-    </section>
-  {/if}
-</main>
+    </nav>
 
-<style>
-  main {
-    width: 300px;
-    padding: 14px;
-    display: grid;
-    gap: 14px;
-  }
-  h1 {
-    margin: 0;
-    font-size: 17px;
-  }
-  .incog {
-    margin-left: 6px;
-    padding: 1px 5px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    font-size: 10px;
-    font-style: normal;
-    color: var(--muted);
-    vertical-align: middle;
-  }
-  h1 span {
-    color: var(--accent);
-  }
-  .grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  section {
-    display: grid;
-    gap: 2px;
-  }
-  .toggle {
-    display: flex;
-    gap: 9px;
-    align-items: flex-start;
-    padding: 5px 2px;
-    cursor: pointer;
-  }
-  .toggle span {
-    display: grid;
-  }
-  small {
-    font-size: 11px;
-  }
-  .party.on {
-    border-color: #ffd166;
-    color: #ffd166;
-  }
-  a.btn {
-    text-decoration: none;
-    color: inherit;
-  }
-</style>
+    <Button
+      variant="outline"
+      class={cn(partyOn && 'border-warning text-warning hover:text-warning dark:border-warning')}
+      onclick={toggleParty}
+      title="Auto-accept friend requests (2 h) — details & log in Friends"
+    >
+      <PartyPopper aria-hidden="true" />
+      {partyOn ? `Party mode ON${party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''} — stop` : 'Start party mode (2 h)'}
+    </Button>
+
+    {#if s}
+      <section class="grid gap-0.5">
+        <div class="flex items-start gap-2.5 px-0.5 py-1.5">
+          <Switch id="set-privacy" class="mt-px" checked={privacy.on} onCheckedChange={setPrivacy} />
+          <Label for="set-privacy" class="grid flex-1 cursor-pointer gap-0.5 leading-snug font-normal">
+            <span>Screenshare mode</span>
+            <small class="text-muted-foreground text-[11px]">Hides spend, store credit and account names in the hub</small>
+          </Label>
+        </div>
+        {#each TOGGLES as t (t.key)}
+          <div class="flex items-start gap-2.5 px-0.5 py-1.5">
+            <Switch id={`set-${t.key}`} class="mt-px" checked={!!s[t.key]} onCheckedChange={(v) => set(t.key, v as never)} />
+            <Label for={`set-${t.key}`} class="grid flex-1 cursor-pointer gap-0.5 leading-snug font-normal">
+              <span>{t.label}</span>
+              {#if t.hint}<small class="text-muted-foreground text-[11px]">{t.hint}</small>{/if}
+            </Label>
+            {#if t.key === 'partySound'}<Button variant="outline" size="icon-xs" title="Play it" aria-label="Play the ding" onclick={() => bg({ type: 'sound:ding' }).catch(() => {})}>♪</Button>{/if}
+          </div>
+        {/each}
+      </section>
+    {/if}
+  </main>
+</Tooltip.Provider>

@@ -1,7 +1,7 @@
 ---
 title: Now
 tags: [plans]
-updated: 2026-10-09
+updated: 2026-10-13
 ---
 # Now
 - [ ] Live-verify thread-list row detection + badges on a channel page (logged in)
@@ -16,6 +16,8 @@ updated: 2026-10-09
 - [ ] Live-verify v2 friend-request list shape + accept/decline endpoints
 - [ ] Live-verify item kinds on a real hangar (paint/armor/weapon categories, family matching) and party-mode auto-accept
 - [ ] Live-verify incognito split mode: incognito background uses the incognito cookie jar (Friends shows the incognito account), `incognito.*` keys separate, popup/hub tagged
+- [ ] Live-verify guided flows: paints — melt step unlocks only after Confirm cart, pay step ticks after checkout + hangar reload; CCU — pay step ticks when the bought CCUs show in the reloaded hangar, apply step when the target hull is in
+- [ ] Live-verify fleet export: import `hangarxplor-shiplist-*.json` into FleetYards (Hangar → Import) and myfleet.gg — every hull matched, nicknames kept, Mk IV Connies / Wolf / RAFT not "missing"
 - [ ] Live-verify hangar ↔ store paint title match (`paintKey`) on real hangar paint names; hangar page links land on the right page
 - [ ] Live-verify melt duplicate plan against a real hangar (item kinds `Ship`/`Vehicle` for LTI keys)
 - [ ] Live-verify `?rsiplus=<id>&rsiplus_do=melt` on the hangar page: row found via `input.js-pledge-id`, `.js-reclaim` click opens RSI's melt modal (and `.js-gift` / `.js-gift-v2` for gift)
@@ -23,5 +25,13 @@ updated: 2026-10-09
 - [ ] Live-verify Wallet funding chart across Days / Weeks / Months (key formats `YYYY-MM-DD` / `YYYY-WW` / `YYYY-MM`) and that `fans` is present on every range
 - [ ] Live-verify account switcher: cookie names captured (`Rsi-Token`, `Rsi-Account-Auth`, `_rsi_device`, `Rsi-XSRF`), switch lands logged in without 2FA, incognito list separate
 - [ ] Live-verify CCU planner v2 on a real hangar: gifted detection (melt value 0), store-start chains, saved-chain re-pricing, `Pledge.value` as paid price for owned CCUs
+- [ ] Live-verify Chairman's Club card on a Concierge account (level, since, gauge %, earned list, specials) and that a non-Concierge account shows the "starts at $1,000" line, not an error
+- [ ] Live-verify Store → Browse on your session: *Concierge* chip lists `isVip` ships + items (Ships for sale shows the Concierge badge on those hulls); *Subscribers* chip — badge read from `AccountBadgesQuery` (id 5) and the Subscribers Store rows if subscribed, else the "RSI hides it" line; category counts; owned ×n on paints / packs you hold
+- [ ] Live-verify the new hangar row fields on a full hangar: a cash-paid pledge shows `paidWith: cash` (only store-credit rows were in the saved sample), a named ship shows *name: …* (sample had `null` nameable lists), `availability` other than Attributed, `configValue` > 0
+- [ ] Live-verify hangar item thumbnails: reload the hangar, Paints by ship shows pictures for owned paints with no store listing (`PledgeItem.image` from `.item .image`); if blank, save a hangar page (`/account/pledges`) and check the item markup
+- [ ] Click through the flat sidebar: every entry one page, Melt calculator keeps ticks when hopping to Pledges and back, My ships → paints link lands on Paints by ship with the hull filled in, old bookmarks (`#hangar?view=melt`, `#ships?view=bundle`, `#store?view=items&cat=concierge`) redirect, popup entries open the right page
+- [ ] Live-verify screenshare mode on every hub section + popup: no `$` amount of yours visible (Hangar, Wallet, Buyback, CCU, Paint rebuy, Items search, Ships compare), account names blurred, charts blurred; nothing public (store prices, funding) masked by mistake
 - [ ] Live-verify Wallet fleet/CCU portfolio matching on real pledge ship titles (single-ship pledges, LTI suffixes)
+- [ ] **Look over the shadcn UI in Chrome** (every hub section + popup): sidebar collapse / mobile sheet, Combobox + ShipSelect picking and clearing, Segmented pills, tooltips, hover cards (paint preview), Select sentinels ("All" options), tables with sort, Wallet charts (hover, labels, donut legend), CCU stepper, Hangar *Pledges* / *Melt calculator* pages (`#hangar` / `#melt`), *Group by ship* (family paints under every hull, packs under both ships, CCU under its target, *no hull* groups), thumbnail hover previews (paints by ship, My ships, Store), Paint rebuy checklist editing (+ checklist / ✕ / filters) + in-place *Reload hangar*, auto-folding sections + sticky tiles/buttons (fold when a step completes, re-open persists), Ship filter, Settings section (light theme on every panel + charts, accents, system follow), melt + rebuy / keep labels, Alpha Wolf / Super Hornet / Mk II paint matching, friends bulk actions
+- [ ] **Live-verify paint rebuy** (use *Confirm cart*: its discount column answers the tier / pack questions): a paint listing id works as `addStandalone` SKU id; RSI's cart shows the tier discount on paints already on sale and counts a pack listing as one paint (or each — toggle) and discounts the pack line too; the plan's *net gain* matches the cart total after a real melt + rebuy (one cheap paint first)
 - [ ] **Live-verify Add to RSI cart** (add, check cart, remove — no checkout): CCU step lands at the planned price from the right ship; standalone ship via `/graphql` + csrf; buy-back step (`pledgeId` + target standard SKU) is the buy-back line; signed-out → 'Sign in to RSI'; refusal with a pending order → 'Cart busy'

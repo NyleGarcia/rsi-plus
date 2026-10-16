@@ -3,7 +3,7 @@
  * request carries the user's RSI session cookies via the extension's host permission.
  * RSI quirk: a page number past the end returns the last page again → stop on a repeated first id.
  */
-import { parseBuybackPage, parseHangarPage, type BuybackItem, type Pledge, HANGAR_PAGE, creditsDebug, parseCredits, type Credits } from './hangar';
+import { parseBuybackDetail, parseBuybackPage, parseHangarPage, type BuybackItem, type Pledge, HANGAR_PAGE, creditsDebug, parseCredits, type Credits } from './hangar';
 import { SPECTRUM_ORIGIN } from './types';
 
 export class NotLoggedIn extends Error {
@@ -75,6 +75,47 @@ export const loadHangar = (onProgress: (p: Progress<Pledge>) => void | Promise<v
 
 export const loadBuyback = (onProgress: (p: Progress<BuybackItem>) => void | Promise<void>, signal?: AbortSignal, resume?: Progress<BuybackItem>): Promise<BuybackItem[]> =>
   loadAll('/account/buy-back-pledges', parseBuybackPage, onProgress, signal, resume);
+
+/**
+ * Fill in each buyback entry's contents + price from its own page (the list page only says "5 items"). One request
+ * per entry that has a `url` and no `items` yet (or all of them with `force`), ~350 ms apart, 429 → wait and retry.
+ * `onProgress` gets the whole list after every entry so it can be saved as it goes; a Stop keeps what was read.
+ */
+export async function loadBuybackDetails(
+  list: BuybackItem[],
+  onProgress: (p: { done: number; total: number; items: BuybackItem[] }) => void | Promise<void>,
+  signal?: AbortSignal,
+  force = false,
+): Promise<BuybackItem[]> {
+  const items = list.map((b) => ({ ...b }));
+  const todo = items.filter((b) => b.url && (force || !b.items));
+  let done = 0;
+  for (const b of todo) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    let res: Response | null = null;
+    for (let tries = 0; tries < 5; tries++) {
+      res = await fetch(b.url!, { credentials: 'include', signal });
+      if (res.status !== 429) break;
+      await sleep(5000 * (tries + 1));
+    }
+    if (res?.ok) {
+      if (/\/(connect|login|sign-?in)\b/.test(new URL(res.url).pathname)) throw new NotLoggedIn();
+      const d = parseBuybackDetail(new DOMParser().parseFromString(await res.text(), 'text/html'));
+      if (d.items.length) {
+        b.items = d.items;
+        b.contained = d.items.map((i) => i.title).join(', ');
+      }
+      if (d.price != null) b.price = d.price;
+      if (d.listPrice != null) b.listPrice = d.listPrice;
+      if (d.sku != null) b.sku = d.sku;
+      b.detailAt = Date.now();
+    }
+    done++;
+    await onProgress({ done, total: todo.length, items: items.map((x) => ({ ...x })) });
+    await sleep(350);
+  }
+  return items;
+}
 
 /** Store credit / UEC / REC from the first hangar page (cheap: one request). null when logged out / not shown. */
 /** Highest page number in the pagination links (`?page=N`), or null when the page shows none. */

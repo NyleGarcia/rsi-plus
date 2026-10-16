@@ -5,9 +5,17 @@
   import { buybackItem, catalogItem, fundingItem, hangarItem } from '@/lib/settings';
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByFunding, spendByMonth, spendByType, spendByYear, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
-  import Bars from './Bars.svelte';
+  import { AreaChart, BarChart, PieChart } from 'layerchart';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
+  import { Button } from '@/components/ui/button';
+  import * as Card from '@/components/ui/card';
+  import * as Chart from '@/components/ui/chart';
+  import * as Table from '@/components/ui/table';
+  import { cn } from '@/lib/utils';
   import Segmented from './Segmented.svelte';
-  import Donut from './Donut.svelte';
+  import Stat from './Stat.svelte';
+  import ConciergeCard from './ConciergeCard.svelte';
+  import { own, ownMoney } from '@/lib/privacy.svelte';
 
   type Saved = NonNullable<Awaited<ReturnType<typeof hangarItem.getValue>>>;
   let hangar = $state<Saved | null>(null);
@@ -95,6 +103,15 @@
   const byType = $derived(spendByType(all));
   const byFunding = $derived(spendByFunding(all));
   const share = $derived(funding ? shareOfFunding(sum.value, funding.funds) : 0);
+  /** Running total of melt value by month over the whole backing history (for the cumulative line). */
+  const cumulative = $derived.by(() => {
+    if (!sum.since) return [] as { key: string; label: string; value: number }[];
+    const first = new Date(sum.since);
+    const span = (new Date().getFullYear() - first.getFullYear()) * 12 + (new Date().getMonth() - first.getMonth()) + 1;
+    let acc = 0;
+    return spendByMonth(all, Math.max(2, span)).map((b) => ((acc += b.value), { key: b.key, label: b.label, value: Math.round(acc * 100) / 100 }));
+  });
+  const last12 = $derived(spendByMonth(all, 12).map((b) => b.value));
 
   // ---- fleet value + CCU portfolio (needs the store catalog for today's prices) ----
   const fleet = $derived(fleetValue(all, ships));
@@ -103,12 +120,14 @@
   let showCcus = $state(false);
   const signed = (n: number) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`;
 
-  const money = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-  const money0 = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
-  const big = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : money0(n));
+  // Your numbers go through ownMoney (screenshare mode → $•••); the public funding figures (big/short) stay readable.
+  const money = (n: number) => ownMoney(`$${n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`);
+  const whole = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+  const money0 = (n: number) => ownMoney(whole(n));
+  const big = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : whole(n));
   /** Fits a narrow bar column: $55, $2.3k, $16k. */
-  const short = (n: number) => (n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : money0(n));
-  const fmtN = (n: number) => `¤${n.toLocaleString('en-US')}`;
+  const short = (n: number) => (n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : whole(n));
+  const fmtN = (n: number) => ownMoney(`¤${n.toLocaleString('en-US')}`);
   const RANGES: { id: FundingRange; label: string; hint: string }[] = [
     { id: 'day', label: 'Days', hint: 'last 7 days' },
     { id: 'week', label: 'Weeks', hint: 'last 7 weeks' },
@@ -119,220 +138,416 @@
   const delta = $derived(period && prev && prev.usd > 0 ? ((period.usd - prev.usd) / prev.usd) * 100 : null);
   const shown = $derived(funding ? funding.points.reduce((s, p) => s + p.usd, 0) : 0);
   const fstats = $derived(funding ? fundingStats(funding) : null);
+
+  // ---- charts (LayerChart) ----
+  /** One bar: `key` is unique (x domain), `label` is what the axis shows, `last` = running period (yellow). */
+  interface BarPoint {
+    key: string;
+    label: string;
+    value: number;
+    hint?: string;
+    last?: boolean;
+  }
+  interface Slice {
+    key: string;
+    label: string;
+    value: number;
+    count: number;
+  }
+  const barConfig = {
+    value: { label: 'Value', color: 'var(--chart-1)' },
+    running: { label: 'Running', color: 'var(--chart-2)' },
+  } satisfies Chart.ChartConfig;
+  const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', '#fb8500', '#8ecae6', '#c77dff', '#ffafcc', '#b5e48c'];
+  const plural = (n: number) => `${n} pledge${n === 1 ? '' : 's'}`;
+  const yearBars = $derived<BarPoint[]>(byYear.map((b) => ({ key: b.key, label: b.label, value: b.value, hint: plural(b.count) })));
+  const monthBars = $derived<BarPoint[]>(byMonth.map((b) => ({ key: b.key, label: months > 12 ? (b.key.endsWith('-01') ? b.key.slice(0, 4) : b.label) : b.label, value: b.value, hint: `${b.key} · ${plural(b.count)}` })));
+  const fundingBars = $derived<BarPoint[]>(funding ? funding.points.map((p, i, a) => ({ key: p.key, label: p.label, value: p.usd, hint: p.key, last: i === a.length - 1 })) : []);
+  const typeSlices = $derived<Slice[]>(byType.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
+  const fundingSlices = $derived<Slice[]>(byFunding.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
+  /** Running total as dated points for the big area chart. */
+  const cumulativeDated = $derived(cumulative.map((c) => ({ date: new Date(Number(c.key.slice(0, 4)), Number(c.key.slice(5, 7)) - 1, 1), key: c.key, value: c.value })));
+  /** Hovered donut slice per chart (legend row or arc): the others dim, the centre shows its share. */
+  let hot = $state<Record<string, string | null>>({});
+  /** Sparkline colour: fixed tone, or trend (last vs first) when `auto`. */
+  const sparkColor = (values: number[], tone: 'auto' | 'accent' | 'muted') =>
+    tone === 'accent' ? 'var(--chart-1)' : tone === 'muted' ? 'var(--muted-foreground)' : (values.at(-1) ?? 0) >= (values[0] ?? 0) ? 'var(--success)' : '#ffb547';
 </script>
 
-<div class="stack">
-  <section class="card stack">
-    <div class="row spread">
-      <div>
-        <h2>Wallet</h2>
-        <span class="muted">
-          {#if credits}Credits as of {new Date(credits.at).toLocaleString()}{#if !hangar} · saved once you load the hangar{/if}
-          {:else}Store credit, UEC and REC from your RSI account (one request to /account/billing — stays in this browser).{/if}
-        </span>
-      </div>
-      <div class="row">
-        <button class="btn" class:primary={!credits} disabled={creditsBusy} onclick={refreshCredits}>{creditsBusy ? '…' : credits ? 'Refresh credits' : 'Read credits'}</button>
-        <a class="btn" href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing ↗</a>
-      </div>
-    </div>
-    {#if error}<span class="err">{error}</span>{/if}
-    {#if creditsDebug}<div class="small muted"><strong>Credits box not found on any account page.</strong> Open <a href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing</a> once with the extension on and it's picked up from there. Details: {creditsDebug}</div>{/if}
-    <div class="stats">
-      <div class="credit"><strong>{credits ? money(credits.credits.usd) : '—'}</strong><span>store credit</span></div>
-      <div class="credit"><strong>{credits ? fmtN(credits.credits.uec) : '—'}</strong><span>UEC</span></div>
-      <div class="credit"><strong>{credits ? fmtN(credits.credits.rec) : '—'}</strong><span>REC</span></div>
-      <div><strong>{money(sum.value)}</strong><span>hangar melt value</span></div>
-      {#if credits}<div><strong>{money(credits.credits.usd + sum.value)}</strong><span>credit if you melted everything</span></div>{/if}
-    </div>
-  </section>
+{#snippet bars(points: BarPoint[], fmt: (n: number) => string, height: number, seriesLabel: string)}
+  {#if !points.length || Math.max(0, ...points.map((p) => p.value)) <= 0}
+    <div class="text-muted-foreground py-3 text-xs">No data for this range.</div>
+  {:else}
+    {@const byKey = new Map(points.map((p) => [p.key, p]))}
+    <Chart.Container config={barConfig} class="aspect-auto w-full" style={`height:${height}px`} role="img" aria-label={points.map((p) => `${p.label}: ${fmt(p.value)}`).join(', ')}>
+      <BarChart
+        data={points}
+        x="key"
+        series={[{ key: 'value', label: seriesLabel, value: 'value', color: 'var(--color-value)' }]}
+        padding={{ top: 18, right: 6, bottom: 22, left: 44 }}
+        grid={{ x: false, y: true }}
+        labels={{ placement: 'outside', occlude: true, format: (n: number) => (n > 0 ? fmt(n) : ''), class: 'text-[10px] font-semibold' }}
+        props={{
+          // Bar's `fill` takes a per-datum accessor at runtime (resolveColorProp); Bars' prop type only says string.
+          bars: { fill: ((d: BarPoint) => (d.last ? 'var(--color-running)' : 'var(--color-value)')) as unknown as string, radius: 3 },
+          xAxis: { format: (k: string) => byKey.get(k)?.label ?? k, tickOcclusion: { priority: 'end' } },
+          yAxis: { format: (n: number) => (n ? fmt(n) : '0'), ticks: 4 },
+        }}
+      >
+        {#snippet tooltip()}
+          <Chart.Tooltip
+            labelFormatter={(k: string) => {
+              const p = byKey.get(k);
+              return p ? `${p.label}${p.hint ? ` · ${p.hint}` : ''}` : k;
+            }}
+          >
+            {#snippet formatter({ value, name })}
+              <div class="flex w-full items-center justify-between gap-3">
+                <span class="text-muted-foreground">{name}</span>
+                <span class="text-foreground font-mono font-medium tabular-nums">{fmt(Number(value))}</span>
+              </div>
+            {/snippet}
+          </Chart.Tooltip>
+        {/snippet}
+      </BarChart>
+    </Chart.Container>
+  {/if}
+{/snippet}
 
-  <section class="card stack">
-    <div class="row spread">
-      <div>
-        <h2>Your spend</h2>
-        <span class="muted small">
-          {#if all.length}
-            Melt value of what's in your hangar by the pledge's <em>Created</em> date — not cash paid: CCU chains, discounts, gifts received and melted pledges aren't in it.
-          {:else}
-            Load your hangar on the <a href="#hangar">Hangar</a> tab first.
-          {/if}
-        </span>
+{#snippet donut(id: string, slices: Slice[], fmt: (n: number) => string)}
+  {@const total = slices.reduce((s, x) => s + x.value, 0)}
+  {#if !slices.length || total <= 0}
+    <div class="text-muted-foreground py-3 text-xs">Nothing to chart.</div>
+  {:else}
+    {@const pct = (v: number) => `${((100 * v) / total).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`}
+    {@const on = hot[id] ?? null}
+    {@const cur = slices.find((s) => s.key === on)}
+    {@const data = slices.map((s, i) => ({
+      ...s,
+      props: {
+        fill: PALETTE[i % PALETTE.length],
+        opacity: on == null || on === s.key ? 1 : 0.35,
+        onpointerenter: () => (hot[id] = s.key),
+        onpointerleave: () => (hot[id] = null),
+      },
+    }))}
+    <div class="flex flex-wrap items-center gap-4">
+      <div class="relative size-[132px] shrink-0">
+        <Chart.Container config={{}} class="aspect-square size-full" role="img" aria-label={slices.map((s) => `${s.label} ${pct(s.value)}`).join(', ')}>
+          <PieChart {data} key="key" label="label" value="value" innerRadius={0.68} padAngle={0.015} cornerRadius={2}>
+            {#snippet tooltip()}
+              <Chart.Tooltip hideLabel>
+                {#snippet formatter()}
+                  {#if cur}
+                    <div class="grid gap-0.5">
+                      <span class="font-medium capitalize">{cur.label}</span>
+                      <span class="text-muted-foreground">{fmt(cur.value)} · {pct(cur.value)} · {plural(cur.count)}</span>
+                    </div>
+                  {/if}
+                {/snippet}
+              </Chart.Tooltip>
+            {/snippet}
+          </PieChart>
+        </Chart.Container>
+        <div class="pointer-events-none absolute inset-0 grid place-content-center text-center">
+          <strong class="text-sm font-bold tabular-nums">{cur ? pct(cur.value) : fmt(total)}</strong>
+          {#if cur}<span class="text-muted-foreground max-w-20 truncate text-[10px] capitalize">{cur.label}</span>{/if}
+        </div>
       </div>
+      <ul class="grid min-w-[200px] flex-1 gap-1 text-xs" onmouseleave={() => (hot[id] = null)}>
+        {#each slices as s, i (s.key)}
+          <li class={cn('transition-opacity', on != null && on !== s.key && 'opacity-45')}>
+            <button
+              type="button"
+              class="hover:bg-muted/60 focus-visible:bg-muted/60 -mx-1.5 grid w-[calc(100%+0.75rem)] cursor-default grid-cols-[10px_1fr_auto_auto] items-center gap-2 rounded-md px-1.5 py-0.5 text-left outline-none"
+              title={plural(s.count)}
+              aria-label={`${s.label}: ${fmt(s.value)} (${pct(s.value)})`}
+              onmouseenter={() => (hot[id] = s.key)}
+              onfocus={() => (hot[id] = s.key)}
+              onblur={() => (hot[id] = null)}
+            >
+              <i class="size-2.5 rounded-[3px]" style={`background:${PALETTE[i % PALETTE.length]}`}></i>
+              <span class="truncate capitalize">{s.label}</span>
+              <span class="text-muted-foreground tabular-nums">{fmt(s.value)}</span>
+              <span class="text-muted-foreground min-w-[42px] text-right tabular-nums">{pct(s.value)}</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
     </div>
+  {/if}
+{/snippet}
+
+{#snippet spark(values: number[], tone: 'auto' | 'accent' | 'muted')}
+  {#if values.length > 1}
+    <Chart.Container config={{}} class="aspect-auto h-7 w-full" aria-hidden="true">
+      <AreaChart
+        data={values.map((v, i) => ({ i, v }))}
+        x="i"
+        series={[{ key: 'v', value: 'v', color: sparkColor(values, tone) }]}
+        axis={false}
+        grid={false}
+        rule={false}
+        highlight={false}
+        tooltipContext={false}
+        padding={{ top: 3, right: 3, bottom: 3, left: 3 }}
+        props={{ area: { fillOpacity: 0.22, line: { strokeWidth: 1.5 } } }}
+      />
+    </Chart.Container>
+  {:else}
+    <div class="h-7"></div>
+  {/if}
+{/snippet}
+
+<div class="grid gap-4">
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Wallet</Card.Title>
+      <Card.Description>
+        {#if credits}Credits as of {new Date(credits.at).toLocaleString()}{#if !hangar} · saved once you load the hangar{/if}
+        {:else}Store credit, UEC and REC from your RSI account (one request to /account/billing — stays in this browser).{/if}
+      </Card.Description>
+      <Card.Action class="flex flex-wrap items-center gap-2">
+        <Button variant={credits ? 'outline' : 'default'} disabled={creditsBusy} onclick={refreshCredits}>{creditsBusy ? '…' : credits ? 'Refresh credits' : 'Read credits'}</Button>
+        <Button variant="outline" href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing <ExternalLink /></Button>
+      </Card.Action>
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      {#if error}<span class="text-destructive text-sm">{error}</span>{/if}
+      {#if creditsDebug}<div class="text-muted-foreground text-xs"><strong class="text-foreground">Credits box not found on any account page.</strong> Open <a class="text-primary hover:underline" href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing</a> once with the extension on and it's picked up from there. Details: {creditsDebug}</div>{/if}
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+        <Stat tone="credit" value={credits ? money(credits.credits.usd) : '—'} label="store credit" />
+        <Stat tone="credit" value={credits ? fmtN(credits.credits.uec) : '—'} label="UEC" />
+        <Stat tone="credit" value={credits ? fmtN(credits.credits.rec) : '—'} label="REC" />
+        <Stat value={money(sum.value)} label="hangar melt value" />
+        {#if credits}<Stat value={money(credits.credits.usd + sum.value)} label="credit if you melted everything" />{/if}
+      </div>
+      <ConciergeCard />
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Your spend</Card.Title>
+      <Card.Description class="text-xs">
+        {#if all.length}
+          Melt value of what's in your hangar by the pledge's <em>Created</em> date — not cash paid: CCU chains, discounts, gifts received and melted pledges aren't in it.
+        {:else}
+          Load your hangar on the <a class="text-primary hover:underline" href="#hangar">Pledges</a> page first.
+        {/if}
+      </Card.Description>
+    </Card.Header>
     {#if all.length}
-      <div class="stats">
-        <div><strong>{money(sum.value)}</strong><span>{sum.pledges} pledges</span></div>
-        <div><strong>{money(sum.warbond)}</strong><span>warbond ({sum.value ? Math.round((100 * sum.warbond) / sum.value) : 0}%)</span></div>
-        <div><strong>{sum.since ? new Date(sum.since).getFullYear() : '—'}</strong><span>backing since{sum.years ? ` · ${sum.years} yr` : ''}</span></div>
-        <div><strong>{money0(sum.perYear)}</strong><span>per year</span></div>
-        <div><strong>{tot.ships}</strong><span>ships · {tot.lti} LTI</span></div>
-        <div><strong>{buybacks}</strong><span>in buyback</span></div>
-        {#if funding}<div><strong>{share ? `${share.toPrecision(2)}%` : '—'}</strong><span>of all funding ever</span></div>{/if}
-      </div>
-      <div class="charts">
-        <div class="chart">
-          <h3>By year</h3>
-          <Bars points={byYear.map((b) => ({ label: b.label, value: b.value, hint: `${b.count} pledge${b.count === 1 ? '' : 's'}` }))} fmt={short} />
+      <Card.Content class="grid gap-4">
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+          <Stat value={money(sum.value)} label={`${sum.pledges} pledges`}>{@render spark(cumulative.map((c) => c.value), 'accent')}</Stat>
+          <Stat value={money(sum.warbond)} label={`warbond (${sum.value ? Math.round((100 * sum.warbond) / sum.value) : 0}%)`} />
+          {#if sum.payKnown}
+            <Stat value={money(sum.cash)} label={`paid with cash${sum.payKnown < sum.pledges ? ` · ${sum.pledges - sum.payKnown} unknown` : ''}`} />
+            <Stat value={money(sum.credit)} label="paid with store credit" />
+          {/if}
+          <Stat value={sum.since ? new Date(sum.since).getFullYear() : '—'} label={`backing since${sum.years ? ` · ${sum.years} yr` : ''}`} />
+          <Stat value={money0(sum.perYear)} label="per year">{@render spark(byYear.filter((b) => b.key !== '?').map((b) => b.value), 'muted')}</Stat>
+          <Stat value={money0(last12.reduce((a, b) => a + b, 0))} label="last 12 months">{@render spark(last12, 'auto')}</Stat>
+          <Stat value={tot.ships} label={`ships · ${tot.lti} LTI`} />
+          <Stat value={buybacks} label="in buyback" />
+          {#if funding}<Stat value={share ? `${share.toPrecision(2)}%` : '—'} label="of all funding ever" />{/if}
         </div>
-        <div class="chart">
-          <div class="row spread">
-            <h3>By month</h3>
-            <Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />
-          </div>
-          <Bars points={byMonth.map((b) => ({ label: `${b.label} '${b.key.slice(2, 4)}`, value: b.value, hint: `${b.count} pledge${b.count === 1 ? '' : 's'}` }))} fmt={short} height={110} />
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] items-start gap-4">
+          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
+            <Card.Content class="grid gap-1.5">
+              <h3 class="text-muted-foreground text-[13px] font-semibold">By year</h3>
+              <div class="sens">{@render bars(yearBars, short, 200, 'Melt value')}</div>
+            </Card.Content>
+          </Card.Root>
+          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
+            <Card.Content class="grid gap-1.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-muted-foreground text-[13px] font-semibold">By month</h3>
+                <Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />
+              </div>
+              <div class="sens">{@render bars(monthBars, short, 200, 'Melt value')}</div>
+            </Card.Content>
+          </Card.Root>
+          <Card.Root size="sm" class="col-span-full min-w-0 gap-1.5 shadow-none">
+            <Card.Content class="grid gap-1.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-muted-foreground text-[13px] font-semibold">Backing over time</h3>
+                <span class="text-muted-foreground text-xs">running total of melt value, by month since your first pledge</span>
+              </div>
+              {#if cumulativeDated.length > 1}
+                <Chart.Container config={{ value: { label: 'Running total', color: 'var(--chart-1)' } }} class="sens aspect-auto h-[140px] w-full">
+                  <AreaChart
+                    data={cumulativeDated}
+                    x="date"
+                    series={[{ key: 'value', label: 'Running total', value: 'value', color: 'var(--color-value)' }]}
+                    padding={{ top: 8, right: 8, bottom: 20, left: 44 }}
+                    grid={{ x: false, y: true }}
+                    props={{
+                      area: { fillOpacity: 0.25, line: { strokeWidth: 2 } },
+                      xAxis: { format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), ticks: 6, tickOcclusion: true },
+                      yAxis: { format: (n: number) => (n ? short(n) : '0'), ticks: 3 },
+                    }}
+                  >
+                    {#snippet tooltip()}
+                      <Chart.Tooltip labelFormatter={(d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} indicator="line">
+                        {#snippet formatter({ value, name })}
+                          <div class="flex w-full items-center justify-between gap-3">
+                            <span class="text-muted-foreground">{name}</span>
+                            <span class="text-foreground font-mono font-medium tabular-nums">{money0(Number(value))}</span>
+                          </div>
+                        {/snippet}
+                      </Chart.Tooltip>
+                    {/snippet}
+                  </AreaChart>
+                </Chart.Container>
+              {/if}
+            </Card.Content>
+          </Card.Root>
+          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
+            <Card.Content class="grid gap-1.5">
+              <h3 class="text-muted-foreground text-[13px] font-semibold">By type</h3>
+              {@render donut('type', typeSlices, money0)}
+            </Card.Content>
+          </Card.Root>
+          <Card.Root size="sm" class="min-w-0 gap-1.5 shadow-none">
+            <Card.Content class="grid gap-1.5">
+              <h3 class="text-muted-foreground text-[13px] font-semibold">Warbond vs credit</h3>
+              {@render donut('funding', fundingSlices, money0)}
+              <span class="text-muted-foreground text-xs">Warbond pledges needed new money; the rest could have been bought with store credit (RSI doesn't say which were).</span>
+            </Card.Content>
+          </Card.Root>
         </div>
-        <div class="chart">
-          <h3>By type</h3>
-          <Donut slices={byType.map((b) => ({ label: b.label, value: b.value, count: b.count }))} fmt={money0} />
-        </div>
-        <div class="chart">
-          <h3>Warbond vs credit</h3>
-          <Donut slices={byFunding.map((b) => ({ label: b.label, value: b.value, count: b.count }))} fmt={money0} />
-          <span class="muted small">Warbond pledges needed new money; the rest could have been bought with store credit (RSI doesn't say which were).</span>
-        </div>
-      </div>
+      </Card.Content>
     {/if}
-  </section>
+  </Card.Root>
 
   {#if all.length && ships.length}
-    <section class="card stack">
-      <div class="row spread">
-        <div>
-          <h2>Fleet at today's prices</h2>
-          <span class="muted small">
-            Single-ship pledges matched to the store catalog: melt value (what RSI credits you) vs the ship's current MSRP. Price rises since you pledged show as a gain.
-            {#if fleet.packs} {fleet.packs} multi-ship pack{fleet.packs === 1 ? '' : 's'} not split.{/if}
-          </span>
-        </div>
-        {#if fleet.rows.length}<button class="btn small" onclick={() => (showFleet = !showFleet)}>{showFleet ? 'Hide ships' : `Show ${fleet.rows.length} ships`}</button>{/if}
-      </div>
-      {#if !fleet.rows.length}
-        <span class="muted">No single-ship pledge matched a store ship{ships.length ? '' : ' — open the Store tab once to load the catalog'}.</span>
-      {:else}
-        <div class="stats">
-          <div><strong>{money(fleet.paid)}</strong><span>melt value · {fleet.rows.length} ships</span></div>
-          <div><strong>{money(fleet.msrp)}</strong><span>at today's MSRP</span></div>
-          <div><strong class:ok={fleet.msrp > fleet.paid} class:warn={fleet.msrp < fleet.paid}>{signed(fleet.msrp - fleet.paid)}</strong><span>price change since you pledged</span>{#if fleet.paid}<span class="delta" class:up={fleet.msrp > fleet.paid} class:down={fleet.msrp < fleet.paid}>{fleet.msrp >= fleet.paid ? '▲' : '▼'} {Math.abs((100 * (fleet.msrp - fleet.paid)) / fleet.paid).toFixed(0)}% vs melt</span>{/if}</div>
-        </div>
-        {#if showFleet}
-          <table>
-            <thead><tr><th>Ship</th><th>Pledge</th><th>Melt</th><th>MSRP now</th><th>Δ</th></tr></thead>
-            <tbody>
-              {#each fleet.rows as r (r.pledgeId)}
-                <tr>
-                  <td><strong>{r.ship}</strong></td>
-                  <td class="muted small"><a href={hangarUrl(all, r.pledgeId)} target="_blank" rel="noopener">{r.pledge}</a></td>
-                  <td>{money(r.paid)}</td>
-                  <td>{money(r.msrp)}</td>
-                  <td class:ok={r.msrp > r.paid} class:warn={r.msrp < r.paid}>{signed(r.msrp - r.paid)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Fleet at today's prices</Card.Title>
+        <Card.Description class="text-xs">
+          Single-ship pledges matched to the store catalog: melt value (what RSI credits you) vs the ship's current MSRP. Price rises since you pledged show as a gain.
+          {#if fleet.packs} {fleet.packs} multi-ship pack{fleet.packs === 1 ? '' : 's'} not split.{/if}
+        </Card.Description>
+        {#if fleet.rows.length}
+          <Card.Action><Button variant="outline" size="sm" onclick={() => (showFleet = !showFleet)}>{showFleet ? 'Hide ships' : `Show ${fleet.rows.length} ships`}</Button></Card.Action>
         {/if}
-      {/if}
-    </section>
+      </Card.Header>
+      <Card.Content class="grid gap-3">
+        {#if !fleet.rows.length}
+          <span class="text-muted-foreground">No single-ship pledge matched a store ship{ships.length ? '' : ' — open Ships for sale once to load the catalog'}.</span>
+        {:else}
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+            <Stat value={money(fleet.paid)} label={`melt value · ${fleet.rows.length} ships`} />
+            <Stat value={money(fleet.msrp)} label="at today's MSRP" />
+            <Stat
+              value={signed(fleet.msrp - fleet.paid)}
+              valueTone={fleet.msrp > fleet.paid ? 'ok' : fleet.msrp < fleet.paid ? 'warn' : null}
+              label="price change since you pledged"
+              delta={fleet.paid ? { text: `${fleet.msrp >= fleet.paid ? '▲' : '▼'} ${Math.abs((100 * (fleet.msrp - fleet.paid)) / fleet.paid).toFixed(0)}% vs melt`, tone: fleet.msrp > fleet.paid ? 'up' : fleet.msrp < fleet.paid ? 'down' : 'neutral' } : null}
+            />
+          </div>
+          {#if showFleet}
+            <Table.Root>
+              <Table.Header>
+                <Table.Row><Table.Head>Ship</Table.Head><Table.Head>Pledge</Table.Head><Table.Head>Melt</Table.Head><Table.Head>MSRP now</Table.Head><Table.Head>Δ</Table.Head></Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each fleet.rows as r (r.pledgeId)}
+                  <Table.Row>
+                    <Table.Cell><strong>{r.ship}</strong></Table.Cell>
+                    <Table.Cell class="text-muted-foreground text-xs"><a class="hover:text-primary hover:underline" href={hangarUrl(all, r.pledgeId)} target="_blank" rel="noopener">{r.pledge}</a></Table.Cell>
+                    <Table.Cell class="tabular-nums">{money(r.paid)}</Table.Cell>
+                    <Table.Cell class="tabular-nums">{money(r.msrp)}</Table.Cell>
+                    <Table.Cell class={cn('tabular-nums', r.msrp > r.paid && 'text-success', r.msrp < r.paid && 'text-warning')}>{signed(r.msrp - r.paid)}</Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          {/if}
+        {/if}
+      </Card.Content>
+    </Card.Root>
 
     {#if ccus.count}
-      <section class="card stack">
-        <div class="row spread">
-          <div>
-            <h2>CCU portfolio</h2>
-            <span class="muted small">Upgrades in your hangar: what you paid (melt value) vs what the same upgrade is worth at today's MSRP gap. Gifted CCUs have no melt value. Plan chains on the <a href="#ccu">CCU planner</a> tab.</span>
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>CCU portfolio</Card.Title>
+          <Card.Description class="text-xs">Upgrades in your hangar: what you paid (melt value) vs what the same upgrade is worth at today's MSRP gap. Gifted CCUs have no melt value. Plan chains on the <a class="text-primary hover:underline" href="#ccu">CCU planner</a> tab.</Card.Description>
+          <Card.Action><Button variant="outline" size="sm" onclick={() => (showCcus = !showCcus)}>{showCcus ? 'Hide CCUs' : `Show ${ccus.count} CCUs`}</Button></Card.Action>
+        </Card.Header>
+        <Card.Content class="grid gap-3">
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+            <Stat value={ccus.count} label={`CCUs · ${ccus.gifted} gifted`} />
+            <Stat value={money(ccus.paid)} label="paid (melt value)" />
+            <Stat value={money(ccus.worth)} label="worth at today's prices" />
+            <Stat
+              value={signed(ccus.gain)}
+              valueTone={ccus.gain > 0 ? 'ok' : ccus.gain < 0 ? 'warn' : null}
+              label="unrealised gain"
+              delta={{ text: `${ccus.winners} winner${ccus.winners === 1 ? '' : 's'}`, tone: ccus.winners > 0 ? 'up' : 'neutral' }}
+            />
           </div>
-          <button class="btn small" onclick={() => (showCcus = !showCcus)}>{showCcus ? 'Hide CCUs' : `Show ${ccus.count} CCUs`}</button>
-        </div>
-        <div class="stats">
-          <div><strong>{ccus.count}</strong><span>CCUs · {ccus.gifted} gifted</span></div>
-          <div><strong>{money(ccus.paid)}</strong><span>paid (melt value)</span></div>
-          <div><strong>{money(ccus.worth)}</strong><span>worth at today's prices</span></div>
-          <div><strong class:ok={ccus.gain > 0} class:warn={ccus.gain < 0}>{signed(ccus.gain)}</strong><span>unrealised gain</span><span class="delta" class:up={ccus.winners > 0}>{ccus.winners} winner{ccus.winners === 1 ? '' : 's'}</span></div>
-        </div>
-        {#if showCcus}
-          <table>
-            <thead><tr><th>CCU</th><th>Paid</th><th>Worth</th><th>Gain</th></tr></thead>
-            <tbody>
-              {#each ccus.rows as r (r.ref)}
-                <tr>
-                  <td><span class="muted">{r.from} →</span> <strong>{r.to}</strong> <a class="muted small" href={hangarUrl(all, r.ref)} target="_blank" rel="noopener">#{r.ref}</a></td>
-                  <td>{r.paid ? money(r.paid) : 'gift'}</td>
-                  <td>{money(r.worth)}</td>
-                  <td class:ok={r.gain > 0} class:warn={r.gain < 0}>{r.paid ? signed(r.gain) : '—'}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-      </section>
+          {#if showCcus}
+            <Table.Root>
+              <Table.Header>
+                <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Paid</Table.Head><Table.Head>Worth</Table.Head><Table.Head>Gain</Table.Head></Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each ccus.rows as r (r.ref)}
+                  <Table.Row>
+                    <Table.Cell><span class="text-muted-foreground">{r.from} →</span> <strong>{r.to}</strong> <a class="text-muted-foreground hover:text-primary text-xs hover:underline" href={hangarUrl(all, r.ref)} target="_blank" rel="noopener">#{r.ref}</a></Table.Cell>
+                    <Table.Cell class="tabular-nums">{r.paid ? money(r.paid) : 'gift'}</Table.Cell>
+                    <Table.Cell class="tabular-nums">{money(r.worth)}</Table.Cell>
+                    <Table.Cell class={cn('tabular-nums', r.gain > 0 && 'text-success', r.gain < 0 && 'text-warning')}>{r.paid ? signed(r.gain) : '—'}</Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          {/if}
+        </Card.Content>
+      </Card.Root>
     {/if}
   {/if}
 
-  <section class="card stack">
-    <div class="row spread">
-      <div>
-        <h2>Star Citizen funding</h2>
-        <span class="muted small">
-          RSI's public crowdfund counter (the numbers behind the old funding page).
-          {#if funding} Updated {new Date(funding.at).toLocaleString()}.{/if}
-        </span>
-      </div>
-      <div class="row">
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Star Citizen funding</Card.Title>
+      <Card.Description class="text-xs">
+        RSI's public crowdfund counter (the numbers behind the old funding page).
+        {#if funding} Updated {new Date(funding.at).toLocaleString()}.{/if}
+      </Card.Description>
+      <Card.Action class="flex flex-wrap items-center gap-2">
         <Segmented options={RANGES} bind:value={range} ariaLabel="Funding range" size="sm" />
-        <button class="btn" disabled={fundingBusy} onclick={() => loadFunding(true)}>{fundingBusy ? '…' : 'Refresh'}</button>
-      </div>
-    </div>
-    {#if fundingError}<span class="err">Funding: {fundingError}</span>{/if}
-    {#if funding}
-      <div class="stats">
-        <div><strong>{big(funding.funds)}</strong><span>raised to date</span></div>
-        <div><strong>{funding.fans.toLocaleString('en-US')}</strong><span>citizens</span></div>
-        <div><strong>{funding.fans ? money0(funding.funds / funding.fans) : '—'}</strong><span>per citizen</span></div>
-        {#if period}
-          <div><strong>{big(period.usd)}</strong><span>this {range}</span>{#if delta != null}<span class="delta" class:up={delta >= 0} class:down={delta < 0}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}% vs last</span>{/if}</div>
-        {/if}
-        <div><strong>{big(shown)}</strong><span>last {funding.points.length} {range}s</span></div>
-        {#if fstats?.average}<div><strong>{big(fstats.average)}</strong><span>average per {range}</span></div>{/if}
-        {#if fstats?.best}<div><strong>{big(fstats.best.usd)}</strong><span>best {range} shown · {fstats.best.key}</span></div>{/if}
-        {#if fstats?.projected && period}<div><strong class:ok={fstats.projected > fstats.average} class:warn={fstats.average > 0 && fstats.projected < fstats.average}>{big(fstats.projected)}</strong><span>this {range} on pace for</span></div>{/if}
-        {#if all.length && funding.fans}<div><strong>{(sum.value / (funding.funds / funding.fans)).toFixed(1)}×</strong><span>you vs the average citizen</span></div>{/if}
-      </div>
-      <Bars points={funding.points.map((p) => ({ label: p.label, value: p.usd, hint: p.key }))} fmt={big} highlightLast />
-      <span class="muted small">The current {range} is still running (yellow). Gross pledges before melts.</span>
-    {:else if fundingBusy}
-      <div class="muted">Loading…</div>
-    {/if}
-  </section>
+        <Button variant="outline" disabled={fundingBusy} onclick={() => loadFunding(true)}>{fundingBusy ? '…' : 'Refresh'}</Button>
+      </Card.Action>
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      {#if fundingError}<span class="text-destructive text-sm">Funding: {fundingError}</span>{/if}
+      {#if funding}
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+          <Stat value={big(funding.funds)} label="raised to date" />
+          <Stat value={funding.fans.toLocaleString('en-US')} label="citizens" />
+          <Stat value={funding.fans ? money0(funding.funds / funding.fans) : '—'} label="per citizen" />
+          {#if period}
+            <Stat value={big(period.usd)} label={`this ${range}`} delta={delta != null ? { text: `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(0)}% vs last`, tone: delta >= 0 ? 'up' : 'down' } : null}>
+              {@render spark(funding.points.map((p) => p.usd), 'auto')}
+            </Stat>
+          {/if}
+          <Stat value={big(shown)} label={`last ${funding.points.length} ${range}s`} />
+          {#if fstats?.average}<Stat value={big(fstats.average)} label={`average per ${range}`} />{/if}
+          {#if fstats?.best}<Stat value={big(fstats.best.usd)} label={`best ${range} shown · ${fstats.best.key}`} />{/if}
+          {#if fstats?.projected && period}<Stat value={big(fstats.projected)} valueTone={fstats.projected > fstats.average ? 'ok' : fstats.average > 0 && fstats.projected < fstats.average ? 'warn' : null} label={`this ${range} on pace for`} />{/if}
+          {#if all.length && funding.fans}<Stat value={own(`${(sum.value / (funding.funds / funding.fans)).toFixed(1)}×`)} label="you vs the average citizen" />{/if}
+        </div>
+        <Card.Root size="sm" class="min-w-0 shadow-none">
+          <Card.Content>{@render bars(fundingBars, big, 220, 'Pledged')}</Card.Content>
+        </Card.Root>
+        <span class="text-muted-foreground text-xs">The current {range} is still running (yellow). Gross pledges before melts.</span>
+      {:else if fundingBusy}
+        <div class="text-muted-foreground">Loading…</div>
+      {/if}
+    </Card.Content>
+  </Card.Root>
 </div>
-
-<style>
-  h3 {
-    margin: 0 0 6px;
-    font-size: 13px;
-    color: var(--muted);
-  }
-  .ok {
-    color: var(--ok);
-  }
-  .warn {
-    color: #ffd166;
-  }
-  .charts {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 16px;
-  }
-  .chart {
-    min-width: 0;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 12px 14px;
-    display: grid;
-    gap: 6px;
-    align-content: start;
-  }
-  .small {
-    font-size: 11px;
-  }
-</style>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14161c"/><stop offset="1" stop-color="#0b0c10"/>
+    </linearGradient>
+  </defs>
+  <rect width="440" height="280" fill="url(#bg)"/>
+  <g transform="translate(40 76)">
+    <circle cx="64" cy="64" r="60" fill="#3cc8ff"/>
+    <circle cx="64" cy="64" r="46" fill="#0b0c10"/>
+    <circle cx="64" cy="64" r="18" fill="#3cc8ff"/>
+  </g>
+  <g font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" fill="#fff">
+    <text x="196" y="118" font-size="46" font-weight="800">RSI<tspan fill="#3cc8ff">+</tspan></text>
+    <text x="196" y="150" font-size="15" fill="#c8ccd4">Hangar, buyback, CCU planner</text>
+    <text x="196" y="174" font-size="15" fill="#c8ccd4">Spectrum watches, mutes, friends</text>
+  </g>
+</svg>

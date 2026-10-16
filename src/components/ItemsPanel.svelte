@@ -1,11 +1,20 @@
 <script lang="ts">
   import { hangarUrl } from '@/lib/hangar';
-  import { CATEGORY_LABEL, family, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type ItemRow } from '@/lib/items';
+  import { CATEGORY_LABEL, line, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type ItemRow } from '@/lib/items';
   import { bg } from '@/lib/messages';
   import { catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
   import { usd, type Catalog, type PaintCatalog } from '@/lib/store';
+  import { ownUsd } from '@/lib/privacy.svelte';
   import SortTh from './SortTh.svelte';
+  import * as Card from '@/components/ui/card';
+  import * as Table from '@/components/ui/table';
+  import * as ToggleGroup from '@/components/ui/toggle-group';
+  import * as Select from '@/components/ui/select';
+  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Input } from '@/components/ui/input';
+  import { ChevronDown, ChevronRight, House, ShoppingCart, X } from '@lucide/svelte';
 
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
@@ -61,11 +70,11 @@
     if (r.ship) return r.ship.name;
     if (!r.fits.length) return '';
     if (r.fits.length === 1) return r.fits[0]!.name;
-    const fams = [...new Set(r.fits.map((s) => family(s.name)))];
+    const fams = [...new Set(r.fits.map((s) => line(s.name, ships)))];
     return fams
       .map((f) => {
-        const inFam = ships.filter((s) => family(s.name) === f).length;
-        const hit = r.fits.filter((s) => family(s.name) === f);
+        const inFam = ships.filter((s) => line(s.name, ships) === f).length;
+        const hit = r.fits.filter((s) => line(s.name, ships) === f);
         return hit.length >= inFam && inFam > 1 ? `All ${familyLabel(f, hit)}` : hit.map((s) => s.name).join(', ');
       })
       .join(' · ');
@@ -136,11 +145,11 @@
       } else if (groupBy === 'ship') {
         const hulls = r.ship ? [r.ship] : r.fits;
         if (!hulls.length) add('i|~', 'Not ship-specific / unknown ship', '', r);
-        for (const f of new Set(hulls.map((s) => family(s.name)))) {
-          const own = fleet.filter((o) => family(o.ship.name) === f);
+        for (const f of new Set(hulls.map((s) => line(s.name, ships)))) {
+          const own = fleet.filter((o) => line(o.ship.name, ships) === f);
           add(`i|f:${f}`, familyLabel(f, hulls), own.length ? `you own ${own.map((o) => o.ship.name).join(', ')}` : 'no ship owned', r);
         }
-      } else for (const p of new Map(r.pledges.map((p) => [p.id, p])).values()) add(`i|p:${p.id}`, p.name, `${usd(p.value * 100)} · #${p.id}`, r);
+      } else for (const p of new Map(r.pledges.map((p) => [p.id, p])).values()) add(`i|p:${p.id}`, p.name, `${ownUsd(p.value * 100)} · #${p.id}`, r);
     }
     const order = Object.keys(CATEGORY_LABEL);
     return [...m.values()].sort((a, b) =>
@@ -156,175 +165,142 @@
     s.has(c) ? s.delete(c) : s.add(c);
     cats = s;
   }
+
+  const SHOW: { value: Show; label: string }[] = [
+    { value: '', label: 'All items' },
+    { value: 'paint-no-ship', label: "Paints for ships I don't own" },
+    { value: 'paint-owned', label: 'Paints for ships I own' },
+    { value: 'paint-unknown', label: 'Paints with unknown ship' },
+    { value: 'dupes', label: 'Duplicate items (×2 or more) — melt decisions are per pledge, see Hangar' },
+    { value: 'giftable', label: 'Giftable' },
+  ];
+  const GROUP_BY: { value: GroupBy; label: string }[] = [
+    { value: 'category', label: 'Group: category' },
+    { value: 'series', label: 'Group: event / collection' },
+    { value: 'ship', label: 'Group: ship' },
+    { value: 'pledge', label: 'Group: pledge / pack' },
+    { value: 'none', label: 'No grouping' },
+  ];
+  /** bits-ui Select treats '' as "nothing picked", so "All items" travels as a sentinel. */
+  const ALL = 'all';
+  const linkCls = 'text-primary mr-2 inline-flex items-center gap-1 no-underline hover:underline';
 </script>
 
 {#if !hangar}
-  <section class="card"><p class="empty">Load your hangar first (Hangar tab) — items are built from it.</p></section>
+  <Card.Root><Card.Content><p class="text-muted-foreground py-6 text-center">Load your hangar first (<a class="text-primary hover:underline" href="#hangar">Pledges</a>) — items are built from it.</p></Card.Content></Card.Root>
 {:else}
-  <div class="stack">
-    {#if error}<section class="card"><span class="err">{error}</span></section>{/if}
+  <div class="grid gap-4">
+    {#if error}<Card.Root><Card.Content><span class="text-destructive">{error}</span></Card.Content></Card.Root>{/if}
 
-    <section class="card stack">
-      <div>
-        <h2>All items <span class="muted">({qty(rows)} across {hangar.pledges.length} pledges)</span></h2>
-        <span class="muted">Every item in every pledge, same items merged. 🛒 store page · 🏠 hangar page holding it (gift / melt). Ships and paints per ship: <a href="#ships">Ships & paints</a>.</span>
-      </div>
-      <div class="row">
-        {#each Object.entries(CATEGORY_LABEL) as [c, label] (c)}
-          {#if counts.get(c as Category)}
-            <button class="chip" class:on={cats.has(c as Category)} onclick={() => toggleCat(c as Category)}>{label} · {counts.get(c as Category)}</button>
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>All items <span class="text-muted-foreground">({qty(rows)} across {hangar.pledges.length} pledges)</span></Card.Title>
+        <Card.Description>Every item in every pledge, same items merged. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-label="Store" /> store page · <House class="inline size-3.5 align-[-2px]" aria-label="Hangar" /> hangar page holding it (gift / melt). Ships and paints per ship: <a class="text-primary hover:underline" href="#ships">Ships & paints</a>.</Card.Description>
+      </Card.Header>
+      <Card.Content class="grid gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <ToggleGroup.Root
+            type="multiple"
+            variant="outline"
+            size="sm"
+            spacing={1}
+            aria-label="Categories"
+            bind:value={() => [...cats], (v) => (cats = new Set(v as Category[]))}
+            class="flex-wrap"
+          >
+            {#each Object.entries(CATEGORY_LABEL) as [c, label] (c)}
+              {#if counts.get(c as Category)}
+                <ToggleGroup.Item value={c} class="h-6 rounded-full px-2.5 text-xs data-[state=on]:border-primary data-[state=on]:text-primary">{label} · {counts.get(c as Category)}</ToggleGroup.Item>
+              {/if}
+            {/each}
+          </ToggleGroup.Root>
+          {#if cats.size}<Button variant="ghost" size="xs" onclick={() => (cats = new Set())}><X /> clear</Button>{/if}
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Input class="w-72" placeholder="Search items, ships, events, pledges" bind:value={q} aria-label="Search items" />
+          <Select.Root type="single" bind:value={() => show || ALL, (v) => (show = (v === ALL ? '' : v) as Show)}>
+            <Select.Trigger aria-label="Show">{SHOW.find((o) => o.value === show)?.label}</Select.Trigger>
+            <Select.Content>
+              {#each SHOW as o (o.value)}<Select.Item value={o.value || ALL} label={o.label} />{/each}
+            </Select.Content>
+          </Select.Root>
+          <Select.Root type="single" bind:value={() => groupBy, (v) => (groupBy = v as GroupBy)}>
+            <Select.Trigger aria-label="Group by">{GROUP_BY.find((o) => o.value === groupBy)?.label}</Select.Trigger>
+            <Select.Content>
+              {#each GROUP_BY as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
+            </Select.Content>
+          </Select.Root>
+          {#if q || show || cats.size}<Button variant="outline" size="sm" onclick={() => ((q = ''), (show = ''), (cats = new Set()))}>Reset filters</Button>{/if}
+          <span class="text-muted-foreground">{filtered.length} shown</span>
+          <span class="flex-1"></span>
+          {#if groupBy !== 'none'}
+            <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, false)}>Expand all</Button>
+            <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, true)}>Collapse all</Button>
           {/if}
-        {/each}
-        {#if cats.size}<button class="chip" onclick={() => (cats = new Set())}>× clear</button>{/if}
-      </div>
-      <div class="row">
-        <input placeholder="Search items, ships, events, pledges" bind:value={q} aria-label="Search items" />
-        <select bind:value={show} aria-label="Show">
-          <option value="">All items</option>
-          <option value="paint-no-ship">Paints for ships I don't own</option>
-          <option value="paint-owned">Paints for ships I own</option>
-          <option value="paint-unknown">Paints with unknown ship</option>
-          <option value="dupes">Duplicate items (×2 or more) — melt decisions are per pledge, see Hangar</option>
-          <option value="giftable">Giftable</option>
-        </select>
-        <select bind:value={groupBy} aria-label="Group by">
-          <option value="category">Group: category</option>
-          <option value="series">Group: event / collection</option>
-          <option value="ship">Group: ship</option>
-          <option value="pledge">Group: pledge / pack</option>
-          <option value="none">No grouping</option>
-        </select>
-        {#if q || show || cats.size}<button class="btn small" onclick={() => ((q = ''), (show = ''), (cats = new Set()))}>Reset filters</button>{/if}
-        <span class="muted">{filtered.length} shown</span>
-        <span class="spacer"></span>
-        {#if groupBy !== 'none'}
-          <button class="btn small" onclick={() => setAll(groupKeys, false)}>Expand all</button>
-          <button class="btn small" onclick={() => setAll(groupKeys, true)}>Collapse all</button>
-        {/if}
-        <button class="btn small" disabled={!filtered.length} onclick={() => download(`rsi-items-${stamp()}.csv`, itemsCsv(filtered))}>CSV</button>
-      </div>
+          <Button variant="outline" size="sm" disabled={!filtered.length} onclick={() => download(`rsi-items-${stamp()}.csv`, itemsCsv(filtered))}>CSV</Button>
+        </div>
 
-      {#if !filtered.length}
-        <p class="empty">Nothing matches.</p>
-      {:else}
-        <table>
-          <thead>
-            <tr>
-              <SortTh key="title" bind:sort>Item</SortTh>
-              <SortTh key="category" bind:sort>Category</SortTh>
-              <SortTh key="count" bind:sort firstDir="desc">Qty</SortTh>
-              <SortTh key="fits" bind:sort>Ship</SortTh>
-              <SortTh key="value" bind:sort firstDir="desc">In pledges</SortTh>
-              <th>Links</th>
-            </tr>
-          </thead>
-          {#each groups as g (g.key)}
-            <tbody>
-              {#if g.label}
-                <tr class="group">
-                  <th colspan="6">
-                    <button class="grp-head" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
-                      <span class="caret" aria-hidden="true">{collapsed.has(g.key) ? '▸' : '▾'}</span>
-                      <strong>{g.label}</strong>
-                      {#if g.note}<span class="muted small">{g.note}</span>{/if}
-                      <span class="muted small">· {qty(g.items)} item{qty(g.items) === 1 ? '' : 's'}</span>
-                    </button>
-                  </th>
-                </tr>
-              {/if}
-              {#if !collapsed.has(g.key)}
-                {#each g.items as r (r.key)}
-                  {@const ps = r.category === 'paint' ? paintStatus(r, ownedIds) : null}
-                  {@const store = storeUrl(r)}
-                  <tr>
-                    <td>
-                      <strong>{r.title}</strong>
-                      {#if r.giftable}<span class="chip">gift</span>{/if}
-                      {#if r.fitsVia === 'pledge'}<span class="chip" title="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</span>{/if}
-                      {#if ps === 'no-ship'}<span class="chip warn" title="You don't own a ship this paint fits">no ship</span>{/if}
-                    </td>
-                    <td class="muted small">{CATEGORY_LABEL[r.category]}{#if series.get(r.key) && groupBy !== 'series'}<br /><span class="series">{series.get(r.key)}</span>{/if}</td>
-                    <td>{r.count > 1 ? `×${r.count}` : '1'}</td>
-                    <td class="small">{fitsLabel(r) || '—'}</td>
-                    <td class="small">
-                      {#each r.pledges.slice(0, 3) as p, i (i)}<div>{p.name} <span class="muted">#{p.id}</span></div>{/each}
-                      {#if r.pledges.length > 3}<div class="muted">+{r.pledges.length - 3} more</div>{/if}
-                    </td>
-                    <td class="small links">
-                      {#if store}<a href={store} target="_blank" rel="noopener" title="Store page">🛒 store</a>{/if}
-                      {#each [...new Map(r.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-                        <a href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name} (gift / melt)`}>🏠 #{p.id}</a>
-                      {/each}
-                    </td>
-                  </tr>
-                {/each}
-              {/if}
-            </tbody>
-          {/each}
-        </table>
-      {/if}
-    </section>
+        {#if !filtered.length}
+          <p class="text-muted-foreground py-6 text-center">Nothing matches.</p>
+        {:else}
+          <Table.Root>
+            <Table.Header>
+              <Table.Row>
+                <SortTh key="title" bind:sort>Item</SortTh>
+                <SortTh key="category" bind:sort>Category</SortTh>
+                <SortTh key="count" bind:sort firstDir="desc">Qty</SortTh>
+                <SortTh key="fits" bind:sort>Ship</SortTh>
+                <SortTh key="value" bind:sort firstDir="desc">In pledges</SortTh>
+                <Table.Head>Links</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            {#each groups as g (g.key)}
+              <Table.Body>
+                {#if g.label}
+                  <Table.Row class="hover:bg-transparent">
+                    <Table.Head colspan={6} class="h-auto pt-3.5">
+                      <!-- Table row group: a Collapsible can't wrap <tr>s, so this stays a disclosure button. -->
+                      <button class="focus-visible:ring-ring/50 flex w-full cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] font-normal outline-none focus-visible:ring-2" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
+                        {#if collapsed.has(g.key)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
+                        <strong>{g.label}</strong>
+                        {#if g.note}<span class="text-muted-foreground text-[11px]">{g.note}</span>{/if}
+                        <span class="text-muted-foreground text-[11px]">· {qty(g.items)} item{qty(g.items) === 1 ? '' : 's'}</span>
+                      </button>
+                    </Table.Head>
+                  </Table.Row>
+                {/if}
+                {#if !collapsed.has(g.key)}
+                  {#each g.items as r (r.key)}
+                    {@const ps = r.category === 'paint' ? paintStatus(r, ownedIds) : null}
+                    {@const store = storeUrl(r)}
+                    <Table.Row>
+                      <Table.Cell class="whitespace-normal">
+                        <strong>{r.title}</strong>
+                        {#if r.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
+                        {#if r.fitsVia === 'pledge'}<Badge variant="secondary" class="m-px" title="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</Badge>{/if}
+                        {#if ps === 'no-ship'}<Badge variant="outline" class="border-warning/40 text-warning m-px" title="You don't own a ship this paint fits">no ship</Badge>{/if}
+                      </Table.Cell>
+                      <Table.Cell class="text-muted-foreground text-[11px]">{CATEGORY_LABEL[r.category]}{#if series.get(r.key) && groupBy !== 'series'}<br /><span class="text-primary">{series.get(r.key)}</span>{/if}</Table.Cell>
+                      <Table.Cell>{r.count > 1 ? `×${r.count}` : '1'}</Table.Cell>
+                      <Table.Cell class="text-[11px] whitespace-normal">{fitsLabel(r) || '—'}</Table.Cell>
+                      <Table.Cell class="text-[11px] whitespace-normal">
+                        {#each r.pledges.slice(0, 3) as p, i (i)}<div>{p.name} <span class="text-muted-foreground">#{p.id}</span></div>{/each}
+                        {#if r.pledges.length > 3}<div class="text-muted-foreground">+{r.pledges.length - 3} more</div>{/if}
+                      </Table.Cell>
+                      <Table.Cell class="text-[11px]">
+                        {#if store}<a class={linkCls} href={store} target="_blank" rel="noopener" title="Store page"><ShoppingCart class="size-3" /> store</a>{/if}
+                        {#each [...new Map(r.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
+                          <a class={linkCls} href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
+                        {/each}
+                      </Table.Cell>
+                    </Table.Row>
+                  {/each}
+                {/if}
+              </Table.Body>
+            {/each}
+          </Table.Root>
+        {/if}
+      </Card.Content>
+    </Card.Root>
   </div>
 {/if}
-
-<style>
-  .series {
-    color: var(--accent);
-  }
-  .spacer {
-    flex: 1;
-  }
-  .small {
-    font-size: 11px;
-  }
-  button.chip {
-    cursor: pointer;
-    color: var(--text);
-  }
-  .chip.on {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .chip.warn {
-    color: #ffb547;
-    border-color: rgb(255 181 71 / 0.4);
-  }
-  td .chip {
-    margin: 1px;
-  }
-  .links {
-    white-space: nowrap;
-  }
-  .links a {
-    color: var(--accent);
-    text-decoration: none;
-    margin-right: 8px;
-  }
-  .links a:hover {
-    text-decoration: underline;
-  }
-  .grp-head {
-    all: unset;
-    cursor: pointer;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    width: 100%;
-    padding: 6px 0;
-    color: var(--text);
-    font-size: 13px;
-  }
-  .grp-head:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-  .caret {
-    width: 10px;
-    color: var(--muted);
-  }
-  tr.group th {
-    padding-top: 14px;
-  }
-</style>

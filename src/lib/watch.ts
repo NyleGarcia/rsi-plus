@@ -1,5 +1,5 @@
 /** Watch lists + the poll diff that turns fresh API data into feed events. Pure. */
-import { norm } from './filters';
+import { keywordMatcher, norm } from './filters';
 import type { Member, ThreadSummary } from './types';
 
 export interface WatchedThread {
@@ -26,17 +26,30 @@ export interface WatchedAuthor {
   displayname: string;
 }
 
+/** Follow by keyword: new threads whose subject matches (substring, or `/regex/`) in one watched channel or every one. */
+export interface WatchedKeyword {
+  pattern: string;
+  /** Channel id, or null = every watched channel. */
+  channelId: string | null;
+  addedAt: number;
+}
+
 export interface Watches {
   threads: WatchedThread[];
   channels: WatchedChannel[];
   authors: WatchedAuthor[];
   /** Friend member ids to notify about when they come online. */
   friendsOnline: string[];
+  keywords: WatchedKeyword[];
 }
 
-export const NO_WATCHES: Watches = { threads: [], channels: [], authors: [], friendsOnline: [] };
+export const NO_WATCHES: Watches = { threads: [], channels: [], authors: [], friendsOnline: [], keywords: [] };
 
-export type EventKind = 'replies' | 'thread' | 'dev' | 'author' | 'friend' | 'store';
+/** Keyword patterns that apply to a channel: the channel's own plus the every-channel ones. */
+export const keywordsFor = (w: Pick<Watches, 'keywords'>, channelId: string): string[] =>
+  (w.keywords ?? []).filter((k) => k.channelId == null || k.channelId === channelId).map((k) => k.pattern);
+
+export type EventKind = 'replies' | 'thread' | 'dev' | 'author' | 'keyword' | 'friend' | 'store';
 
 export interface FeedEvent {
   /** Stable id so re-polls don't duplicate (kind + entity + count/time). */
@@ -87,23 +100,26 @@ export function channelEvents(
   authors: string[],
   urlOf: (t: ThreadSummary) => string,
   now: number,
+  keywords: string[] = [],
 ): { events: FeedEvent[]; lastThreadId: string | null } {
   const newest = threads.reduce((m, t) => (idNum(t.id) > idNum(m) ? t.id : m), w.lastThreadId ?? '0');
   if (w.lastThreadId == null) return { events: [], lastThreadId: newest === '0' ? null : newest };
   const watched = new Set(authors.map(norm));
   const byWatched = (m: Member | null | undefined) => !!m?.nickname && watched.has(norm(m.nickname));
+  const kwMatch = keywordMatcher(keywords);
   const events: FeedEvent[] = [];
   for (const t of threads) {
     if (t.is_pinned && idNum(t.id) <= idNum(w.lastThreadId)) continue;
     if (idNum(t.id) > idNum(w.lastThreadId)) {
       const dev = isDev(t);
       const author = byWatched(t.member);
-      if (dev || author || w.allThreads)
+      const kw = kwMatch(t.subject);
+      if (dev || author || kw || w.allThreads)
         events.push({
           key: `thread:${t.id}`,
-          kind: dev ? 'dev' : author ? 'author' : 'thread',
+          kind: dev ? 'dev' : author ? 'author' : kw ? 'keyword' : 'thread',
           title: t.subject,
-          body: `New in ${w.name} by ${t.member?.displayname ?? 'unknown'}${dev ? ' (dev)' : ''}`,
+          body: `New in ${w.name} by ${t.member?.displayname ?? 'unknown'}${dev ? ' (dev)' : ''}${kw && !dev && !author ? ` · matches "${kw}"` : ''}`,
           url: urlOf(t),
           at: now,
           seen: false,

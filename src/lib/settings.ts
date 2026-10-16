@@ -4,7 +4,8 @@ import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
 import type { OrgCache } from './orgs';
 import type { SavedChain } from './ccu';
 import type { BuybackItem, Credits, Pledge } from './hangar';
-import type { Catalog, PaintCatalog } from './store';
+import type { Catalog, PaintCatalog, StoreListing } from './store';
+import type { Concierge } from './concierge';
 import type { Profiles } from './accounts';
 import type { ReadState } from './read';
 import type { Funding, FundingRange } from './wallet';
@@ -40,6 +41,8 @@ export interface Settings {
   mutes: MuteRules;
   /** Background poll interval for watches (minutes, ≥ 2). */
   pollMinutes: number;
+  /** Check watches on a timer (true) or passively — only when you press *Check now* (false: no alarm, no background traffic). */
+  pollAuto: boolean;
   /** Desktop notifications for feed events. */
   notify: boolean;
   /** Notify when *any* friend comes online (otherwise only friends marked with the bell). */
@@ -64,6 +67,7 @@ export const DEFAULTS: Settings = {
   muteReplies: true,
   mutes: NO_MUTES,
   pollMinutes: 5,
+  pollAuto: true,
   notify: true,
   notifyAllFriends: false,
   partyRemindHours: 12,
@@ -92,6 +96,10 @@ export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuCha
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
 /** Pledge-store paints (public), refreshed every 6 h on demand. */
+/** Every pledge-store category (ships, paints, packs, gear …) — per account, since Concierge-only listings only show on a Concierge session. */
+export const storeItemsItem = storage.defineItem<StoreListing | null>(acct('local:storeItems'), { fallback: null });
+/** Chairman's Club status from /account/concierge (per account; null = not Concierge or never read). */
+export const conciergeItem = storage.defineItem<Concierge | null>(acct('local:concierge'), { fallback: null });
 export const paintCatalogItem = storage.defineItem<PaintCatalog | null>('local:paints', { fallback: null });
 /** Star Citizen crowdfund stats per chart range (public), for the Wallet tab; refreshed hourly when open. */
 export const fundingItem = storage.defineItem<Partial<Record<FundingRange, Funding>>>('local:funding', { fallback: {} });

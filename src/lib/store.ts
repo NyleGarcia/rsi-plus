@@ -130,7 +130,7 @@ export async function fetchCatalog(): Promise<Catalog> {
 }
 
 export const isWarbondSku = (k: Pick<Sku, 'title'>) => /warbond/i.test(k.title);
-export const usd = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+export const usd = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
 /** Normalize a ship name for matching hangar/buyback text against catalog names. */
 export function shipKey(name: string): string {
@@ -141,7 +141,11 @@ export function shipKey(name: string): string {
     .trim();
 }
 
-/** Find the catalog ship a free-text name refers to: exact key, then longest catalog name contained in it. */
+/**
+ * Find the catalog ship a free-text name refers to: exact key, then the longest catalog name contained in it, then
+ * (hangar names drop model codes: "Wolf" for "L-21 Wolf") the catalog name that is the text with only a model code
+ * in front — shortest wins ("Wolf" → L-21 Wolf, not L-22 Alpha Wolf).
+ */
 export function matchShip(name: string, ships: CatalogShip[]): CatalogShip | null {
   const k = shipKey(name);
   if (!k) return null;
@@ -151,8 +155,37 @@ export function matchShip(name: string, ships: CatalogShip[]): CatalogShip | nul
     if (sk === k) return s;
     if (sk && (` ${k} `.includes(` ${sk} `)) && (!best || sk.length > shipKey(best.name).length)) best = s;
   }
+  if (best) return best;
+  // Every word of the text is in the catalog name and what the catalog adds is only model-code bits ("Wolf" or
+  // "Wolf L-21" → "L-21 Wolf"; never "L-22 Alpha Wolf", which adds a real word). Shortest catalog name wins.
+  // Words no catalog name uses ("Starlifter" in "Hercules Starlifter C2", RSI's older hangar spelling) can't decide
+  // anything — drop them, as long as a real word is left.
+  const vocab = new Set(ships.flatMap((s) => shipKey(s.name).split(' ')));
+  const known = k.split(' ').filter((t) => vocab.has(t));
+  const want = known.some((t) => t.length >= 3 && !/^\d+$/.test(t)) ? known : k.split(' ');
+  if (!want.some((t) => t.length >= 3 && !/^\d+$/.test(t))) return null;
+  for (const s of ships) {
+    const toks = shipKey(s.name).split(' ');
+    if (!want.every((t) => toks.includes(t))) continue;
+    if (!toks.filter((t) => !want.includes(t)).every((t) => MODEL_BIT.test(t))) continue;
+    if (!best || toks.length < shipKey(best.name).split(' ').length || (toks.length === shipKey(best.name).split(' ').length && s.name.length < best.name.length)) best = s;
+  }
+  if (best) return best;
+  // Last resort: same words once model codes are dropped on both sides ("F7A Hornet Mk II", a hull the store doesn't
+  // sell, → F7C Hornet Mk II — same line, same paints; never a Mk I). Shortest catalog name wins.
+  const bare = (toks: string[]) => toks.filter((t) => !CODE_BIT.test(t)).join(' ');
+  const wantBare = bare(want);
+  if (!wantBare) return null;
+  for (const s of ships) {
+    if (bare(shipKey(s.name).split(' ')) !== wantBare) continue;
+    if (!best || s.name.length < best.name.length) best = s;
+  }
   return best;
 }
+/** A model code or its fragments: "f7c", "a2", "l", "21" — not "mk" / "ii" / variant suffixes like "es", which tell hulls apart. */
+const CODE_BIT = /^([a-z]|\d{1,3}|[a-z]\d{1,3}[a-z]?)$/;
+/** A model-code fragment: "l", "21", "f7c", "mk", "ii", "a2", "m". */
+const MODEL_BIT = /^([a-z]{1,2}|\d{1,3}|[a-z]\d{1,3}[a-z]?|mk|ii|iii|iv)$/;
 
 /** Cheapest thing on sale for a ship right now (CCU target SKU or standalone), cents. */
 export function lowestOffer(s: CatalogShip): { price: number; title: string; kind: 'ccu' | 'standalone' } | null {
@@ -211,53 +244,133 @@ export interface PaintCatalog {
   paints: StorePaint[];
 }
 
-/** Store search API (`/graphql`, not the upgrade one). Product type 268 = paints; pages of 100. */
+/**
+ * Store search API (`/graphql`, not the upgrade one): `GetBrowseListingQuery` filtered by product-type ids, pages of
+ * 100. Ids from the store's own `browseFilter` (checked 2026-10-15): 268 Paints, 270 Packs, 289 Gear, 3 Add-Ons,
+ * 72 Standalone Ships, 241 Upgrades, 9 / 45 / 46 LTI packages / Package / Combo, 65 Subscribers Store, 41 UEC,
+ * 60 Gift Cards, 67 Event Tickets. `isVip` marks Concierge-only listings — they only come back on a Concierge
+ * account's session, so the all-categories catalog is stored per account.
+ */
 const SEARCH = `${SPECTRUM_ORIGIN}/graphql`;
 const PAINT_PRODUCT = '268';
-type RawListing = { id: string; name: string; url: string; price: { amount: number; discounted: number | null }; stock: { available: boolean }; media?: { thumbnail?: { storeSmall?: string } } };
+type RawListing = {
+  id: string;
+  name: string;
+  subtitle?: string | null;
+  url: string;
+  price: { amount: number; discounted: number | null };
+  stock: { available: boolean };
+  media?: { thumbnail?: { storeSmall?: string } };
+  isVip?: boolean;
+  isWarbond?: boolean;
+  isPackage?: boolean;
+};
+const LISTING_QUERY =
+  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage } ... on TyProduct { isVip } } totalCount } } }';
 
-export async function fetchPaints(): Promise<PaintCatalog> {
-  const paints: StorePaint[] = [];
-  for (let page = 1; page < 20; page++) {
+export type StoreCategory = 'paints' | 'packs' | 'gear' | 'addons' | 'ships' | 'packages' | 'subscribers';
+export const STORE_CATEGORIES: { id: StoreCategory; label: string; products: string[] }[] = [
+  { id: 'ships', label: 'Standalone ships', products: ['72'] },
+  { id: 'paints', label: 'Paints', products: ['268'] },
+  { id: 'packs', label: 'Packs', products: ['270'] },
+  { id: 'packages', label: 'Game packages', products: ['9', '45', '46'] },
+  { id: 'gear', label: 'Gear', products: ['289'] },
+  { id: 'addons', label: 'Add-ons', products: ['3'] },
+  { id: 'subscribers', label: 'Subscribers store', products: ['65'] },
+];
+export interface StoreItem extends StorePaint {
+  category: StoreCategory;
+  /** RSI's own label ("Standalone Ships", "Packs" …). */
+  subtitle: string;
+  /** Concierge-only listing. */
+  vip: boolean;
+  warbond: boolean;
+}
+export interface StoreListing {
+  at: number;
+  items: StoreItem[];
+  /** Session has RSI's subscriber badge (the Subscribers Store only lists for those); null = not logged in / unknown. */
+  subscriber?: boolean | null;
+}
+
+/** RSI's `AccountBadgesQuery` (what the store's Subscribers Store page checks): badge id 5 = active subscriber. */
+const SUBSCRIBER_BADGE = 5;
+const BADGES_QUERY = 'query AccountBadgesQuery { account { ... on RsiAuthenticatedAccount { badges { id title } } } }';
+export async function fetchSubscriberBadge(): Promise<boolean | null> {
+  const res = await fetch(SEARCH, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify([{ operationName: 'AccountBadgesQuery', variables: {}, query: BADGES_QUERY }]),
+  });
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data?: { account?: { badges?: { id: number | string }[] } | null } }[];
+  const badges = body[0]?.data?.account?.badges;
+  return badges ? badges.some((b) => Number(b.id) === SUBSCRIBER_BADGE) : null;
+}
+
+export const mapListing = (r: RawListing): StorePaint => ({
+  id: Number(r.id),
+  name: r.name.replace(/\s+/g, ' ').trim(),
+  url: new URL(r.url, SPECTRUM_ORIGIN).href,
+  price: r.price.amount,
+  discounted: r.price.discounted ?? r.price.amount,
+  available: !!r.stock?.available,
+  thumb: r.media?.thumbnail?.storeSmall ?? null,
+});
+
+/** Every listing for the given product-type ids (all pages). */
+async function fetchListing(products: string[], what = 'listing'): Promise<RawListing[]> {
+  const out: RawListing[] = [];
+  for (let page = 1; page < 30; page++) {
     const res = await fetch(SEARCH, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify([
-        {
-          operationName: 'GetBrowseListingQuery',
-          variables: { query: { page, limit: 100, skus: { products: [PAINT_PRODUCT] } } },
-          query:
-            'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name url price { amount discounted } stock { available } media { thumbnail { storeSmall } } } totalCount } } }',
-        },
-      ]),
+      body: JSON.stringify([{ operationName: 'GetBrowseListingQuery', variables: { query: { page, limit: 100, skus: { products } } }, query: LISTING_QUERY }]),
     });
-    if (!res.ok) throw new Error(`RSI store paints: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`RSI store ${what}: HTTP ${res.status}`);
     const body = (await res.json()) as { data?: { store: { listing: { resources: RawListing[]; totalCount: number } } }; errors?: { message: string }[] }[];
     const listing = body[0]?.data?.store.listing;
-    if (!listing) throw new Error(`RSI store paints: ${body[0]?.errors?.[0]?.message ?? 'no data'}`);
-    for (const r of listing.resources)
-      paints.push({
-        id: Number(r.id),
-        name: r.name.replace(/\s+/g, ' ').trim(),
-        url: new URL(r.url, SPECTRUM_ORIGIN).href,
-        price: r.price.amount,
-        discounted: r.price.discounted ?? r.price.amount,
-        available: !!r.stock?.available,
-        thumb: r.media?.thumbnail?.storeSmall ?? null,
-      });
-    if (listing.resources.length < 100 || paints.length >= listing.totalCount) break;
+    if (!listing) throw new Error(`RSI store ${what}: ${body[0]?.errors?.[0]?.message ?? 'no data'}`);
+    out.push(...listing.resources);
+    if (listing.resources.length < 100 || out.length >= listing.totalCount) break;
   }
-  return { at: Date.now(), paints };
+  return out;
+}
+
+export async function fetchPaints(): Promise<PaintCatalog> {
+  return { at: Date.now(), paints: (await fetchListing([PAINT_PRODUCT], 'paints')).map(mapListing) };
+}
+
+/** Everything the pledge store lists in the categories above (one request per 100 items per category). */
+export async function fetchStoreItems(): Promise<StoreListing> {
+  const items: StoreItem[] = [];
+  const seen = new Set<number>();
+  for (const c of STORE_CATEGORIES) {
+    for (const r of await fetchListing(c.products, c.label.toLowerCase())) {
+      const it = mapListing(r);
+      if (seen.has(it.id)) continue;
+      seen.add(it.id);
+      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name) });
+    }
+  }
+  return { at: Date.now(), items, subscriber: await fetchSubscriberBadge().catch(() => null) };
 }
 
 /** Same paint in the hangar and the store? Titles differ in suffix only ("… Livery" vs "… Paint"). */
+/** Manufacturer names RSI sometimes puts in front of the hull ("Drake Dragonfly - Coalfire Paint" vs "Dragonfly - Coalfire Paint"). */
+const MAKERS =
+  /^(drake( interplanetary)?|anvil( aerospace)?|aegis( dynamics)?|origin( jumpworks)?|roberts space industries|rsi|misc|musashi industrial (and|&) starflight concern|crusader( industries)?|argo( astronautics)?|consolidated outland|cnou|c\.o\.|kruger( intergalactic)?|tumbril( land systems)?|greycat( industrial)?|banu|esperia|gatac( manufacture)?|mirai|aopoa|vanduul|xi'?an|xnaa|kastak( arms)?) /;
 export function paintKey(title: string): string {
   return title
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .replace(/\s*[-–—:]\s*/g, ' ')
     .replace(/\b(paint|livery|skin)\b/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^a-z0-9']+/g, ' ')
+    .trim()
+    .replace(MAKERS, '')
+    .replace(/'/g, '')
     .trim();
 }

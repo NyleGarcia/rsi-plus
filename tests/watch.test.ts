@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { channelEvents, friendEvents, mergeEvents, threadEvents, type WatchedChannel } from '@/lib/watch';
+import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type WatchedChannel } from '@/lib/watch';
 import { member, thread } from './fixtures';
 
 const url = () => 'u';
@@ -34,6 +34,19 @@ describe('watch diff', () => {
       ['dev', 'reply:11:77'],
     ]);
     expect(channelEvents({ ...c, allThreads: true }, list, [], url, 0).events.map((e) => e.key)).toContain('thread:15');
+  });
+
+  it('channel: keyword watches catch new threads by subject (substring or /regex/), dev/author win the label', () => {
+    const c: WatchedChannel = { id: '3', name: 'General', lastThreadId: '12', allThreads: false };
+    const list = [thread('13', { subject: 'Polaris torpedo bug' }), thread('14', { subject: 'Server wipe incoming?' }), thread('15', { subject: 'Hello' }), thread('16', { subject: 'Polaris again', tracked_post_role_id: '2' })];
+    const r = channelEvents(c, list, [], url, 0, ['polaris', '/\\bwipe\\b/']);
+    expect(r.events.map((e) => [e.kind, e.key, e.body])).toEqual([
+      ['keyword', 'thread:13', 'New in General by alice · matches "polaris"'],
+      ['keyword', 'thread:14', 'New in General by alice · matches "/\\bwipe\\b/"'],
+      ['dev', 'thread:16', 'New in General by alice (dev)'],
+    ]);
+    expect(channelEvents(c, list, [], url, 0, []).events.map((e) => e.key)).toEqual(['thread:16']);
+    expect(keywordsFor({ keywords: [{ pattern: 'a', channelId: null, addedAt: 0 }, { pattern: 'b', channelId: '3', addedAt: 0 }, { pattern: 'c', channelId: '9', addedAt: 0 }] }, '3')).toEqual(['a', 'b']);
   });
 
   it('friends: offline → online for watched ids only, not on first sight', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
-import { paintCopiesNeeded, seriesOf, categorize, family, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintGroups, paintStatus, shipsFor } from '@/lib/items';
-import type { CatalogShip } from '@/lib/store';
+import { paintCopiesNeeded, seriesOf, categorize, family, familyLabel, line, inventory, itemsCsv, ownedShipsWithPaints, paintGroups, paintStatus, shipGroups, shipsFor, upgradedFrom } from '@/lib/items';
+import { matchShip, type CatalogShip } from '@/lib/store';
 
 const ship = (id: number, name: string): CatalogShip => ({ id, name, manufacturer: '', focus: '', msrp: id * 1000, flyable: '', link: '', thumb: null, standalone: [], ccu: [] });
 const ships = [ship(1, 'Cutlass Black'), ship(2, 'Cutlass Red'), ship(3, 'Constellation Andromeda'), ship(4, 'F7C Hornet Mk II'), ship(5, 'Carrack'), ship(6, '100i'), ship(7, '125a')];
@@ -26,6 +26,19 @@ describe('items', () => {
   it('ship families + paint fits', () => {
     expect(family('Cutlass Black')).toBe('cutlass');
     expect(family('F7C Hornet Mk II')).toBe('hornet');
+    // one group per model line, like the store's "100 series - Flame Paint"
+    expect(family('100i')).toBe('100 series');
+    expect(family('125a')).toBe('100 series');
+    expect(family('325a')).toBe('300 series');
+    expect(family('MTC')).toBe('m-series');
+    expect(family('MDC')).toBe('m-series');
+    // the mark splits a line: Mk IV Connie paints don't fit the Mk V
+    expect(line('Constellation Mk IV Aquila')).toBe('constellation mk iv');
+    expect(line('Constellation Mk V Centaurus')).toBe('constellation mk v');
+    expect(line('Constellation Andromeda')).toBe('constellation');
+    expect(line('Cutlass Red')).toBe('cutlass');
+    expect(familyLabel('constellation mk iv', [ship(1, 'Constellation Mk IV Aquila')])).toBe('Constellation Mk IV');
+    expect(familyLabel('cutlass', ships)).toBe('Cutlass');
     expect(shipsFor('Cutlass - Black and White Livery', ships).map((s) => s.id)).toEqual([1, 2]); // family paint
     expect(shipsFor('Cutlass Red Paint - Medivac', ships).map((s) => s.id)).toEqual([2]); // specific hull wins
     expect(shipsFor('Hornet Mk II Pyrotechnic Paint', ships).map((s) => s.id)).toEqual([4]);
@@ -38,8 +51,8 @@ describe('items', () => {
       [
         pledge(1, [['Cutlass Black', 'Ship'], ['Lifetime Insurance', 'Insurance']], { lti: true }),
         pledge(2, [['Cutlass Black', 'Ship']]),
-        pledge(3, [['Cutlass - Black and White Livery', 'Skin']], { giftable: true }),
-        pledge(4, [['Carrack Paint - Ghoulish Green', 'Skin']]),
+        pledge(3, [['Cutlass - Black and White Livery', 'Skin']], { giftable: true, items: [{ title: 'Cutlass - Black and White Livery', kind: 'Skin', image: 'https://media.robertsspaceindustries.com/x/thumb.jpg' }] }),
+        pledge(4, [['Carrack Paint - Ghoulish Green', 'Skin']], { image: 'https://media.robertsspaceindustries.com/p4/pledge_small.jpg' }),
         pledge(5, [], { type: 'upgrade', name: 'Upgrade - A to B' }),
       ],
       ships,
@@ -47,6 +60,10 @@ describe('items', () => {
     const cut = rows.find((r) => r.title === 'Cutlass Black')!;
     expect(cut).toMatchObject({ count: 2, lti: true, category: 'ship' });
     expect(cut.ship?.id).toBe(1);
+    expect(rows.find((r) => r.title === 'Cutlass - Black and White Livery')?.image).toBe('https://media.robertsspaceindustries.com/x/thumb.jpg');
+    expect(cut.image).toBeNull();
+    // one-paint pledge: the pledge's own picture is the paint's
+    expect(rows.find((r) => r.title === 'Carrack Paint - Ghoulish Green')?.image).toBe('https://media.robertsspaceindustries.com/p4/pledge_small.jpg');
     expect(rows.some((r) => r.title.startsWith('Upgrade'))).toBe(false);
 
     const fleet = ownedShipsWithPaints(rows);
@@ -82,7 +99,7 @@ describe('items', () => {
       ['Cutlass', ['Cutlass Black'], 1],
       ['Unknown ship', [], 1],
     ]);
-    expect(paintGroups(rows, fleet, true).map((g) => g.label)).toContain('Hornet');
+    expect(paintGroups(rows, fleet, true).map((g) => g.label)).toContain('Hornet Mk II');
     expect(familyLabel('hornet', ships)).toBe('Hornet');
     expect(itemsCsv(rows).split('\n')[0]).toBe('item,category,qty,ship,fits_via,giftable,pledge_ids,pledges');
   });
@@ -114,5 +131,68 @@ describe('items', () => {
     const need = paintCopiesNeeded(rows, ownedShipsWithPaints(rows));
     expect(need.get('cutlass - frost livery')).toBe(3); // 2 Blacks + 1 Red
     expect(need.has('carrack paint - ghoulish green')).toBe(false); // no hull → default 1
+  });
+
+  it('shipGroups: hull, fitting paints, CCUs to it; family paints under every hull; the rest last', () => {
+    const list = [
+      pledge(1, [['Cutlass Black', 'Ship'], ['Lifetime Insurance', 'Insurance']], { lti: true }),
+      pledge(2, [['Cutlass - Frost Livery', 'Skin']], { type: 'paint' }),
+      pledge(3, [], { type: 'upgrade', upgrade: { fromName: 'Cutlass Black', toName: 'Carrack' } as Pledge['upgrade'] }),
+      pledge(4, [['Pembroke Helmet Sunburst', 'FPS Equipment']], { type: 'gear' }),
+      pledge(5, [['Cutlass Black', 'Ship'], ['Cutlass - Frost Livery', 'Skin']]),
+    ];
+    const g = shipGroups(list, ships);
+    expect(g.map((x) => [x.key, x.owned, x.pledges.map((p) => p.id)])).toEqual([
+      ['s:1', true, [1, 5, 2]], // hulls first, then the paint pledge
+      ['s:5', false, [3]], // Carrack: only a CCU to it
+      ['s:2', false, [2, 5]], // Cutlass Red: the family paint (pack 5 counts as a paint here, its hull is a Black)
+      ['~', false, [4]],
+    ]);
+    expect(g[0]!.hulls).toBe(2);
+    expect(g[0]!.role.get(2)).toBe('paint');
+    expect(g[1]!.role.get(3)).toBe('ccu');
+    expect(g[2]!.role.get(5)).toBe('paint');
+  });
+
+  it('Greycat M-series: MXC paints fit the MTC and MDC; a many-ship pack does not say which hull a nameless paint fits', () => {
+    const cat = [ship(1, 'MTC'), ship(2, 'MDC'), ship(3, 'Spartan'), ship(4, 'Orion'), ship(5, 'Galaxy')];
+    expect(shipsFor('MXC - Icefront Camo Paint', cat).map((s) => s.id)).toEqual([1, 2]);
+    const rows = inventory([pledge(1, [['Spartan', 'Ship'], ['Orion', 'Ship'], ['Galaxy', 'Ship'], ['Mystery Camo Paint', 'Skin']]), pledge(2, [['Orion', 'Ship'], ['Nameless Paint', 'Skin']])], cat);
+    expect(rows.find((r) => r.title === 'Mystery Camo Paint')?.fits).toEqual([]);
+    expect(rows.find((r) => r.title === 'Nameless Paint')?.fits.map((s) => s.id)).toEqual([4]);
+  });
+
+  it('family with the catalog: Alpha Wolf is a Wolf, Super Hornet a Hornet; Mk II paints skip Mk I hulls; F7A falls back to the F7C', () => {
+    const cat = [
+      ship(10, 'L-21 Wolf'), ship(11, 'L-22 Alpha Wolf'), ship(12, 'Mustang Alpha'), ship(13, 'Mustang Alpha Vindicator'),
+      ship(14, 'F7C Hornet Mk I'), ship(15, 'F7C Hornet Mk II'), ship(16, 'F7C-M Super Hornet Mk II'), ship(17, 'F7C-R Hornet Tracker Mk II'),
+      ship(18, 'Ballista'), ship(19, 'Anvil Ballista Snowblind'), ship(20, 'C8 Pisces'), ship(21, 'C8X Pisces Expedition'), ship(22, 'Constellation Andromeda'),
+    ];
+    expect(family('L-22 Alpha Wolf', cat)).toBe('wolf');
+    expect(family('Mustang Alpha', cat)).toBe('mustang');
+    expect(family('F7C-M Super Hornet Mk II', cat)).toBe('hornet');
+    expect(family('Anvil Ballista Snowblind', cat)).toBe('ballista');
+    expect(family('C8X Pisces Expedition', cat)).toBe('pisces');
+    expect(family('Constellation Andromeda', cat)).toBe('constellation');
+    expect(family('L-22 Alpha Wolf')).toBe('alpha'); // no catalog → first word, as before
+    expect(shipsFor('Wolf - Rosso Paint', cat).map((s) => s.id)).toEqual([10, 11]);
+    expect(shipsFor('Hornet Mk II - Tigerveil Paint', cat).map((s) => s.id)).toEqual([15, 16, 17]);
+    expect(shipsFor('F7 Hornet Mk II - Ironscale Paint', cat).map((s) => s.id)).toEqual([15, 16, 17]);
+    expect(matchShip('F7A Hornet Mk II', cat)?.id).toBe(15);
+    expect(matchShip('F7A Hornet Mk I', cat)?.id).toBe(14);
+    const herc = [ship(30, 'C2 Hercules'), ship(31, 'M2 Hercules'), ship(32, 'A2 Hercules'), ship(33, 'Carrack')];
+    expect(matchShip('Hercules Starlifter C2', herc)?.id).toBe(30); // "Starlifter" is in no catalog name
+    expect(matchShip('Hercules Starlifter A2', herc)?.id).toBe(32);
+    expect(matchShip('C2 Hercules Starlifter', herc)?.id).toBe(30);
+    expect(matchShip('Starlifter', herc)).toBeNull();
+  });
+
+  it('upgradedFrom: the original hull from the pledge name, the new one from the ship item', () => {
+    const cat = [ship(40, 'S-65 Stingray'), ship(41, 'A2 Hercules'), ship(42, 'Aurora MR'), ship(43, 'Cutlass Black')];
+    const up = pledge(1, [['Stingray - Marina Paint', 'Skin'], ['Lifetime Insurance', 'Insurance'], ['Hercules Starlifter A2', 'Ship'], ['Virgil Tailwind Helmet', 'FPS Equipment']], { name: 'S-65 Stingray plus Marina Paint', upgraded: true });
+    expect(upgradedFrom(up, cat)).toEqual({ from: 'S-65 Stingray', to: 'A2 Hercules' });
+    expect(upgradedFrom(pledge(2, [['Cutlass Black', 'Ship']], { name: 'Aurora MR Starter Package', upgraded: true }), cat)).toEqual({ from: 'Aurora MR', to: 'Cutlass Black' });
+    expect(upgradedFrom(pledge(3, [['Cutlass Black', 'Ship']], { name: 'Cutlass Black', upgraded: true }), cat)).toBeNull(); // same hull
+    expect(upgradedFrom(pledge(4, [['Cutlass Black', 'Ship']], { name: 'Aurora MR Starter Package' }), cat)).toBeNull(); // not flagged
   });
 });

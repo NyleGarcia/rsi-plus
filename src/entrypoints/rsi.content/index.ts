@@ -4,6 +4,7 @@
  */
 import { mount, unmount } from 'svelte';
 import SiteBar from '@/components/SiteBar.svelte';
+import { pageCount } from '@/lib/account';
 import { parseCredits } from '@/lib/hangar';
 import { hangarItem } from '@/lib/settings';
 
@@ -55,7 +56,7 @@ function highlightPledge() {
     setTimeout(() => (li.style.cssText = prev), 6000);
     if (action === 'melt' || action === 'gift') {
       const btn = li.querySelector<HTMLElement>(action === 'melt' ? '.js-reclaim' : '.js-gift, .js-gift-v2');
-      if (btn) setTimeout(() => btn.click(), 400);
+      if (btn) openDialog(btn, action);
       else note(`RSI+: no ${action} button on this pledge (not ${action === 'melt' ? 'meltable' : 'giftable'}?)`, 6000);
     }
     // One shot: a reload after RSI's dialog shouldn't re-open it.
@@ -68,21 +69,43 @@ function highlightPledge() {
     const size = params.get('pagesize') || '50';
     const here = Number(params.get('page') || 1);
     const box = note(`RSI+: pledge #${id} isn't on this page — looking…`, 0);
+    // RSI answers any page past the end with the last page again, so an empty page never comes: stop at the
+    // pagination's last page (from this page's links, refined from each fetched page) and on a repeated first id.
+    let last = pageCount(document) ?? 100;
+    const firstIds = new Set<string>([document.querySelector<HTMLInputElement>('.list-items > li input.js-pledge-id')?.value ?? '']);
     try {
-      for (let page = 1; page <= 100; page++) {
-        if (page === here) continue;
-        box.textContent = `RSI+: looking for pledge #${id}… page ${page}`;
-        const res = await fetch(`/account/pledges?page=${page}&pagesize=${size}`, { credentials: 'include' });
-        if (!res.ok) break;
-        const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-        const rows = doc.querySelectorAll('.list-items > li');
-        if (!rows.length) break;
-        if (rowFor(doc)) {
-          params.set('page', String(page));
-          params.set('pagesize', size);
-          location.href = `${location.pathname}?${params}`;
-          return;
+      // Rows only ever move up (melts, gifts), so the pledge is almost always on this page or the one before:
+      // probe outwards from here — here-1, here+1, here-2, here+2 … — instead of walking from page 1.
+      const seen = new Set<number>([here]);
+      for (let d = 1; ; d++) {
+        const lo = here - d, hi = here + d;
+        const next = [lo, hi].filter((p) => p >= 1 && p <= last && !seen.has(p));
+        if (!next.length) break;
+        let found = false;
+        for (const page of next) {
+          seen.add(page);
+          box.textContent = `RSI+: looking for pledge #${id}… page ${page} / ${last}`;
+          const res = await fetch(`/account/pledges?page=${page}&pagesize=${size}`, { credentials: 'include' });
+          if (!res.ok) continue;
+          const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+          const rows = doc.querySelectorAll('.list-items > li');
+          if (!rows.length) continue;
+          const first = rows[0]!.querySelector<HTMLInputElement>('input.js-pledge-id')?.value ?? '';
+          if (first && firstIds.has(first)) {
+            last = Math.min(last, page - 1); // repeated page → past the end
+            continue;
+          }
+          firstIds.add(first);
+          last = Math.min(last, pageCount(doc) ?? last);
+          if (rowFor(doc)) {
+            params.set('page', String(page));
+            params.set('pagesize', size);
+            location.href = `${location.pathname}?${params}`;
+            return;
+          }
+          found = true;
         }
+        if (!found) break;
       }
       box.textContent = `RSI+: pledge #${id} not found in the hangar — melted, gifted or reordered? Reload the hangar in RSI+.`;
       setTimeout(() => box.remove(), 8000);
@@ -91,6 +114,28 @@ function highlightPledge() {
     }
   };
   find();
+}
+
+/**
+ * Click RSI's Melt / Gift button until its dialog shows. RSI binds the handler from a script that can land after the
+ * list is on screen (Edge, slow loads), so one early click is simply lost: retry every 700 ms for ~6 s, with a full
+ * mouse sequence, and say so if the dialog never opens — the row is outlined, the button is right there.
+ */
+function openDialog(btn: HTMLElement, action: 'melt' | 'gift') {
+  const dialogOpen = () =>
+    [...document.querySelectorAll<HTMLElement>('[role="dialog"], [class*="modal"], [class*="dialog"], [class*="overlay"]')].some((el) => {
+      const st = getComputedStyle(el);
+      return st.display !== 'none' && st.visibility !== 'hidden' && el.getClientRects().length > 0 && el.getBoundingClientRect().height > 40;
+    });
+  let tries = 0;
+  const attempt = () => {
+    if (dialogOpen()) return;
+    if (tries++ >= 9) return void note(`RSI+: RSI's ${action} dialog didn't open — click the ${action === 'melt' ? 'Melt' : 'Gift'} button on the outlined pledge.`, 8000);
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    btn.click();
+    setTimeout(attempt, 700);
+  };
+  setTimeout(attempt, 400);
 }
 
 /** Small fixed notice at the bottom of the page; `ms` 0 = until removed by the caller. */

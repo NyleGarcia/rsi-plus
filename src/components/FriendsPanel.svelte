@@ -22,6 +22,24 @@
   import type { FriendsData } from '@/lib/api';
   import { memberUrl, type Member } from '@/lib/types';
   import { isOnline } from '@/lib/watch';
+  import { cn } from '@/lib/utils';
+  import * as Alert from '@/components/ui/alert';
+  import * as Card from '@/components/ui/card';
+  import * as Collapsible from '@/components/ui/collapsible';
+  import * as Select from '@/components/ui/select';
+  import * as Table from '@/components/ui/table';
+  import * as ToggleGroup from '@/components/ui/toggle-group';
+  import * as Tooltip from '@/components/ui/tooltip';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { Input } from '@/components/ui/input';
+  import { Label } from '@/components/ui/label';
+  import { Switch } from '@/components/ui/switch';
+  import Bell from '@lucide/svelte/icons/bell';
+  import BellOff from '@lucide/svelte/icons/bell-off';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
   let data = $state<FriendsData | null>(null);
   let error = $state('');
@@ -260,6 +278,27 @@
     invisible: 'Invisible',
     offline: 'Offline',
   };
+  const STATUS_DOT: Record<string, string> = { online: 'bg-success', playing: 'bg-success', away: 'bg-warning', do_not_disturb: 'bg-destructive' };
+
+  // Select sentinels: bits-ui treats '' as "nothing selected", and options can't be null.
+  const ANY = '__any__';
+  const PARTY_FOR: Record<string, string> = { '60': 'for 1 hour', '120': 'for 2 hours', '240': 'for 4 hours', '480': 'for 8 hours', [ANY]: 'until I stop it' };
+  const STATUS_FILTER: Record<string, string> = { all: 'All statuses', online: 'Online', offline: 'Offline' };
+  const ADDED: Record<string, string> = {
+    [ANY]: 'Added: any time',
+    '1': 'Added: last hour',
+    '6': 'Added: last 6 h',
+    '24': 'Added: last 24 h',
+    '168': 'Added: last 7 days',
+    party: 'Party friends',
+  };
+  const orgLabel = $derived.by(() => {
+    const o = orgOptions.find((x) => x.sid === org);
+    return o ? `${o.sid} — ${o.name} (${o.n})` : 'All orgs';
+  });
+  const allShownSelected = $derived(shown.every((r) => selected.has(r.member.id)));
+  const link = 'text-foreground hover:text-primary no-underline';
+
   const lastSeen = (m: Member) => {
     if (isOnline(statusOf(m))) return '';
     const t = Math.max(notes[m.id]?.lastOnline ?? 0, (m.presence?.since ?? 0) * 1000);
@@ -270,418 +309,390 @@
 {#snippet friendRow(m: Member)}
   {@const n = notes[m.id]}
   {@const st = statusOf(m)}
-  <tr class:sel={selected.has(m.id)}>
-    <td><input type="checkbox" checked={selected.has(m.id)} onchange={() => toggle(m.id)} aria-label={`Select ${m.displayname}`} /></td>
-    <td>
-      <div class="who">
-        {#if m.avatar}<img src={m.avatar} alt="" width="28" height="28" loading="lazy" />{/if}
+  {@const bellOn = notifyAll || bells.includes(m.id)}
+  <Table.Row data-state={selected.has(m.id) ? 'selected' : undefined}>
+    <Table.Cell><Checkbox checked={selected.has(m.id)} onCheckedChange={() => toggle(m.id)} aria-label={`Select ${m.displayname}`} /></Table.Cell>
+    <Table.Cell>
+      <div class="flex items-center gap-2">
+        {#if m.avatar}<img class="size-7 rounded-full object-cover" src={m.avatar} alt="" width="28" height="28" loading="lazy" />{/if}
         <div>
-          <a href={memberUrl(m.nickname)} target="_blank" rel="noopener"><strong>{m.displayname}</strong></a>
-          <div class="muted small">@{m.nickname}</div>
+          <a class={link} href={memberUrl(m.nickname)} target="_blank" rel="noopener"><strong>{m.displayname}</strong></a>
+          <div class="text-muted-foreground text-[11px]">@{m.nickname}</div>
         </div>
       </div>
-    </td>
-    <td>
-      <span class="dot s-{st}"></span>{STATUS_LABEL[st] ?? st}
-      {#if m.presence?.info}<div class="muted small">{m.presence.info}</div>{/if}
-      {#if lastSeen(m)}<div class="muted small">seen {lastSeen(m)}</div>{/if}
-    </td>
-    <td class="small">
-      <span class:recent={!!n?.firstSeen && Date.now() - n.firstSeen < 86_400_000}>{addedLabel(m)}</span>
-      {#if n?.party}<span class="chip party" title="Party friend">party</span>{/if}
-    </td>
-    <td class="orgs">
-      {#each orgsOf(m) as o, i (`${i}:${o.sid}`)}
-        {#if o.redacted}
-          <span class="chip muted" title="Hidden by the member">Redacted</span>
+    </Table.Cell>
+    <Table.Cell>
+      <span class={cn('mr-1.5 inline-block size-2 rounded-full bg-[#5b6270]', STATUS_DOT[st])}></span>{STATUS_LABEL[st] ?? st}
+      {#if m.presence?.info}<div class="text-muted-foreground text-[11px]">{m.presence.info}</div>{/if}
+      {#if lastSeen(m)}<div class="text-muted-foreground text-[11px]">seen {lastSeen(m)}</div>{/if}
+    </Table.Cell>
+    <Table.Cell class="text-[11px]">
+      <span class={cn(!!n?.firstSeen && Date.now() - n.firstSeen < 86_400_000 && 'text-primary font-semibold')}>{addedLabel(m)}</span>
+      {#if n?.party}<Badge variant="outline" class="text-warning ml-1" title="Party friend">party</Badge>{/if}
+    </Table.Cell>
+    <Table.Cell class="max-w-56 whitespace-normal">
+      <div class="flex flex-wrap gap-1">
+        {#each orgsOf(m) as o, i (`${i}:${o.sid}`)}
+          {#if o.redacted}
+            <Badge variant="outline" class="text-muted-foreground" title="Hidden by the member">Redacted</Badge>
+          {:else}
+            <Badge
+              variant="outline"
+              class={cn('no-underline', o.main && 'border-primary text-primary')}
+              href={`https://robertsspaceindustries.com/orgs/${o.sid}`}
+              target="_blank"
+              rel="noopener"
+              title={`${o.name}${o.rank ? ` · ${o.rank}` : ''}${o.main ? ' · main org' : ''}`}>{o.sid}</Badge
+            >
+          {/if}
         {:else}
-          <a class="chip" class:main={o.main} href={`https://robertsspaceindustries.com/orgs/${o.sid}`} target="_blank" rel="noopener" title={`${o.name}${o.rank ? ` · ${o.rank}` : ''}${o.main ? ' · main org' : ''}`}>{o.sid}</a>
-        {/if}
-      {:else}
-        <span class="muted small">—</span>
-      {/each}
-    </td>
-    <td>
+          <span class="text-muted-foreground text-[11px]">—</span>
+        {/each}
+      </div>
+    </Table.Cell>
+    <Table.Cell class="whitespace-normal">
       {#if editing === m.id}
-        <form class="edit" onsubmit={(e) => (e.preventDefault(), (editing = null))}>
-          <input placeholder="tags, comma separated" value={(n?.tags ?? []).join(', ')} onchange={(e) => setNote(m.id, { tags: parseTags(e.currentTarget.value) })} />
-          <input placeholder="note" value={n?.note ?? ''} onchange={(e) => setNote(m.id, { note: e.currentTarget.value })} />
-          <button class="btn small">Done</button>
+        <form class="grid min-w-48 gap-1" onsubmit={(e) => (e.preventDefault(), (editing = null))}>
+          <Input class="h-7" placeholder="tags, comma separated" value={(n?.tags ?? []).join(', ')} onchange={(e) => setNote(m.id, { tags: parseTags(e.currentTarget.value) })} />
+          <Input class="h-7" placeholder="note" value={n?.note ?? ''} onchange={(e) => setNote(m.id, { note: e.currentTarget.value })} />
+          <Button type="submit" variant="outline" size="xs" class="justify-self-start">Done</Button>
         </form>
       {:else}
-        <button class="notes" onclick={() => (editing = m.id)} title="Edit tags and note">
-          {#each n?.tags ?? [] as t}<span class="chip">{t}</span>{/each}
-          {#if n?.note}<span class="muted small">{n.note}</span>{/if}
-          {#if !n?.tags.length && !n?.note}<span class="muted small">+ tag / note</span>{/if}
+        <button type="button" class="flex flex-wrap items-center gap-1 text-left" onclick={() => (editing = m.id)} title="Edit tags and note">
+          {#each n?.tags ?? [] as t (t)}<Badge variant="secondary">{t}</Badge>{/each}
+          {#if n?.note}<span class="text-muted-foreground text-[11px]">{n.note}</span>{/if}
+          {#if !n?.tags.length && !n?.note}<span class="text-muted-foreground text-[11px]">+ tag / note</span>{/if}
         </button>
       {/if}
-    </td>
-    <td>
-      <button class="bell" class:on={notifyAll || bells.includes(m.id)} disabled={notifyAll} title="Notify when online" onclick={() => toggleBell(m.id)}
-        >{notifyAll || bells.includes(m.id) ? '🔔' : '🔕'}</button
+    </Table.Cell>
+    <Table.Cell>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class={cn(bellOn ? 'text-primary' : 'text-muted-foreground opacity-60')}
+        disabled={notifyAll}
+        title="Notify when online"
+        aria-label="Notify when online"
+        aria-pressed={bellOn}
+        onclick={() => toggleBell(m.id)}
       >
-    </td>
-  </tr>
+        {#if bellOn}<Bell />{:else}<BellOff />{/if}
+      </Button>
+    </Table.Cell>
+  </Table.Row>
 {/snippet}
 
-<div class="stack">
-  <section class="card stack party" class:live={partyOn}>
-    <div class="row spread">
-      <div>
-        <h2>Party mode {#if partyOn}<span class="chip live-chip">ON</span>{/if}</h2>
-        <span class="muted">
+{#snippet who(member: Member | null, fallbackId: string, req: import('@/lib/types').FriendRequest)}
+  <div class="flex items-center gap-2">
+    {#if member?.avatar}<img class="size-7 rounded-full object-cover" src={member.avatar} alt="" width="28" height="28" loading="lazy" />{/if}
+    <div>
+      <div class="flex flex-wrap items-center gap-1.5">
+        {#if member}
+          <a class={link} href={memberUrl(member.nickname)} target="_blank" rel="noopener"><strong>{member.displayname}</strong></a>
+          <span class="text-muted-foreground text-[11px]">@{member.nickname}</span>
+          {#if mainOrgFromBadges(member)}<Badge variant="secondary">{mainOrgFromBadges(member)!.sid}</Badge>{/if}
+        {:else}
+          <strong>Member {fallbackId}</strong>
+        {/if}
+      </div>
+      {#if req.time_created}<div class="text-muted-foreground text-[11px]">{new Date(req.time_created * 1000).toLocaleString()}</div>{/if}
+    </div>
+  </div>
+{/snippet}
+  <div class="grid gap-4">
+    <Card.Root class={cn(partyOn && 'ring-warning/50 shadow-[inset_0_0_0_1px_rgb(255_209_102/0.25)]')}>
+      <Card.Header>
+        <Card.Title class="flex items-center gap-2">Party mode {#if partyOn}<Badge variant="outline" class="text-warning border-warning/50">ON</Badge>{/if}</Card.Title>
+        <Card.Description>
           {#if partyOn}
             Auto-accepting friend requests every minute{party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ' until you turn it off'} · accepted people are flagged
             <em>party</em>.
           {:else}
             Turn on before a party: every incoming friend request is accepted automatically, flagged <em>party</em> and logged here.
           {/if}
-        </span>
-      </div>
-      <div class="row">
-        {#if partyOn}
-          <button class="btn danger" onclick={() => setPartyMode(false)}>Stop party mode</button>
-        {:else}
-          <select bind:value={partyFor} aria-label="Party mode duration">
-            <option value="60">for 1 hour</option>
-            <option value="120">for 2 hours</option>
-            <option value="240">for 4 hours</option>
-            <option value="480">for 8 hours</option>
-            <option value="">until I stop it</option>
-          </select>
-          <button class="btn primary" onclick={() => setPartyMode(true)}>Start party mode</button>
-        {/if}
-      </div>
-    </div>
-    {#if partyLog.length}
-      <div class="row spread">
-        <strong>Log <span class="muted">({sessionLog.filter((l) => l.ok).length} accepted this session · {partyLog.length} total)</span></strong>
-        <div class="row">
-          <button class="btn small" onclick={() => ((added = 'party'), (view = 'list'))}>Show party friends</button>
-          <button class="btn small" onclick={() => partyLogItem.setValue([])}>Clear log</button>
-        </div>
-      </div>
-      <ul class="log">
-        {#each partyLog.slice(0, 50) as l, i (`${l.requestId}:${l.at}:${i}`)}
-          <li class:fail={!l.ok}>
-            <span class="muted small">{new Date(l.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            {#if l.nickname}<a href={memberUrl(l.nickname)} target="_blank" rel="noopener">{l.displayname}</a> <span class="muted small">@{l.nickname}</span>{:else}{l.displayname}{/if}
-            {#if l.ok}<span class="chip ok-chip">accepted</span>{:else}<span class="chip fail-chip" title={l.error}>failed{l.error ? `: ${l.error}` : ''}</span>{/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
-
-  {#if error}
-    <section class="card row spread">
-      <span class="err">{error}</span>
-      <button class="btn" onclick={load}>Retry</button>
-    </section>
-  {/if}
-
-  {#snippet who(member: Member | null, fallbackId: string, req: import('@/lib/types').FriendRequest)}
-    <div class="who">
-      {#if member?.avatar}<img src={member.avatar} alt="" width="28" height="28" loading="lazy" />{/if}
-      <div>
-        {#if member}
-          <a href={memberUrl(member.nickname)} target="_blank" rel="noopener"><strong>{member.displayname}</strong></a>
-          <span class="muted small">@{member.nickname}</span>
-          {#if mainOrgFromBadges(member)}<span class="chip">{mainOrgFromBadges(member)!.sid}</span>{/if}
-        {:else}
-          <strong>Member {fallbackId}</strong>
-        {/if}
-        {#if req.time_created}<div class="muted small">{new Date(req.time_created * 1000).toLocaleString()}</div>{/if}
-      </div>
-    </div>
-  {/snippet}
-
-  {#if data}
-    <section class="card stack">
-      <div class="row spread">
-        <h2>Friend requests <span class="muted">({requests.incoming.length} incoming · {requests.outgoing.length} sent)</span></h2>
-        <button class="btn small" onclick={load} disabled={loading || !!busyReq}>Refresh</button>
-      </div>
-      {#if requests.incoming.length}
-        <div class="row spread">
-          <strong>Incoming</strong>
-          <div class="row">
-            <button class="btn small primary" disabled={!!busyReq} onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id))}>Accept all</button>
-            <button class="btn small" disabled={!!busyReq} onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id), true)} title="Accept and flag as party friends for later cleanup">Accept all as party</button>
-            <button class="btn small danger" disabled={!!busyReq} onclick={() => (confirmDeclineAll ? ((confirmDeclineAll = false), requestAction('decline', requests.incoming.map((r) => r.req.id))) : (confirmDeclineAll = true))}>
-              {confirmDeclineAll ? `Confirm: decline ${requests.incoming.length}` : 'Decline all'}
-            </button>
-          </div>
-        </div>
-        {#each requests.incoming as { req, member } (req.id)}
-          <div class="row spread line">
-            {@render who(member, req.requesting_member_id, req)}
-            <div class="row">
-              <button class="btn small primary" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id])}>{busyReq === req.id ? '…' : 'Accept'}</button>
-              <button class="btn small" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id], true)} title="Accept and flag as party friend">Accept as party</button>
-              <button class="btn small" disabled={!!busyReq} onclick={() => requestAction('decline', [req.id])}>Decline</button>
+        </Card.Description>
+        <Card.Action class="flex flex-wrap items-center gap-2">
+          {#if partyOn}
+            <Button variant="destructive" onclick={() => setPartyMode(false)}>Stop party mode</Button>
+          {:else}
+            <Select.Root type="single" bind:value={() => partyFor || ANY, (v) => (partyFor = v === ANY ? '' : v)}>
+              <Select.Trigger aria-label="Party mode duration">{PARTY_FOR[partyFor || ANY]}</Select.Trigger>
+              <Select.Content>
+                {#each Object.entries(PARTY_FOR) as [v, l] (v)}<Select.Item value={v}>{l}</Select.Item>{/each}
+              </Select.Content>
+            </Select.Root>
+            <Button onclick={() => setPartyMode(true)}>Start party mode</Button>
+          {/if}
+        </Card.Action>
+      </Card.Header>
+      {#if partyLog.length}
+        <Card.Content class="grid gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <strong>Log <span class="text-muted-foreground font-normal">({sessionLog.filter((l) => l.ok).length} accepted this session · {partyLog.length} total)</span></strong>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="xs" onclick={() => ((added = 'party'), (view = 'list'))}>Show party friends</Button>
+              <Button variant="outline" size="xs" onclick={() => partyLogItem.setValue([])}>Clear log</Button>
             </div>
           </div>
-        {/each}
-      {:else}
-        <span class="muted">No incoming requests.</span>
+          <ul class="grid max-h-64 overflow-auto">
+            {#each partyLog.slice(0, 50) as l, i (`${l.requestId}:${l.at}:${i}`)}
+              <li class="flex flex-wrap items-center gap-2 border-b py-1.5 last:border-0">
+                <span class="text-muted-foreground text-[11px]">{new Date(l.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                {#if l.nickname}<a class={cn(link, 'font-semibold')} href={memberUrl(l.nickname)} target="_blank" rel="noopener">{l.displayname}</a>
+                  <span class="text-muted-foreground text-[11px]">@{l.nickname}</span>{:else}{l.displayname}{/if}
+                {#if l.ok}<Badge variant="outline" class="text-success">accepted</Badge>{:else}<Badge variant="outline" class="text-destructive max-w-full" title={l.error}
+                    >failed{l.error ? `: ${l.error}` : ''}</Badge
+                  >{/if}
+              </li>
+            {/each}
+          </ul>
+        </Card.Content>
       {/if}
-      {#if requests.outgoing.length}
-        <strong>Sent</strong>
-        {#each requests.outgoing as { req, member } (req.id)}
-          <div class="row spread line">
-            {@render who(member, req.target_member_id, req)}
-            <button class="btn small" disabled={!!busyReq} onclick={() => requestAction('cancel', [req.id])}>Cancel</button>
+    </Card.Root>
+
+    {#if error}
+      <Alert.Root variant="destructive">
+        <TriangleAlert />
+        <Alert.Description>{error}</Alert.Description>
+        <Alert.Action><Button variant="outline" size="sm" onclick={load}>Retry</Button></Alert.Action>
+      </Alert.Root>
+    {/if}
+
+    {#if data}
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Friend requests <span class="text-muted-foreground font-normal">({requests.incoming.length} incoming · {requests.outgoing.length} sent)</span></Card.Title>
+          <Card.Action><Button variant="outline" size="xs" onclick={load} disabled={loading || !!busyReq}>Refresh</Button></Card.Action>
+        </Card.Header>
+        <Card.Content class="grid gap-3">
+          {#if requests.incoming.length}
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <strong>Incoming</strong>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id))}>Accept all</Button>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  disabled={!!busyReq}
+                  onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id), true)}
+                  title="Accept and flag as party friends for later cleanup">Accept all as party</Button
+                >
+                <Button
+                  variant="destructive"
+                  size="xs"
+                  disabled={!!busyReq}
+                  onclick={() =>
+                    confirmDeclineAll
+                      ? ((confirmDeclineAll = false),
+                        requestAction(
+                          'decline',
+                          requests.incoming.map((r) => r.req.id),
+                        ))
+                      : (confirmDeclineAll = true)}
+                >
+                  {confirmDeclineAll ? `Confirm: decline ${requests.incoming.length}` : 'Decline all'}
+                </Button>
+              </div>
+            </div>
+            <Table.Root>
+              <Table.Body>
+                {#each requests.incoming as { req, member } (req.id)}
+                  <Table.Row>
+                    <Table.Cell>{@render who(member, req.requesting_member_id, req)}</Table.Cell>
+                    <Table.Cell>
+                      <div class="flex items-center justify-end gap-2">
+                        <Button size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id])}>{busyReq === req.id ? '…' : 'Accept'}</Button>
+                        <Button variant="outline" size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id], true)} title="Accept and flag as party friend"
+                          >Accept as party</Button
+                        >
+                        <Button variant="outline" size="xs" disabled={!!busyReq} onclick={() => requestAction('decline', [req.id])}>Decline</Button>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          {:else}
+            <span class="text-muted-foreground">No incoming requests.</span>
+          {/if}
+          {#if requests.outgoing.length}
+            <strong>Sent</strong>
+            <Table.Root>
+              <Table.Body>
+                {#each requests.outgoing as { req, member } (req.id)}
+                  <Table.Row>
+                    <Table.Cell>{@render who(member, req.target_member_id, req)}</Table.Cell>
+                    <Table.Cell class="text-right">
+                      <Button variant="outline" size="xs" disabled={!!busyReq} onclick={() => requestAction('cancel', [req.id])}>Cancel</Button>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          {/if}
+        </Card.Content>
+      </Card.Root>
+    {/if}
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title>Friends</Card.Title>
+        <Card.Description class="grid gap-1">
+          <p class="max-w-3xl text-[11px]">
+            "Added" is recorded by RSI+ (Spectrum doesn't store it): friends present at the first snapshot show "before RSI+"; anyone added later — including people you
+            unfriend and re-add — is timestamped within one check interval (accepting here stamps instantly). Party flow: add people → select → <em>Mark party</em> → later
+            filter <em>Party friends</em> → select all → <em>Unfriend</em>.
+          </p>
+          <span>
+            {loading ? 'Loading…' : `${friends.length} friends · ${online} online`}
+            {#if data}
+              {#if data.warnings.length}
+                <Tooltip.Root>
+                  <Tooltip.Trigger class="text-[11px]">· source {data.source} · {data.warnings.length} warning(s) — hover</Tooltip.Trigger>
+                  <Tooltip.Content class="whitespace-pre-line">{data.warnings.join('\n')}</Tooltip.Content>
+                </Tooltip.Root>
+              {:else}
+                <span class="text-[11px]">· source {data.source}</span>
+              {/if}
+            {/if}
+          </span>
+        </Card.Description>
+        <Card.Action class="flex flex-wrap items-center gap-2">
+          <Button variant="outline" disabled={!!orgProgress || !friends.length} onclick={() => loadOrgs(false)} title="Reads each friend's public RSI citizen page (~1/s), cached 24 h">
+            {orgProgress ? `Orgs ${orgProgress.done}/${orgProgress.total}…` : stale.length ? `Load all orgs (${stale.length})` : 'Orgs up to date'}
+          </Button>
+          <Button variant="outline" onclick={exportCsv} disabled={!shown.length}>Export CSV</Button>
+          <Button variant="outline" onclick={load} disabled={loading}>Refresh</Button>
+        </Card.Action>
+      </Card.Header>
+
+      <Card.Content class="grid gap-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <Input class="w-64" placeholder="Search name, handle, tag, note" bind:value={q} aria-label="Search friends" />
+          <Select.Root type="single" bind:value={statusFilter}>
+            <Select.Trigger aria-label="Status">{STATUS_FILTER[statusFilter]}</Select.Trigger>
+            <Select.Content>
+              {#each Object.entries(STATUS_FILTER) as [v, l] (v)}<Select.Item value={v}>{l}</Select.Item>{/each}
+            </Select.Content>
+          </Select.Root>
+          <Select.Root type="single" bind:value={() => org ?? ANY, (v) => (org = v === ANY ? null : v)}>
+            <Select.Trigger aria-label="Org" class="max-w-64">{orgLabel}</Select.Trigger>
+            <Select.Content class="max-h-80">
+              <Select.Item value={ANY}>All orgs</Select.Item>
+              {#each orgOptions as o (o.sid)}<Select.Item value={o.sid}>{o.sid} — {o.name} ({o.n})</Select.Item>{/each}
+            </Select.Content>
+          </Select.Root>
+          {#if tags.length}
+            <Select.Root type="single" bind:value={() => tag ?? ANY, (v) => (tag = v === ANY ? null : v)}>
+              <Select.Trigger aria-label="Tag">{tag ?? 'All tags'}</Select.Trigger>
+              <Select.Content class="max-h-80">
+                <Select.Item value={ANY}>All tags</Select.Item>
+                {#each tags as t (t)}<Select.Item value={t}>{t}</Select.Item>{/each}
+              </Select.Content>
+            </Select.Root>
+          {/if}
+          <Select.Root type="single" bind:value={() => added || ANY, (v) => (added = v === ANY ? '' : v)}>
+            <Select.Trigger aria-label="Added">{ADDED[added || ANY]}</Select.Trigger>
+            <Select.Content>
+              {#each Object.entries(ADDED) as [v, l] (v)}<Select.Item value={v}>{l}</Select.Item>{/each}
+            </Select.Content>
+          </Select.Root>
+          <ToggleGroup.Root
+            type="single"
+            variant="outline"
+            aria-label="View"
+            value={view}
+            onValueChange={(v) => {
+              if (v === 'list' || v === 'orgs') view = v;
+            }}
+          >
+            <ToggleGroup.Item value="list">List</ToggleGroup.Item>
+            <ToggleGroup.Item value="orgs">Group by org</ToggleGroup.Item>
+          </ToggleGroup.Root>
+          <Label class="text-muted-foreground font-normal" title="Feed + notification reminder to remove party friends (0 = off)">
+            Party reminder after
+            <Input
+              type="number"
+              min="0"
+              max="720"
+              class="w-16"
+              bind:value={partyHours}
+              onchange={() => patchSettings({ partyRemindHours: Math.max(0, Number(partyHours) || 0) })}
+            /> h
+          </Label>
+          <Label class="text-muted-foreground font-normal">
+            <Switch bind:checked={notifyAll} onCheckedChange={(v) => patchSettings({ notifyAllFriends: v })} />
+            Notify for every friend online
+          </Label>
+        </div>
+
+        {#if selected.size}
+          <div class="bg-primary/8 flex flex-wrap items-center gap-2 rounded-lg px-2.5 py-2">
+            <strong>{selected.size} selected</strong>
+            <Input class="h-7 w-48" placeholder="add tags" bind:value={bulkTag} aria-label="Tags to add" />
+            <Button variant="outline" size="xs" disabled={!bulkTag.trim()} onclick={tagSelected}>Tag</Button>
+            <Button variant="outline" size="xs" onclick={() => setParty(true)}>Mark party</Button>
+            <Button variant="outline" size="xs" onclick={() => setParty(false)}>Unmark party</Button>
+            <Button variant="destructive" size="xs" onclick={removeSelected}>{confirmRemove ? `Confirm: unfriend ${selected.size}` : 'Unfriend'}</Button>
+            <Button variant="outline" size="xs" onclick={() => ((selected = new Set()), (confirmRemove = false))}>Clear</Button>
           </div>
-        {/each}
-      {/if}
-    </section>
-  {/if}
-
-  <section class="card stack">
-    <div class="row spread">
-      <div>
-        <h2>Friends</h2>
-        <p class="muted small hint">
-          "Added" is recorded by RSI+ (Spectrum doesn't store it): friends present at the first snapshot show "before RSI+";
-          anyone added later — including people you unfriend and re-add — is timestamped within one check interval (accepting here stamps
-          instantly). Party flow: add people → select → <em>Mark party</em> → later filter <em>Party friends</em> → select all → <em>Unfriend</em>.
-        </p>
-        <span class="muted">{loading ? 'Loading…' : `${friends.length} friends · ${online} online`}</span>
-        {#if data}
-          <span class="muted small" title={data.warnings.join('\n')}>· source {data.source}{data.warnings.length ? ` · ${data.warnings.length} warning(s) — hover` : ''}</span>
         {/if}
-      </div>
-      <div class="row">
-        <button class="btn" disabled={!!orgProgress || !friends.length} onclick={() => loadOrgs(false)} title="Reads each friend's public RSI citizen page (~1/s), cached 24 h">
-          {orgProgress ? `Orgs ${orgProgress.done}/${orgProgress.total}…` : stale.length ? `Load all orgs (${stale.length})` : 'Orgs up to date'}
-        </button>
-        <button class="btn" onclick={exportCsv} disabled={!shown.length}>Export CSV</button>
-        <button class="btn" onclick={load} disabled={loading}>Refresh</button>
-      </div>
-    </div>
+        {#if msg}<span class="text-muted-foreground">{msg}</span>{/if}
 
-    <div class="row">
-      <input placeholder="Search name, handle, tag, note" bind:value={q} aria-label="Search friends" />
-      <select bind:value={statusFilter} aria-label="Status">
-        <option value="all">All statuses</option>
-        <option value="online">Online</option>
-        <option value="offline">Offline</option>
-      </select>
-      <select bind:value={org} aria-label="Org">
-        <option value={null}>All orgs</option>
-        {#each orgOptions as o (o.sid)}<option value={o.sid}>{o.sid} — {o.name} ({o.n})</option>{/each}
-      </select>
-      {#if tags.length}
-        <select bind:value={tag} aria-label="Tag">
-          <option value={null}>All tags</option>
-          {#each tags as t}<option value={t}>{t}</option>{/each}
-        </select>
-      {/if}
-      <select bind:value={added} aria-label="Added">
-        <option value="">Added: any time</option>
-        <option value="1">Added: last hour</option>
-        <option value="6">Added: last 6 h</option>
-        <option value="24">Added: last 24 h</option>
-        <option value="168">Added: last 7 days</option>
-        <option value="party">Party friends</option>
-      </select>
-      <select bind:value={view} aria-label="View">
-        <option value="list">List</option>
-        <option value="orgs">Group by org</option>
-      </select>
-      <label class="row muted" title="Feed + notification reminder to remove party friends (0 = off)">
-        Party reminder after
-        <input type="number" min="0" max="720" style="width:60px" bind:value={partyHours} onchange={() => patchSettings({ partyRemindHours: Math.max(0, Number(partyHours) || 0) })} /> h
-      </label>
-      <label class="row muted"><input type="checkbox" bind:checked={notifyAll} onchange={() => patchSettings({ notifyAllFriends: notifyAll })} /> Notify for every friend online</label>
-    </div>
-
-    {#if selected.size}
-      <div class="row bulk">
-        <strong>{selected.size} selected</strong>
-        <input placeholder="add tags" bind:value={bulkTag} aria-label="Tags to add" />
-        <button class="btn small" disabled={!bulkTag.trim()} onclick={tagSelected}>Tag</button>
-        <button class="btn small" onclick={() => setParty(true)}>Mark party</button>
-        <button class="btn small" onclick={() => setParty(false)}>Unmark party</button>
-        <button class="btn small danger" onclick={removeSelected}>{confirmRemove ? `Confirm: unfriend ${selected.size}` : 'Unfriend'}</button>
-        <button class="btn small" onclick={() => ((selected = new Set()), (confirmRemove = false))}>Clear</button>
-      </div>
-    {/if}
-    {#if msg}<span class="muted">{msg}</span>{/if}
-
-    {#if !shown.length}
-      <p class="empty">{loading ? 'Loading…' : friends.length ? 'No friends match.' : 'No friends loaded.'}</p>
-    {:else}
-      <table>
-        <thead>
-          <tr>
-            <th><input type="checkbox" checked={shown.every((r) => selected.has(r.member.id))} onchange={selectShown} aria-label="Select all shown" /></th>
-            <SortTh key="name" bind:sort>Friend</SortTh>
-            <SortTh key="status" bind:sort>Status</SortTh>
-            <SortTh key="added" bind:sort firstDir="desc">Added</SortTh>
-            <SortTh key="orgs" bind:sort>Orgs</SortTh>
-            <SortTh key="tags" bind:sort>Tags / note</SortTh>
-            <th></th>
-          </tr>
-        </thead>
-        {#if view === 'list'}
-          <tbody>
-            {#each shown as r (r.member.id)}{@render friendRow(r.member)}{/each}
-          </tbody>
+        {#if !shown.length}
+          <p class="text-muted-foreground py-6 text-center">{loading ? 'Loading…' : friends.length ? 'No friends match.' : 'No friends loaded.'}</p>
         {:else}
-          {#each groups as g (g.sid)}
-            <tbody>
-              <tr class="group">
-                <th colspan="7">
-                  {#if g.sid}<a href={`https://robertsspaceindustries.com/orgs/${g.sid}`} target="_blank" rel="noopener">{g.name}</a> <span class="muted">[{g.sid}]</span>{:else}{g.name}{/if}
-                  <span class="muted">· {g.items.length}</span>
-                </th>
-              </tr>
-              {#each g.items as r (r.member.id)}{@render friendRow(r.member)}{/each}
-            </tbody>
-          {/each}
+          <Table.Root>
+            <Table.Header>
+              <Table.Row>
+                <Table.Head><Checkbox checked={allShownSelected} onCheckedChange={selectShown} aria-label="Select all shown" /></Table.Head>
+                <SortTh key="name" bind:sort>Friend</SortTh>
+                <SortTh key="status" bind:sort>Status</SortTh>
+                <SortTh key="added" bind:sort firstDir="desc">Added</SortTh>
+                <SortTh key="orgs" bind:sort>Orgs</SortTh>
+                <SortTh key="tags" bind:sort>Tags / note</SortTh>
+                <Table.Head></Table.Head>
+              </Table.Row>
+            </Table.Header>
+            {#if view === 'list'}
+              <Table.Body>
+                {#each shown as r (r.member.id)}{@render friendRow(r.member)}{/each}
+              </Table.Body>
+            {:else}
+              {#each groups as g (g.sid)}
+                <Collapsible.Root open={true}>
+                  {#snippet child()}
+                    <tbody data-slot="table-body">
+                      <Table.Row class="hover:bg-transparent">
+                        <Table.Head colspan={7} class="text-foreground pt-4 text-[13px]">
+                          <div class="flex items-center gap-1.5">
+                            <Collapsible.Trigger>
+                              {#snippet child({ props })}
+                                <Button {...props} variant="ghost" size="icon-xs" aria-label={`Toggle ${g.name}`}>
+                                  <ChevronDown class="transition-transform [[data-state=closed]>&]:-rotate-90" />
+                                </Button>
+                              {/snippet}
+                            </Collapsible.Trigger>
+                            {#if g.sid}<a class="text-foreground hover:text-primary" href={`https://robertsspaceindustries.com/orgs/${g.sid}`} target="_blank" rel="noopener">{g.name}</a>
+                              <span class="text-muted-foreground font-normal">[{g.sid}]</span>{:else}{g.name}{/if}
+                            <span class="text-muted-foreground font-normal">· {g.items.length}</span>
+                          </div>
+                        </Table.Head>
+                      </Table.Row>
+                    </tbody>
+                    <Collapsible.Content>
+                      {#snippet child({ props, open })}
+                        <tbody {...props} data-slot="table-body">
+                          {#if open}{#each g.items as r (r.member.id)}{@render friendRow(r.member)}{/each}{/if}
+                        </tbody>
+                      {/snippet}
+                    </Collapsible.Content>
+                  {/snippet}
+                </Collapsible.Root>
+              {/each}
+            {/if}
+          </Table.Root>
         {/if}
-      </table>
-    {/if}
-  </section>
-</div>
-
-<style>
-  .who {
-    display: flex;
-    gap: 9px;
-    align-items: center;
-  }
-  .who img {
-    border-radius: 50%;
-    object-fit: cover;
-  }
-  .who a {
-    color: var(--text);
-    text-decoration: none;
-  }
-  .who a:hover {
-    color: var(--accent);
-  }
-  .small {
-    font-size: 11px;
-  }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 6px;
-    background: #5b6270;
-  }
-  .s-online,
-  .s-playing {
-    background: var(--ok);
-  }
-  .s-away {
-    background: #ffd166;
-  }
-  .s-do_not_disturb {
-    background: var(--err);
-  }
-  .recent {
-    color: var(--accent);
-    font-weight: 600;
-  }
-  .chip.party {
-    margin-left: 4px;
-    color: #ffd166;
-  }
-  .orgs {
-    max-width: 220px;
-  }
-  .orgs .chip {
-    margin: 1px 2px 1px 0;
-    text-decoration: none;
-    color: var(--text);
-  }
-  .orgs .chip.main {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .notes {
-    border: 0;
-    background: none;
-    padding: 0;
-    text-align: left;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    align-items: center;
-  }
-  .edit {
-    display: grid;
-    gap: 4px;
-  }
-  .bell {
-    border: 0;
-    background: none;
-    font-size: 15px;
-    opacity: 0.45;
-  }
-  .bell.on {
-    opacity: 1;
-  }
-  tr.sel td {
-    background: rgb(60 200 255 / 0.06);
-  }
-  tr.group th {
-    padding-top: 16px;
-    color: var(--text);
-    font-size: 13px;
-  }
-  tr.group a {
-    color: var(--text);
-  }
-  .bulk {
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgb(60 200 255 / 0.08);
-  }
-  .line {
-    padding: 6px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .party.live {
-    border-color: rgb(255 209 102 / 0.5);
-    box-shadow: 0 0 0 1px rgb(255 209 102 / 0.25) inset;
-  }
-  .live-chip {
-    color: #ffd166;
-    border-color: rgb(255 209 102 / 0.5);
-    margin-left: 6px;
-  }
-  .log {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 260px;
-    overflow: auto;
-    display: grid;
-  }
-  .log li {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    padding: 5px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .log a {
-    color: var(--text);
-    font-weight: 600;
-    text-decoration: none;
-  }
-  .ok-chip {
-    color: var(--ok);
-  }
-  .fail-chip {
-    color: var(--err);
-  }
-</style>
+      </Card.Content>
+    </Card.Root>
+  </div>

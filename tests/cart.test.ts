@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addable, addStandalone, addUpgrade, CartError, csrfFrom, signedIn, verifyUpgrade } from '@/lib/cart';
+import { addable, addStandalone, addUpgrade, CartError, csrfFrom, readCart, signedIn, verifyUpgrade } from '@/lib/cart';
 import type { Step } from '@/lib/ccu';
 import type { CatalogShip } from '@/lib/store';
 
@@ -152,6 +152,45 @@ describe('cart: standalone', () => {
     expect(JSON.parse(String(g.init?.body)).query).toMatch(/add\(skuId: 555, qty: 1\)/);
     expect(csrfFrom('<meta content="zz" name="csrf-token">')).toBe('zz');
     expect(csrfFrom('<meta name="other">')).toBeNull();
+  });
+});
+
+describe('cart: read back', () => {
+  it('parses lines, prices, discounts and totals; empty cart → no lines', async () => {
+    const calls = mockFetch((c) => {
+      if (c.url.endsWith('/pledge/cart')) return new Response('<meta name="csrf-token" content="t0k">');
+      return json({
+        data: {
+          store: {
+            cart: {
+              id: 'c1',
+              totals: { subTotal: 2275, total: 2275 },
+              lineItemsQties: 3,
+              lineItems: [
+                { id: '1', skuId: '17703', qty: 1, unitPriceWithTax: { amount: 1500, discounted: 975, discountDescription: '35% off' }, discounts: [{ id: 'd', type: 'BUNDLE', details: '10+ paints', bundle: null }], sku: { id: '17703', label: 'Cutlass - Frost Paint', subtitle: null } },
+                { id: '2', skuId: 55, qty: 2, unitPriceWithTax: { amount: 650, discounted: null, discountDescription: null }, discounts: [], sku: { label: 'Aurora', subtitle: 'Red Paint' } },
+                { id: '3', skuId: 9, qty: 1, unitPriceWithTax: null, sku: null, upgrade: { name: 'Upgrade - Aurora MR to 300i' } },
+              ],
+            },
+          },
+        },
+      });
+    });
+    const cart = await readCart();
+    expect(cart).toMatchObject({ id: 'c1', subTotal: 2275, total: 2275, qty: 3 });
+    expect(cart.lines).toEqual([
+      { id: '1', skuId: 17703, qty: 1, title: 'Cutlass - Frost Paint', unit: 1500, unitDiscounted: 975, discount: '35% off', discounts: ['BUNDLE · 10+ paints'], upgrade: null },
+      { id: '2', skuId: 55, qty: 2, title: 'Aurora Red Paint', unit: 650, unitDiscounted: 650, discount: '', discounts: [], upgrade: null },
+      { id: '3', skuId: 9, qty: 1, title: 'Upgrade - Aurora MR to 300i', unit: 0, unitDiscounted: 0, discount: '', discounts: [], upgrade: 'Upgrade - Aurora MR to 300i' },
+    ]);
+    const g = calls.find((c) => /robertsspaceindustries\.com\/graphql$/.test(c.url))!;
+    expect((g.init?.headers as Record<string, string>)['x-csrf-token']).toBe('t0k');
+    expect(JSON.parse(String(g.init?.body)).operationName).toBe('MiniCartWidgetQuery');
+
+    mockFetch((c) => (c.url.endsWith('/pledge/cart') ? new Response('<meta name="csrf-token" content="t">') : json({ data: { store: { cart: null } } })));
+    expect((await readCart()).lines).toEqual([]);
+    mockFetch((c) => (c.url.endsWith('/pledge/cart') ? new Response('<meta name="csrf-token" content="t">') : new Response('', { status: 401 })));
+    await expect(readCart()).rejects.toMatchObject({ code: 'signed-out' });
   });
 });
 

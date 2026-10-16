@@ -1,11 +1,15 @@
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 
 export default defineConfig({
   srcDir: 'src',
   modules: ['@wxt-dev/module-svelte'],
+  // Tailwind v4 (shadcn-svelte) — imported only by the hub / popup pages; content scripts stay vanilla so nothing
+  // bleeds into RSI's own pages.
+  vite: () => ({ plugins: [tailwindcss()] }),
   manifest: ({ command }) => ({
     name: 'RSI+',
-    description: 'Roberts Space Industries, better: Spectrum read tracking + mutes + watches, friends manager, hangar/buyback explorer, store prices, wishlist alerts and a CCU chain planner.',
+    description: 'RSI, better: Spectrum read tracking, mutes, watches, friends, hangar & buyback explorer, store prices, wishlist alerts, CCU planner.',
     // unlimitedStorage: big hangars/buybacks + read marks can pass storage.local's 10 MB default quota.
     // cookies: read the Rsi-Token cookie so the background can call Spectrum's API (X-Rsi-Token header) without a tab.
     // offscreen: a service worker can't play audio; the party-mode ding plays in an offscreen document.

@@ -1,21 +1,31 @@
 <script lang="ts">
   import { bg } from '@/lib/messages';
-  import { feedItem, lastPollItem } from '@/lib/settings';
+  import { feedItem, getSettings, lastPollItem, settingsItem } from '@/lib/settings';
   import type { EventKind, FeedEvent } from '@/lib/watch';
+  import * as Card from '@/components/ui/card';
+  import * as Select from '@/components/ui/select';
+  import * as Tooltip from '@/components/ui/tooltip';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { cn } from '@/lib/utils';
 
   let feed = $state<FeedEvent[]>([]);
   let lastPoll = $state<{ at: number; error: string | null } | null>(null);
+  let pollAuto = $state(true);
   let busy = $state(false);
   let filter = $state<EventKind | 'all' | 'unseen'>('unseen');
 
   $effect(() => {
     feedItem.getValue().then((f) => (feed = f));
     lastPollItem.getValue().then((p) => (lastPoll = p));
-    const offs = [feedItem.watch((f) => (feed = f ?? [])), lastPollItem.watch((p) => (lastPoll = p))];
+    getSettings().then((s) => (pollAuto = s.pollAuto));
+    const offs = [feedItem.watch((f) => (feed = f ?? [])), lastPollItem.watch((p) => (lastPoll = p)), settingsItem.watch(async () => (pollAuto = (await getSettings()).pollAuto))];
     return () => offs.forEach((off) => off());
   });
 
-  const LABEL: Record<EventKind, string> = { replies: 'Replies', thread: 'New thread', dev: 'Dev', author: 'Author', friend: 'Friend', store: 'Store' };
+  const LABEL: Record<EventKind, string> = { replies: 'Replies', thread: 'New thread', dev: 'Dev', author: 'Author', keyword: 'Keyword', friend: 'Friend', store: 'Store' };
+  const KIND_TONE: Partial<Record<EventKind, string>> = { dev: 'text-[#ffb547]', store: 'text-warning', friend: 'text-success', replies: 'text-primary', keyword: 'text-[#c084fc]' };
+  const FILTER_LABEL: Record<string, string> = { unseen: 'Unseen', all: 'All', ...LABEL };
   const shown = $derived(feed.filter((e) => (filter === 'all' ? true : filter === 'unseen' ? !e.seen : e.kind === filter)));
   const unseen = $derived(feed.filter((e) => !e.seen).length);
 
@@ -33,94 +43,59 @@
   };
 </script>
 
-<section class="card stack">
-  <div class="row spread">
-    <div>
-      <h2>Feed</h2>
-      <span class="muted">
-        {unseen} unseen · last check {lastPoll ? ago(lastPoll.at) : 'never'}
-        {#if lastPoll?.error}<span class="err" title={lastPoll.error}> · some checks failed</span>{/if}
-      </span>
-    </div>
-    <div class="row">
-      <select bind:value={filter} aria-label="Filter">
-        <option value="unseen">Unseen</option>
-        <option value="all">All</option>
-        {#each Object.entries(LABEL) as [k, l]}<option value={k}>{l}</option>{/each}
-      </select>
-      <button class="btn" disabled={busy} onclick={pollNow}>{busy ? 'Checking…' : 'Check now'}</button>
-      <button class="btn" disabled={!unseen} onclick={() => bg({ type: 'feed:seen' })}>Mark all seen</button>
-    </div>
-  </div>
+<Card.Root>
+  <Card.Header>
+    <Card.Title>Feed</Card.Title>
+    <Card.Description>
+      {unseen} unseen · last check {lastPoll ? ago(lastPoll.at) : 'never'}{#if !pollAuto} · <span title="Automatic checks are off (Watching / Settings) — nothing runs in the background">passive, Check now only</span>{/if}
+      {#if lastPoll?.error}
+          <Tooltip.Root>
+            <Tooltip.Trigger class="text-destructive"> · some checks failed</Tooltip.Trigger>
+            <Tooltip.Content class="whitespace-pre-line">{lastPoll.error}</Tooltip.Content>
+          </Tooltip.Root>
+      {/if}
+    </Card.Description>
+    <Card.Action class="flex flex-wrap items-center gap-2">
+      <Select.Root type="single" bind:value={filter}>
+        <Select.Trigger aria-label="Filter">{FILTER_LABEL[filter]}</Select.Trigger>
+        <Select.Content>
+          <Select.Item value="unseen">Unseen</Select.Item>
+          <Select.Item value="all">All</Select.Item>
+          {#each Object.entries(LABEL) as [k, l] (k)}<Select.Item value={k}>{l}</Select.Item>{/each}
+        </Select.Content>
+      </Select.Root>
+      <Button variant="outline" disabled={busy} onclick={pollNow}>{busy ? 'Checking…' : 'Check now'}</Button>
+      <Button variant="outline" disabled={!unseen} onclick={() => bg({ type: 'feed:seen' })}>Mark all seen</Button>
+    </Card.Action>
+  </Card.Header>
 
-  {#if !shown.length}
-    <p class="empty">
-      {feed.length ? 'Nothing here.' : 'No events yet. Watch threads (☆ on Spectrum rows), channels, authors or friends — they show up here.'}
-    </p>
-  {:else}
-    <ul class="list">
-      {#each shown as e (e.key)}
-        <li class:seen={e.seen}>
-          <span class="chip kind-{e.kind}">{LABEL[e.kind]}</span>
-          <a href={e.url} target="_blank" rel="noopener" onclick={() => bg({ type: 'feed:seen', keys: [e.key] })}>{e.title}</a>
-          <span class="muted body">{e.body}</span>
-          <span class="muted when">{ago(e.at)}</span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</section>
-
-<style>
-  .list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-  }
-  li {
-    display: grid;
-    grid-template-columns: 92px minmax(0, 1fr) auto;
-    grid-template-areas: 'kind title when' 'kind body when';
-    gap: 2px 12px;
-    padding: 10px 4px;
-    border-bottom: 1px solid var(--line);
-  }
-  li.seen {
-    opacity: 0.55;
-  }
-  .chip {
-    grid-area: kind;
-    justify-self: start;
-    align-self: start;
-  }
-  a {
-    grid-area: title;
-    color: var(--text);
-    font-weight: 600;
-    text-decoration: none;
-  }
-  a:hover {
-    color: var(--accent);
-  }
-  .body {
-    grid-area: body;
-  }
-  .when {
-    grid-area: when;
-    font-size: 12px;
-    white-space: nowrap;
-  }
-  .kind-dev {
-    color: #ffb547;
-  }
-  .kind-store {
-    color: #ffd166;
-  }
-  .kind-friend {
-    color: var(--ok);
-  }
-  .kind-replies {
-    color: var(--accent);
-  }
-</style>
+  <Card.Content>
+    {#if !shown.length}
+      <p class="text-muted-foreground py-6 text-center">
+        {feed.length ? 'Nothing here.' : 'No events yet. Watch threads (☆ on Spectrum rows), channels, authors or friends — they show up here.'}
+      </p>
+    {:else}
+      <ul class="grid">
+        {#each shown as e (e.key)}
+          <li
+            class={cn(
+              "grid grid-cols-[92px_minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 border-b px-1 py-2.5 [grid-template-areas:'kind_title_when''kind_body_when'] last:border-0",
+              e.seen && 'opacity-55',
+            )}
+          >
+            <Badge variant="outline" class={cn('[grid-area:kind] self-start justify-self-start', KIND_TONE[e.kind])}>{LABEL[e.kind]}</Badge>
+            <a
+              class="text-foreground hover:text-primary font-semibold no-underline [grid-area:title]"
+              href={e.url}
+              target="_blank"
+              rel="noopener"
+              onclick={() => bg({ type: 'feed:seen', keys: [e.key] })}>{e.title}</a
+            >
+            <span class="text-muted-foreground [grid-area:body]">{e.body}</span>
+            <span class="text-muted-foreground text-xs whitespace-nowrap [grid-area:when]">{ago(e.at)}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </Card.Content>
+</Card.Root>

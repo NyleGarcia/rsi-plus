@@ -23,7 +23,7 @@ import {
 import { ding } from '@/lib/sound';
 import { fetchCatalog, fetchPaints, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
 import { threadUrl } from '@/lib/types';
-import { channelEvents, friendEvents, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
+import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
 
 const ALARM = 'spectrumplus:poll';
 const PARTY_ALARM = 'spectrumplus:party';
@@ -104,8 +104,13 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
   }
 }
 
+/** Poll alarm from settings: every `pollMinutes`, or none at all in passive mode (then only *Check now* polls). */
 async function schedule() {
-  const { pollMinutes } = await getSettings();
+  const { pollMinutes, pollAuto } = await getSettings();
+  if (!pollAuto) {
+    await browser.alarms.clear(ALARM);
+    return;
+  }
   const period = Math.max(2, pollMinutes || 5);
   const cur = await browser.alarms.get(ALARM);
   if (cur?.periodInMinutes !== period) browser.alarms.create(ALARM, { periodInMinutes: period, delayInMinutes: 1 });
@@ -171,7 +176,7 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     try {
       const list = await api.channelThreads(c.id);
       const threads = list.threads.map(normThread).filter((t) => !!t);
-      const r = channelEvents(c, threads, w.authors.map((a) => a.nickname), (t) => threadUrl(c.id, t.slug), now);
+      const r = channelEvents(c, threads, w.authors.map((a) => a.nickname), (t) => threadUrl(c.id, t.slug), now, keywordsFor(w, c.id));
       events.push(...r.events);
       lastIds.set(c.id, r.lastThreadId);
     } catch (e) {

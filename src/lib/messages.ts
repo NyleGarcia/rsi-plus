@@ -18,7 +18,8 @@ export type BgRequest =
   /** Play the party-mode ding now (settings preview). */
   | { type: 'sound:ding' };
 
-export type HubTab = 'feed' | 'watching' | 'friends' | 'mutes' | 'hangar' | 'wallet' | 'ships' | 'items' | 'buyback' | 'store' | 'ccu';
+/** Hub pages (`hub.html#<tab>`). One sidebar entry each; `ships` is a legacy alias the hub redirects (see Hub.svelte). */
+export type HubTab = 'feed' | 'watching' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'ccu' | 'paint-rebuy' | 'settings' | 'ships';
 
 export interface BulkResult {
   done: string[];

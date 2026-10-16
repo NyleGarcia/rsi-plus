@@ -27,6 +27,8 @@ export interface SavedCookie {
   sameSite: 'no_restriction' | 'lax' | 'strict' | 'unspecified';
   /** Seconds since epoch; missing = session cookie. */
   expirationDate?: number;
+  /** CHIPS-partitioned cookie (browsers that partition even first-party cookies, e.g. Edge's tracking prevention). */
+  partitionKey?: { topLevelSite?: string };
 }
 
 export interface Profile {
@@ -62,7 +64,9 @@ export const toSaved = (c: RawCookie): SavedCookie => ({
   hostOnly: c.hostOnly,
   sameSite: (c.sameSite as SavedCookie['sameSite']) ?? 'unspecified',
   ...(c.expirationDate ? { expirationDate: c.expirationDate } : {}),
+  ...(partitionOf(c) ? { partitionKey: partitionOf(c) } : {}),
 });
+const partitionOf = (c: RawCookie) => (c as { partitionKey?: { topLevelSite?: string } }).partitionKey;
 
 /** `cookies.set` details for a saved cookie: host-only cookies must omit `domain`; session cookies omit expiry. */
 export function toSet(c: SavedCookie): Parameters<ReturnType<typeof cookies>['set']>[0] {
@@ -76,12 +80,29 @@ export function toSet(c: SavedCookie): Parameters<ReturnType<typeof cookies>['se
     sameSite: c.sameSite,
     ...(c.hostOnly ? {} : { domain: c.domain }),
     ...(c.expirationDate ? { expirationDate: c.expirationDate } : {}),
-  };
+    ...(c.partitionKey ? { partitionKey: c.partitionKey } : {}),
+  } as Parameters<ReturnType<typeof cookies>['set']>[0];
 }
 
-/** Current jar for RSI (this context's cookie store: regular or incognito). */
+/**
+ * Current jar for RSI (this context's cookie store: regular or incognito). Asked three ways and merged — by domain,
+ * by URL, and by URL within RSI's own partition — because a browser that partitions cookies (Edge with tracking
+ * prevention, CHIPS) leaves them out of a plain `getAll` while `get` by URL still finds them.
+ */
 async function readJar(): Promise<RawCookie[]> {
-  return cookies().getAll({ domain: DOMAIN });
+  const api = cookies();
+  const lists = await Promise.all([
+    api.getAll({ domain: DOMAIN }).catch(() => [] as RawCookie[]),
+    api.getAll({ url: SPECTRUM_ORIGIN }).catch(() => [] as RawCookie[]),
+    api.getAll({ url: SPECTRUM_ORIGIN, partitionKey: { topLevelSite: SPECTRUM_ORIGIN } } as Parameters<typeof api.getAll>[0]).catch(() => [] as RawCookie[]),
+  ]);
+  const seen = new Map<string, RawCookie>();
+  for (const c of lists.flat()) seen.set(`${c.storeId}|${c.domain}|${c.path}|${c.name}`, c);
+  if (![...seen.values()].some((c) => c.name === 'Rsi-Token')) {
+    const one = await api.get({ url: SPECTRUM_ORIGIN, name: 'Rsi-Token' }).catch(() => null);
+    if (one) seen.set(`${one.storeId}|${one.domain}|${one.path}|${one.name}`, one);
+  }
+  return [...seen.values()];
 }
 
 async function clearJar() {
@@ -115,7 +136,8 @@ export async function captureProfile(): Promise<Profile> {
   const me = await whoAmI();
   if (!me) throw new Error('Not logged in on robertsspaceindustries.com — log in there first, then save.');
   const jar = (await readJar()).map(toSaved);
-  if (!jar.some((c) => c.name === 'Rsi-Token')) throw new Error('No Rsi-Token cookie found — open robertsspaceindustries.com once, then save.');
+  if (!jar.some((c) => c.name === 'Rsi-Token'))
+    throw new Error(`No Rsi-Token cookie found — open robertsspaceindustries.com once, then save. (cookies seen: ${jar.map((c) => c.name).join(', ') || 'none'})`);
   const ps = await profilesItem.getValue();
   const prev = ps.list.find((p) => p.handle === me.handle);
   const profile: Profile = { id: prev?.id ?? `${me.handle}-${now().toString(36)}`, ...me, savedAt: now(), cookies: jar };

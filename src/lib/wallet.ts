@@ -140,6 +140,10 @@ export interface SpendSummary {
   years: number;
   /** Average melt value per year backed (0 when unknown). */
   perYear: number;
+  /** Melt value of pledges RSI says were paid with cash / with store credit; `payKnown` = pledges carrying that field (0 on old saves). */
+  cash: number;
+  credit: number;
+  payKnown: number;
 }
 
 export function spendSummary(pledges: Pledge[], now = Date.now()): SpendSummary {
@@ -154,6 +158,9 @@ export function spendSummary(pledges: Pledge[], now = Date.now()): SpendSummary 
     since,
     years,
     perYear: years ? r2(value / years) : 0,
+    cash: r2(pledges.filter((p) => p.paidWith === 'cash').reduce((s, p) => s + p.value, 0)),
+    credit: r2(pledges.filter((p) => p.paidWith === 'credit').reduce((s, p) => s + p.value, 0)),
+    payKnown: pledges.filter((p) => p.paidWith).length,
   };
 }
 

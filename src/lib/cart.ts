@@ -11,7 +11,8 @@
  * Eligibility: `filterShips` → `from(to: skuId) { ships { id } }` lists every ship RSI lets you upgrade *from* to that
  * SKU; a chain step whose source ship is missing there is one RSI won't sell, whatever the catalog math says.
  * Standalone ships — the regular store (`POST /graphql`, `store(name:"pledge"){cart{mutations{add(skuId, qty)}}}`,
- * header `x-csrf-token` from an RSI page's `<meta name="csrf-token">`).
+ * header `x-csrf-token` from an RSI page's `<meta name="csrf-token">`). `readCart` reads the same store's cart back
+ * (`MiniCartWidgetQuery`: lines, qty, unit price before / after RSI's discounts + discount wording, totals).
  *
  * Rules: sign-in checked first (`initShipUpgrade { app { isAnonymous } }`); `addToCart` is never retried (a lost
  * answer may still have added the line — the user checks the cart); a buy-back checks out alone (RSI rule), so the
@@ -210,6 +211,72 @@ export async function addStandalone(skuId: number, qty = 1): Promise<void> {
   const body = (await res.json().catch(() => null)) as { data?: { store?: { cart?: { mutations?: { add?: unknown } } } }; errors?: { message: string }[] } | null;
   if (body?.errors?.length) throw classify(new Error(body.errors[0]!.message));
   if (!body?.data?.store?.cart?.mutations) throw new CartError('refused', 'RSI did not confirm the cart line.');
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Reading the cart back (RSI's `MiniCartWidgetQuery`, from the store bundle 2026-10 — trimmed to what we show)
+
+export interface CartLine {
+  id: string;
+  skuId: number;
+  qty: number;
+  title: string;
+  /** Unit price before / after RSI's discounts, cents, and RSI's wording for the discount ("" when none). */
+  unit: number;
+  unitDiscounted: number;
+  discount: string;
+  /** Discount rows RSI attached to the line (type / details / bundle title). */
+  discounts: string[];
+  /** Ship-upgrade lines carry the upgrade name. */
+  upgrade: string | null;
+}
+
+export interface CartSnapshot {
+  at: number;
+  id: string | null;
+  /** Cents. */
+  subTotal: number;
+  total: number;
+  qty: number;
+  lines: CartLine[];
+}
+
+const CART_QUERY =
+  'query MiniCartWidgetQuery($storeFront: String = "pledge") { store(name: $storeFront) { cart { id totals { subTotal total } lineItemsQties lineItems { id skuId qty identifier unitPriceWithTax { amount discounted discountDescription } discounts { id type details bundle { id title } } sku { id label subtitle } ... on ShipUpgradeLineItem { upgrade { name } } } } } }';
+
+type RawLine = {
+  id: string;
+  skuId: string | number;
+  qty: number;
+  unitPriceWithTax?: { amount: number; discounted: number | null; discountDescription?: string | null } | null;
+  discounts?: { id?: string; type?: string; details?: string | null; bundle?: { title?: string } | null }[] | null;
+  sku?: { id?: string | number; label?: string; subtitle?: string | null } | null;
+  upgrade?: { name?: string } | null;
+};
+
+/** The signed-in session's pledge-store cart. Read-only. */
+export async function readCart(): Promise<CartSnapshot> {
+  const csrf = await csrfToken();
+  const res = await post('/graphql', { operationName: 'MiniCartWidgetQuery', variables: { storeFront: 'pledge' }, query: CART_QUERY }, { 'x-csrf-token': csrf });
+  const body = (await res.json().catch(() => null)) as { data?: { store?: { cart?: { id?: string; totals?: { subTotal?: number; total?: number }; lineItemsQties?: number; lineItems?: RawLine[] } | null } }; errors?: { message: string }[] } | null;
+  if (body?.errors?.length) throw classify(new Error(body.errors[0]!.message));
+  const cart = body?.data?.store?.cart;
+  if (!cart) return { at: Date.now(), id: null, subTotal: 0, total: 0, qty: 0, lines: [] };
+  const lines = (cart.lineItems ?? []).map((l): CartLine => {
+    const unit = l.unitPriceWithTax?.amount ?? 0;
+    return {
+      id: String(l.id),
+      skuId: Number(l.skuId ?? l.sku?.id ?? 0),
+      qty: l.qty ?? 1,
+      title: [l.sku?.label, l.sku?.subtitle].filter(Boolean).join(' ') || l.upgrade?.name || `SKU ${l.skuId}`,
+      unit,
+      unitDiscounted: l.unitPriceWithTax?.discounted ?? unit,
+      discount: l.unitPriceWithTax?.discountDescription ?? '',
+      discounts: (l.discounts ?? []).map((d) => [d.type, d.details, d.bundle?.title].filter(Boolean).join(' · ')).filter(Boolean),
+      upgrade: l.upgrade?.name ?? null,
+    };
+  });
+  return { at: Date.now(), id: cart.id ?? null, subTotal: cart.totals?.subTotal ?? 0, total: cart.totals?.total ?? 0, qty: cart.lineItemsQties ?? lines.reduce((a, l) => a + l.qty, 0), lines };
 }
 
 export type Addable = { kind: 'upgrade'; ref: UpgradeRef } | { kind: 'standalone'; skuId: number } | { kind: 'none'; why: string };

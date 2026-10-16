@@ -13,6 +13,8 @@ export type PledgeType = 'ship' | 'package' | 'combo' | 'upgrade' | 'paint' | 'g
 export interface PledgeItem {
   title: string;
   kind: string;
+  /** RSI's own thumbnail for the item on the hangar page (media.robertsspaceindustries.com) — the only picture of a paint the store no longer lists. */
+  image?: string;
 }
 
 export interface Upgrade {
@@ -47,13 +49,36 @@ export interface Pledge {
   nickname: string;
   /** Hangar page it was read from (`/account/pledges?page=N&pagesize=50`) — for "open in hangar" links. */
   page?: number;
+  /** The pledge's own picture on the hangar row (`.image` outside `.items`); for a one-paint pledge that is the paint. */
+  image?: string;
+  /** RSI's `js-pledge-not-buybackable`: melting it gives credit but it never shows up in buyback. */
+  noBuyback?: boolean;
+  /** RSI's `js-pledge-currency`: what the pledge was paid with — "Store Credit" → credit, anything else → cash. Absent on old saves. */
+  paidWith?: 'credit' | 'cash';
+  /** RSI's `js-pledge-configuration-value` in USD when above 0 (paid customization on top of the pledge). */
+  configValue?: number;
+  /** RSI's `.availability` text when it isn't the normal "Attributed" (e.g. still processing). */
+  availability?: string;
+  /** Ships in the pledge RSI lets you name (`js-pledge-nameable-ships`), and names already reserved (`js-pledge-name-reservations`). */
+  nameable?: string[];
+  reservedNames?: string[];
 }
 
 export interface BuybackItem {
   id: number;
   name: string;
   date: string;
+  /** Contents as text: the *Also Contains* item titles joined with ", " when the page lists them, else RSI's summary ("5 items"). */
   contained: string;
+  /** The *Also Contains* items (title + kind) when the page lists them. */
+  items?: PledgeItem[];
+  /** From the entry's own page (`/pledge/buyback/<id>`): buy-back price today, cents, and the list price it is discounted from. */
+  price?: number;
+  listPrice?: number;
+  /** Store SKU of the buy-back (the Add to cart button's `data-sku`). */
+  sku?: number;
+  /** When the detail page was read (ms). */
+  detailAt?: number;
   type: PledgeType;
   upgrade: Upgrade | null;
   /** Link to buy it back (null when RSI shows no action, e.g. token limit). */
@@ -107,12 +132,40 @@ function classify(name: string, items: PledgeItem[], upgrade: Upgrade | null): P
   return 'other';
 }
 
+/** JSON in a `<script type="application/json">` the hangar row carries; [] when missing / null / unparsable. Strings or objects with a name-ish field. */
+function jsonNames(root: ParentNode, sel: string): string[] {
+  try {
+    const v = JSON.parse(root.querySelector(sel)?.textContent?.trim() || 'null') as unknown;
+    const list = Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : [];
+    return list
+      .map((x) => (typeof x === 'string' ? x : x && typeof x === 'object' ? String((x as Record<string, unknown>).name ?? (x as Record<string, unknown>).ship_name ?? (x as Record<string, unknown>).title ?? '') : ''))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** `style="background-image:url(…)"` or an `<img src>` under `el`, absolute; '' when none. */
+export function imageOf(el: Element | null): string {
+  if (!el) return '';
+  const img = el.matches('img') ? (el as HTMLImageElement) : el.querySelector('img');
+  const raw = img?.getAttribute('src') || /url\((['"]?)(.*?)\1\)/.exec(el.getAttribute('style') ?? '')?.[2] || '';
+  if (!raw) return '';
+  try {
+    return new URL(raw, 'https://robertsspaceindustries.com').href;
+  } catch {
+    return '';
+  }
+}
+
 function parseItems(root: ParentNode): PledgeItem[] {
   const out: PledgeItem[] = [];
   for (const it of root.querySelectorAll('.items .item, .item')) {
     const title = text(it.querySelector('.title'));
     const kind = text(it.querySelector('.kind'));
-    if (title && !out.some((o) => o.title === title && o.kind === kind)) out.push({ title, kind });
+    if (!title || out.some((o) => o.title === title && o.kind === kind)) continue;
+    const image = imageOf(it.querySelector('.image, img'));
+    out.push(image ? { title, kind, image } : { title, kind });
   }
   return out;
 }
@@ -180,7 +233,12 @@ export function parseHangarPage(root: ParentNode): Pledge[] {
     const id = parseInt(val(li, '.js-pledge-id'), 10);
     if (!rawName || !Number.isFinite(id)) continue;
     const name = cleanName(rawName);
+    const image = imageOf([...li.querySelectorAll('.image, img')].find((e) => !e.closest('.items')) ?? null);
     const items = parseItems(li);
+    // A picture repeated on several items (or equal to the row's) is the pledge's art, not the item's: drop it there.
+    const seenImg = new Map<string, number>();
+    for (const it of items) if (it.image) seenImg.set(it.image, (seenImg.get(it.image) ?? 0) + 1);
+    for (const it of items) if (it.image && (it.image === image || (seenImg.get(it.image) ?? 0) > 1)) delete it.image;
     const upgrade = parseUpgradeJson(val(li, '.js-upgrade-data')) ?? (/^upgrade\b/i.test(name) ? upgradeFromName(name) : null);
     const ships = items.filter((i) => i.kind.toLowerCase() === 'ship').map((i) => i.title);
     const titles = items.map((i) => i.title).join(' | ');
@@ -202,6 +260,13 @@ export function parseHangarPage(root: ParentNode): Pledge[] {
       hasGame: /digital download/i.test(titles),
       upgraded: !!li.querySelector('.upgraded'),
       nickname: [...li.querySelectorAll('.custom-name-text')].map((e) => text(e)).filter(Boolean).join(', '),
+      ...(image ? { image } : {}),
+      ...(val(li, '.js-pledge-not-buybackable') === '1' ? { noBuyback: true } : {}),
+      ...((cur) => (cur ? { paidWith: /store credit/i.test(cur) ? ('credit' as const) : ('cash' as const) } : {}))(val(li, '.js-pledge-currency')),
+      ...((cv) => (cv > 0 ? { configValue: cv } : {}))(parseMoney(val(li, '.js-pledge-configuration-value'))),
+      ...((av) => (av && !/^attributed$/i.test(av) ? { availability: av } : {}))(text(li.querySelector('.availability'))),
+      ...((n) => (n.length ? { nameable: n } : {}))(jsonNames(li, '.js-pledge-nameable-ships')),
+      ...((n) => (n.length ? { reservedNames: n } : {}))(jsonNames(li, '.js-pledge-name-reservations')),
     });
   }
   return out;
@@ -210,6 +275,58 @@ export function parseHangarPage(root: ParentNode): Pledge[] {
 function dd(root: ParentNode, label: RegExp): string {
   for (const dt of root.querySelectorAll('dt')) if (label.test(dt.textContent ?? '')) return text(dt.nextElementSibling);
   return '';
+}
+
+/**
+ * The *Also Contains* list of a buyback / hangar block when it isn't the `.items .item` markup: the element whose own
+ * text is "Also Contains" (or "Contains"), then the titles of its next sibling's children (one element per item — in
+ * copied text they run together: "Meteor - Disco PaintMeteor - Shimmer Paint").
+ */
+function alsoContains(block: ParentNode): PledgeItem[] {
+  for (const el of block.querySelectorAll('h2, h3, h4, h5, h6, dt, label, span, div, p, strong')) {
+    if (el.children.length > 1 || !/^\s*(also\s+)?contains:?\s*$/i.test(el.textContent ?? '')) continue;
+    const next = el.nextElementSibling;
+    if (!next) continue;
+    const nodes = next.children.length ? [...next.children] : [next];
+    const titles = nodes.map((n) => text(n.querySelector('.title') ?? n)).filter(Boolean);
+    if (titles.length) return titles.map((title) => ({ title, kind: '' }));
+  }
+  return [];
+}
+
+export interface BuybackDetail {
+  items: PledgeItem[];
+  price: number | null;
+  listPrice: number | null;
+  sku: number | null;
+  /** "You have N opportunity to buy back a pledge with store credits". */
+  opportunities: number | null;
+}
+
+/**
+ * A buyback entry's own page (`/pledge/buyback/<id>`, verified on a saved page 2026-10-13): `h1` / `.buy-back-title`,
+ * `.package-listing.ship ul li` (ships) and `.package-listing.item ul li` (*Also Contains*), `.final-price[data-value]`
+ * (cents) with `.original-price` when discounted, `a.js-buy-back[data-sku]`, `.buy-back-warning strong` (tokens left).
+ */
+export function parseBuybackDetail(root: ParentNode): BuybackDetail {
+  const items: PledgeItem[] = [];
+  for (const li of root.querySelectorAll('.package-listing.ship ul li')) {
+    // A ship entry nests name, "Manufacturer: …", "Focus: …" and a "ship page" link; keep the name only.
+    const named = text(li.querySelector('.title, .name, h3, h4, h5, strong'));
+    const t = (named || text(li).split(/\s*(?:Manufacturer|Focus)\s*:/)[0]!).replace(/^\s*ship:\s*/i, '').replace(/\s*ship page\s*$/i, '').trim();
+    if (t) items.push({ title: t, kind: 'Ship' });
+  }
+  for (const li of root.querySelectorAll('.package-listing.item ul li, .package-listing:not(.ship) ul li')) {
+    const t = text(li);
+    if (t && !items.some((i) => i.title === t)) items.push({ title: t, kind: '' });
+  }
+  const final = root.querySelector<HTMLElement>('.final-price[data-value]');
+  const price = final ? Number(final.dataset.value) : null;
+  const orig = text(root.querySelector('.original-price'));
+  const listPrice = orig ? Math.round(parseMoney(orig) * 100) : null;
+  const skuRaw = root.querySelector<HTMLElement>('.js-buy-back[data-sku], [data-sku]')?.dataset.sku;
+  const opp = text(root.querySelector('.buy-back-warning strong'));
+  return { items, price: Number.isFinite(price as number) ? price : null, listPrice: listPrice || null, sku: skuRaw ? Number(skuRaw) : null, opportunities: opp ? Number(opp) : null };
 }
 
 /** Parse one buyback page (defensive — markup unverified). */
@@ -230,14 +347,19 @@ export function parseBuybackPage(root: ParentNode): BuybackItem[] {
       const byName = upgradeFromName(name);
       upgrade = { fromId, toId, fromName: byName?.fromName ?? '', toName: byName?.toName ?? '' };
     }
-    const contained = dd(b, /contained/i);
+    // Contents: the *Also Contains* item list when the page has one (named items beat RSI's "5 items" summary).
+    const listed = parseItems(b).filter((i) => i.title !== name);
+    const items = listed.length ? listed : alsoContains(b);
+    const summary = dd(b, /contained/i);
+    const contained = items.length ? items.map((i) => i.title).join(', ') : summary;
     const href = b.querySelector<HTMLAnchorElement>('a[href*="buyback"]')?.getAttribute('href') ?? null;
     out.push({
       id: Number.isFinite(id) ? id : 0,
       name,
       date: dd(b, /last modified|date/i),
       contained,
-      type: classify(name, contained.split(/,\s*/).filter(Boolean).map((title) => ({ title, kind: '' })), upgrade),
+      ...(items.length ? { items } : {}),
+      type: classify(name, items.length ? items : contained.split(/,\s*/).filter(Boolean).map((title) => ({ title, kind: '' })), upgrade),
       upgrade,
       url: href ? new URL(href, 'https://robertsspaceindustries.com').href : null,
     });
@@ -279,11 +401,11 @@ export const cell = (v: unknown) => {
 };
 
 export function hangarCsv(list: Pledge[]): string {
-  const head = ['id', 'name', 'type', 'value_usd', 'date', 'ships', 'lti', 'insurance', 'warbond', 'giftable', 'meltable', 'upgrade_from', 'upgrade_to'];
+  const head = ['id', 'name', 'type', 'value_usd', 'date', 'ships', 'lti', 'insurance', 'warbond', 'giftable', 'meltable', 'upgrade_from', 'upgrade_to', 'paid_with', 'buyback', 'nickname'];
   return [
     head.join(','),
     ...list.map((p) =>
-      [p.id, p.name, p.type, p.value, p.date, p.ships.join('; '), p.lti, p.insurance, p.warbond, p.giftable, p.meltable, p.upgrade?.fromName ?? '', p.upgrade?.toName ?? '']
+      [p.id, p.name, p.type, p.value, p.date, p.ships.join('; '), p.lti, p.insurance, p.warbond, p.giftable, p.meltable, p.upgrade?.fromName ?? '', p.upgrade?.toName ?? '', p.paidWith ?? '', p.noBuyback ? 'no' : '', p.nickname]
         .map(cell)
         .join(','),
     ),
@@ -299,9 +421,13 @@ export const HANGAR_PAGE = 50;
  * index in the saved list. `rsiplus=<id>` makes the RSI content script scroll to and highlight that pledge;
  * `rsiplus_do=melt|gift` also opens RSI's own melt / gift dialog for it (the password is typed there, never in RSI+).
  */
-export function hangarUrl(all: Pledge[], id: number, action?: 'melt' | 'gift'): string {
+export function hangarUrl(all: Pledge[], id: number, action?: 'melt' | 'gift', gone?: ReadonlySet<number>): string {
   const idx = all.findIndex((p) => p.id === id);
-  const page = all[idx]?.page ?? (idx >= 0 ? Math.floor(idx / HANGAR_PAGE) + 1 : 1);
+  // RSI only removes rows, so every pledge after a melted one moves up by one: with `gone` (melted since the
+  // hangar was read, still in `all`), the page comes from the index minus the gone rows above it.
+  let before = 0;
+  if (gone?.size && idx >= 0) for (let i = 0; i < idx; i++) if (gone.has(all[i]!.id)) before++;
+  const page = before ? Math.floor((idx - before) / HANGAR_PAGE) + 1 : (all[idx]?.page ?? (idx >= 0 ? Math.floor(idx / HANGAR_PAGE) + 1 : 1));
   return `https://robertsspaceindustries.com/account/pledges?page=${page}&pagesize=${HANGAR_PAGE}&rsiplus=${id}${action ? `&rsiplus_do=${action}` : ''}`;
 }
 

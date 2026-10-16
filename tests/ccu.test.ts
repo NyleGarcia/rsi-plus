@@ -58,6 +58,14 @@ describe('ccu planner', () => {
     expect(r.unmapped).toEqual([{ name: 'Upgrade - Foo to Bar', source: 'buyback' }]);
     expect(ownedShips([{ ships: ['Cutlass Black - LTI', 'Avenger Titan'] }], ships).map((s) => s.id)).toEqual([2, 3]);
     expect(matchShip('Constellation Andromeda Warbond Edition', ships)?.id).toBe(4);
+    // Hangar names drop the model code: "Wolf" is the L-21 Wolf (shortest with only a code in front), not the L-22 Alpha Wolf.
+    const wolves = [...ships, { ...ships[0]!, id: 90, name: 'L-21 Wolf' }, { ...ships[0]!, id: 91, name: 'L-22 Alpha Wolf' }, { ...ships[0]!, id: 92, name: 'F7C Hornet' }, { ...ships[0]!, id: 93, name: 'F7C-M Super Hornet' }];
+    expect(matchShip('Wolf', wolves)?.id).toBe(90);
+    expect(matchShip('Alpha Wolf', wolves)?.id).toBe(91);
+    expect(matchShip('Wolf L-21', wolves)?.id).toBe(90);
+    expect(matchShip('Kruger Wolf', wolves)?.id).toBe(90); // a word no catalog name uses (the maker) is ignored
+    expect(matchShip('Hornet', wolves)?.id).toBe(92);
+    expect(matchShip('Nothing Here', wolves)).toBeNull();
   });
 
   it('objective cash: avoids warbond new money when credit can pay a standard chain', () => {

@@ -10,3 +10,4 @@ updated: 2026-10-09
 - [[plans/next/backlog]] · [next](plans/next/backlog.md)
 - [[plans/later/ideas]] · [later](plans/later/ideas.md)
 - [[plans/specs/ccu-planner-v2]] · [spec: CCU planner v2](plans/specs/ccu-planner-v2.md)
+- [[plans/specs/shadcn-migration]] · [spec: shadcn-svelte + LayerChart migration](plans/specs/shadcn-migration.md)

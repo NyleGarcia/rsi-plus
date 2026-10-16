@@ -8,7 +8,7 @@ import { isMutedMember, keywordMatcher, muteReason } from '@/lib/filters';
 import { status, type ReadState } from '@/lib/read';
 import type { Settings } from '@/lib/settings';
 import { parsePath, type ThreadSummary } from '@/lib/types';
-import { isDev, type Watches } from '@/lib/watch';
+import { isDev, keywordsFor, type Watches } from '@/lib/watch';
 import type { Actions } from './index';
 
 interface DecorState {
@@ -60,6 +60,13 @@ export function decorate(actions: Actions) {
 function paintRows(actions: Actions) {
   const s = st!;
   const match = keywordMatcher(s.settings.mutes.keywords);
+  /** Keyword watches per channel (every-channel ones included), built once per paint. */
+  const kwFor = new Map<string, (text: string) => string | null>();
+  const kwIn = (channelId: string) => {
+    let m = kwFor.get(channelId);
+    if (!m) kwFor.set(channelId, (m = keywordMatcher(keywordsFor(s.watches, channelId))));
+    return m;
+  };
   const done = new Set<HTMLElement>();
   for (const a of document.querySelectorAll<HTMLAnchorElement>(THREAD_LINK)) {
     if (a.closest('.forum-thread-item, .sp-ui, [class*="sidebar"], [class*="Sidebar"]')) continue;
@@ -74,7 +81,8 @@ function paintRows(actions: Actions) {
     const reason = muteReason(t, s.settings.mutes, match);
     const watched = s.watches.threads.some((w) => w.id === t.id);
     const dev = s.settings.devHighlight && isDev(t);
-    const key = [rs?.kind, rs?.kind === 'new' ? rs.count : '', reason, watched, dev, t.is_pinned].join('|');
+    const kw = kwIn(t.channel_id)(t.subject);
+    const key = [rs?.kind, rs?.kind === 'new' ? rs.count : '', reason, watched, dev, kw, t.is_pinned].join('|');
     if (row.dataset.sp === key && row.querySelector('.sp-badges')) continue;
     row.dataset.sp = key;
 
@@ -86,8 +94,10 @@ function paintRows(actions: Actions) {
     row.classList.toggle('sp-muted', !!reason && !t.is_pinned);
     row.classList.toggle('sp-dev-row', dev);
     row.classList.toggle('sp-watched', watched);
+    row.classList.toggle('sp-keyword', !!kw);
     row.dataset.spSlug = slug;
     if (reason) row.title = `RSI+: muted (${reason})`;
+    else if (kw) row.title = `RSI+: matches your keyword watch "${kw}"`;
     else if (row.title.startsWith('RSI+')) row.removeAttribute('title');
 
     row.querySelector(':scope .sp-badges')?.remove();
