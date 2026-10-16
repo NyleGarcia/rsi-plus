@@ -1,4 +1,4 @@
-# Prerelease: every push to dev publishes a vX.Y.Z-dev.N GitHub prerelease with zips for chrome, edge, brave and firefox; keeps the newest 10.
+# Prerelease: every push to dev publishes a vX.Y.Z-devNNNN GitHub prerelease with zips for chrome, edge, brave and firefox; keeps the newest 10.
 name: Prerelease
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
       - name: Prune old prereleases (keep newest 10)
         run: |
           gh release list --limit 200 --json tagName,isPrerelease,createdAt \
-            -q '[.[] | select(.isPrerelease and (.tagName | test("^v.*-dev\\.")))] | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' \
+            -q '[.[] | select(.isPrerelease and (.tagName | test("^v.*-dev")))] | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' \
           | while read -r old; do
               gh release delete "$old" --cleanup-tag -y
             done

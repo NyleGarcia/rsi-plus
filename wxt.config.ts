@@ -17,7 +17,7 @@ function localVersionName(): string | undefined {
     const sh = (cmd: string) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const tags = sh('git tag --points-at HEAD').split('\n');
     if (tags.includes(`v${version}`)) return undefined;
-    const next = sh('bash scripts/next-prerelease.sh').replace(/-dev\..*$/, '');
+    const next = sh('bash scripts/next-prerelease.sh').replace(/-dev.*$/, '');
     const dirty = sh('git status --porcelain --untracked-files=no') ? '+' : '';
     return `${next}-dev (local ${sh('git rev-parse --short HEAD')}${dirty})`;
   } catch {

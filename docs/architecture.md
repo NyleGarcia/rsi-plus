@@ -248,8 +248,8 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 - **Pre-releases (`dev` branch)**:
   - Day-to-day work lands on `dev`. Every push there runs CI and `prerelease.yml`.
   - `scripts/next-prerelease.sh` works out the next version: the base comes from `.release-please-manifest.json`, the bump from the conventional commits since the last stable `v*` tag.
-  - The workflow sets `package.json` to `<next>-dev.<run>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev.<run>` (`--prerelease --latest=false`). It keeps the newest 10 such prereleases.
-  - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev.<run>`. Firefox gets only `<next>`.
+  - The workflow sets `package.json` to `<next>-dev<run:04>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev<run:04>`. The run number is zero-padded because GitHub's releases page sorts tags as text (`dev.9` > `dev.13`); an alphanumeric identifier with leading zeros is still valid semver and compares right both ways. They are created with `--prerelease --latest=false`; the newest 10 are kept (the prune matches both `-dev.N` and `-devNNNN` tags).
+  - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev<run:04>`. Firefox gets only `<next>`.
   - Real bumps: open a PR `dev` → `main`, merge, then release-please's PR → `vX.Y.Z` with assets as above.
   - Local builds (`wxt.config.ts` → `localVersionName`, not in CI, not on the tagged release commit) set `version_name` `<next>-dev (local <sha>[+])`, with `+` for uncommitted changes. WXT derives the manifest `version` `<next>` from it, so an unpacked `.output/chrome-mv3` shows it is newer than the last release.
   - `dev` is the GitHub default branch, and `release.yml` pins release-please to `target-branch: main`.
