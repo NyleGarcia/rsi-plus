@@ -6,6 +6,7 @@ updated: 2026-10-13
 # Changelog
 
 ## Unreleased
+- **Edge and Firefox builds**: every release now ships `rsi-plus-<v>-chrome.zip` (Chrome, Brave), `-edge.zip` and `-firefox.zip` (MV2, Firefox 128+; loads via `about:debugging` until an AMO-signed build exists). Firefox has no incognito split (private windows share the normal login) and plays the party ding from its background page.
 - **Flat hub navigation**: one sidebar entry per page, no second-level tab bars, nothing listed twice. Hangar: Pledges, Melt calculator, My ships, Paints by ship, My items, Buyback, Wallet. Store: Ships for sale, Browse, CCU planner, Paint rebuy (its only entry now — the *Rebuy & bundle* tab is gone). Settings moved to a gear in the header. Old links (`#hangar?view=melt`, `#ships?view=bundle`, `#store?view=items&cat=concierge`, RSI page buttons, popup) redirect to the new pages.
 - **Passive mode**: *Check watches automatically* switch (Watching header, Settings, popup). Off = no alarm and no background traffic at all; the Feed, wishlist prices and friend presence update only when you press *Check now*. Feed header says "passive".
 - **Follow by keyword** (Watching → Keywords): a new thread whose subject matches a word or `/regex/` notifies you — in every watched channel or one channel (picking an unwatched channel watches it, quietly). Same syntax as Mutes. Feed kind *Keyword*, purple edge on matching rows in Spectrum lists.

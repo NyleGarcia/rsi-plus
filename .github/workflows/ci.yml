@@ -1,4 +1,4 @@
-# CI: type-check, test, build and zip the extension.
+# CI: type-check, test, then build and zip the extension for chrome, edge and firefox (Brave uses the Chrome zip).
 name: CI
 on:
   push:
@@ -17,11 +17,25 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
-      - run: npm run build
-      - run: npm run zip
+
+  zip:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [chrome, edge, firefox]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx wxt zip -b ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
-          name: rsi-plus-chrome
+          name: rsi-plus-${{ matrix.target }}
           path: .output/*.zip
           include-hidden-files: true
           retention-days: 14

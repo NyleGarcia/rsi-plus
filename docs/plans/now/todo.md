@@ -4,6 +4,8 @@ tags: [plans]
 updated: 2026-10-13
 ---
 # Now
+- [ ] Live-verify the Firefox build (`about:debugging` → Load Temporary Add-on → `rsi-plus-<v>-firefox.zip`): popup/hub open, background poll with the `Rsi-Token` cookie, hangar load from the hub page, Spectrum MAIN-world hook, badge count, party ding; then submit to AMO (sources zip) and decide listed vs self-hosted signing
+- [ ] Live-verify the Edge zip loads on Edge (identical to Chrome's) and Brave with the Chrome zip
 - [ ] Live-verify thread-list row detection + badges on a channel page (logged in)
 - [ ] Live-verify reply selectors (`.forum-thread-member-info`, `.nickname-separator`, `.body-content-blocks`) + Mute / Watch author buttons
 - [ ] Live-verify which thread endpoints the app calls (v1 `/forum/thread/nested` vs v2 `/v2/forum/thread/get`) — `__spectrumplus.paths()` in the page console

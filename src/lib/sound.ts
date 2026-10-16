@@ -1,13 +1,15 @@
 /**
- * Sounds from the background. A service worker can't play audio, so an offscreen document
+ * Sounds from the background. A Chromium service worker can't play audio, so an offscreen document
  * (`entrypoints/offscreen`) does; it's created on first use and kept (cheap, closes with the browser).
+ * Firefox (MV2) has no offscreen API but its background is a page with WebAudio, so it plays the ding directly.
  */
+import { playDing } from './ding-synth';
+
 export const OFFSCREEN_DING = 'offscreen:ding';
 const PAGE = '/offscreen.html';
 
 async function ensureOffscreen() {
   const off = browser.offscreen;
-  if (!off) throw new Error('offscreen API unavailable');
   const url = browser.runtime.getURL(PAGE as '/offscreen.html');
   const has =
     typeof off.hasDocument === 'function'
@@ -19,8 +21,13 @@ async function ensureOffscreen() {
   });
 }
 
-/** Play the party ding; throws when offscreen documents are unsupported (caller logs and moves on). */
+/** Play the party ding; throws when neither offscreen documents nor WebAudio exist (caller logs and moves on). */
 export async function ding() {
+  if (!browser.offscreen) {
+    if (typeof AudioContext === 'undefined') throw new Error('no offscreen API and no WebAudio in this background');
+    playDing(); // Firefox: background page
+    return;
+  }
   await ensureOffscreen();
   await browser.runtime.sendMessage({ type: OFFSCREEN_DING });
 }

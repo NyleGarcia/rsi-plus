@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases)
 
-Chrome/Firefox MV3 extension for the whole [Roberts Space Industries](https://robertsspaceindustries.com) site — Spectrum, hangar, buyback and the pledge store. Sibling of Crunchy+ (same stack: WXT + Svelte 5 + TS; hub UI on shadcn-svelte + Tailwind v4, charts on LayerChart). Ideas from [Hangar XPLORer](https://github.com/dolkensp/HangarXPLOR) (MIT) and [CCU Game](https://ccugame.app); no data is sent anywhere but RSI.
+Browser extension (Chrome, Edge, Brave — MV3; Firefox — MV2) for the whole [Roberts Space Industries](https://robertsspaceindustries.com) site — Spectrum, hangar, buyback and the pledge store. Sibling of Crunchy+ (same stack: WXT + Svelte 5 + TS; hub UI on shadcn-svelte + Tailwind v4, charts on LayerChart). Ideas from [Hangar XPLORer](https://github.com/dolkensp/HangarXPLOR) (MIT) and [CCU Game](https://ccugame.app); no data is sent anywhere but RSI.
 
 ## RSI site
 - **Guided flows** — *Guide me* steppers on Paint rebuy and the CCU planner walk the safe order (cart confirmed with RSI before anything is melted; chain verified with RSI before anything is bought) and tick steps off from real data.
@@ -32,9 +32,11 @@ Chrome/Firefox MV3 extension for the whole [Roberts Space Industries](https://ro
 npm install
 npm run dev          # Chrome with the extension + HMR
 npm run build        # .output/chrome-mv3 → chrome://extensions → Load unpacked
+npm run zip:all      # .output/rsi-plus-<v>-{chrome,edge,firefox}.zip (+ -sources.zip for AMO)
 npm test             # vitest
 npm run check        # svelte-check / tsc
 ```
+Install from a [release](https://github.com/NyleGarcia/rsi-plus/releases): **Chrome / Brave** → `rsi-plus-<v>-chrome.zip`, **Edge** → `-edge.zip` (same code, Edge-named), unzip → extensions page → Developer mode → *Load unpacked*. **Firefox** → `-firefox.zip` via `about:debugging` → *This Firefox* → *Load Temporary Add-on* (unsigned builds last until Firefox restarts; a signed AMO build is pending). Firefox runs the MV2 build: no offscreen page (the background page plays sounds itself) and no incognito split — private windows share the normal login, like Chrome's dev build.
 Log in on robertsspaceindustries.com in the same browser profile — the extension uses your session (`Rsi-Token` cookie). Public reads (threads, channels) also work logged out.
 
 Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRIVACY.md).

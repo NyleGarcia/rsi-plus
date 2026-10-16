@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <title>RSI+ sounds</title>
+    <!-- Chromium only: Firefox's background page plays the ding itself. -->
+    <meta name="manifest.exclude" content="['firefox']" />
   </head>
   <body>
     <script type="module" src="./main.ts"></script>

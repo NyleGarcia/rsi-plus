@@ -1,4 +1,4 @@
-# Release: release-please opens the release PR; on merge, attach the Chrome zip.
+# Release: release-please opens the release PR; on merge, attach the Chrome, Edge and Firefox zips (+ Firefox sources zip).
 name: Release
 on:
   push:
@@ -26,6 +26,10 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [chrome, edge, firefox]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -33,9 +37,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm run zip
-      - run: gh release upload "$TAG" .output/rsi-plus-*-chrome.zip --clobber
+      - run: npx wxt zip -b ${{ matrix.target }}
+      - run: gh release upload "$TAG" .output/*.zip --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}

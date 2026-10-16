@@ -140,8 +140,9 @@ async function markSeen(keys?: string[]) {
 
 function updateBadge(feed: FeedEvent[]) {
   const n = feed.filter((e) => !e.seen).length;
-  browser.action.setBadgeText({ text: n ? String(n > 99 ? '99+' : n) : '' });
-  browser.action.setBadgeBackgroundColor({ color: '#3cc8ff' });
+  const action = browser.action ?? browser.browserAction; // MV3 `action`; Firefox MV2 still calls it `browserAction`
+  action.setBadgeText({ text: n ? String(n > 99 ? '99+' : n) : '' });
+  action.setBadgeBackgroundColor({ color: '#3cc8ff' });
 }
 
 let polling: Promise<BgResponses['poll:now']> | null = null;
