@@ -199,3 +199,11 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 
 ## Party mode (background `doPartyTick`, `local:partyMode`, `local:partyLog`)
 - While `partyActive` (on and before `until`), a 1-minute alarm reads requests (`friendsData`) and accepts every incoming pending one not yet accepted and failed < 3 times (`partyTargets`), 0.5 s apart. Accepted → note `party: true`, `firstSeen = partyAt = now`; log entry (ok/error); one feed event + notification per tick, plus a ding (`partySound`, default on) via `lib/sound.ts`: the service worker can't play audio, so it creates an offscreen document (`entrypoints/offscreen`, `offscreen` permission, reason AUDIO_PLAYBACK) and messages it `offscreen:ding`; the page synthesises two sine notes with WebAudio (no sound file). `sound:ding` from the popup previews it. Expiry switches it off and clears the alarm.
+
+## Versioning & releases
+
+- Conventional commits drive semver: `feat:` bumps minor while 0.x (`bump-minor-pre-major`), `fix:` bumps patch, `feat!:` / `BREAKING CHANGE` also bumps minor while 0.x.
+- release-please opens/updates a `chore(main): release X.Y.Z` PR that bumps `package.json` (the manifest version WXT emits) and `CHANGELOG.md`.
+- Merging that PR creates tag `vX.Y.Z` and a GitHub release; the `assets` job in `release.yml` attaches `rsi-plus-X.Y.Z-chrome.zip`.
+- CI does not auto-run on the release PR with the default `GITHUB_TOKEN` (GitHub limitation); re-run manually or switch to a PAT later.
+- `docs/changelog.md` stays the hand-written user-facing log; `CHANGELOG.md` is generated.
