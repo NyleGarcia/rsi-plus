@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
-import { ccuOverview, fleetValue, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, spendByFunding, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
+import { ccuOverview, fleetValue, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, paymentOf, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
 
 const pledge = (id: number, value: number, date: string, type: Pledge['type'] = 'ship', warbond = false): Pledge => ({
   id,
@@ -88,9 +88,19 @@ describe('personal spend', () => {
       ['paint', 20.5],
       ['gear', 10],
     ]);
-    expect(spendByFunding(hangar)).toEqual([
-      { key: 'credit', label: 'Store credit / regular', value: 475, count: 4 },
-      { key: 'warbond', label: 'Warbond (cash)', value: 20.5, count: 1 },
+    expect(spendByPayment(hangar)).toEqual([
+      { key: 'warbond', label: 'Warbond', value: 20.5, count: 1 },
+      { key: 'standard', label: 'Standard', value: 475, count: 4 },
+    ]);
+  });
+
+  it('splits by what a pledge needed: warbond, standard, free — the melt currency is ignored', () => {
+    const p = (value: number, paidWith?: 'cash' | 'credit', warbond = false): Pledge => ({ ...pledge(1, value, 'May 01, 2024', 'ship', warbond), ...(paidWith ? { paidWith } : {}) });
+    expect([p(50, 'credit', true), p(50, 'credit'), p(50, 'cash'), p(0, 'credit'), p(50)].map(paymentOf)).toEqual(['warbond', 'standard', 'standard', 'free', 'standard']);
+    expect(spendByPayment([p(0), p(30, 'credit'), p(10, 'credit', true)]).map((b) => [b.key, b.value, b.count])).toEqual([
+      ['warbond', 10, 1],
+      ['standard', 30, 1],
+      ['free', 0, 1],
     ]);
   });
 

@@ -66,6 +66,8 @@ export interface DedupeOptions {
   keep?: Map<string, number>;
   /** Never pick LTI pledges (default false — an LTI copy is only picked when another LTI copy stays). */
   keepLti?: boolean;
+  /** Pledge ids never picked (labelled *Keep*). */
+  never?: Set<number>;
 }
 
 export function duplicatePlan(all: Pledge[], opts: DedupeOptions = {}): Pledge[] {
@@ -73,7 +75,7 @@ export function duplicatePlan(all: Pledge[], opts: DedupeOptions = {}): Pledge[]
   for (const p of all) for (const k of [...keysOf(p), ...ltiKeys(p)]) count.set(k, (count.get(k) ?? 0) + 1);
   const pick: Pledge[] = [];
   const pool = all
-    .filter((p) => canMelt(p) && p.type !== 'upgrade' && !p.hasGame && p.items.length && (!opts.types || opts.types.has(p.type)) && !(opts.keepLti && p.lti))
+    .filter((p) => canMelt(p) && p.type !== 'upgrade' && !p.hasGame && p.items.length && (!opts.types || opts.types.has(p.type)) && !(opts.keepLti && p.lti) && !opts.never?.has(p.id))
     .sort((a, b) => b.value - a.value || a.id - b.id);
   for (const p of pool) {
     const keys = [...keysOf(p), ...ltiKeys(p)];
@@ -137,7 +139,7 @@ export function targetPlan(all: Pledge[], target: number, opts: DedupeOptions = 
     credit -= p.value;
     for (const k of allKeys(p)) kept.set(k, (kept.get(k) ?? 0) + 1);
   };
-  const pool = all.filter((p) => canMelt(p) && !p.hasGame && (!opts.types || opts.types.has(p.type)) && !(opts.keepLti && p.lti));
+  const pool = all.filter((p) => canMelt(p) && !p.hasGame && (!opts.types || opts.types.has(p.type)) && !(opts.keepLti && p.lti) && !opts.never?.has(p.id));
   for (const p of duplicatePlan(all, opts)) {
     if (credit >= target) break;
     take(p);

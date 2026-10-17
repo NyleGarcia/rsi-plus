@@ -19,7 +19,8 @@
     type PaintGroup,
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
+  import { cleanLabels, labelsOf, type Labels } from '@/lib/labels';
   import { sortBy, type SortState } from '@/lib/sort';
   import { usd, type Catalog, type CatalogShip, type PaintCatalog, type StorePaint } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -42,6 +43,7 @@
   let storePaints = $state<PaintCatalog | null>(null);
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let game = $state<GameShip[]>([]);
+  let labels = $state<Labels>({});
   let error = $state('');
   let paintsLoading = $state(false);
 
@@ -51,11 +53,12 @@
     paintCatalogItem.getValue().then((p) => (storePaints = p));
     buybackItem.getValue().then((b) => (buyback = b));
     gameShipsItem.getValue().then((g) => (game = g));
+    pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     refreshPaints(false);
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? []))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {
@@ -269,6 +272,8 @@
     await gameShipsItem.setValue(next.filter((g) => g.count > 0));
   }
   const removeGame = (g: GameShip) => bumpGame(g.id, g.how, -g.count);
+  /** Your labels on the pledges holding a hull (`lib/labels.ts`). */
+  const shipTags = (f: { items: ItemRow[] }) => [...new Set(f.items.flatMap((i) => i.pledges).flatMap((p) => labelsOf(labels, p.id)))];
   const linkCls = 'text-primary inline-flex items-center gap-1 whitespace-nowrap no-underline hover:underline';
 </script>
 
@@ -508,7 +513,10 @@
                       <Table.Cell>
                         <div class="flex items-center gap-2.5">
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
-                          <strong>{f.ship.name}</strong>
+                          <div>
+                            <strong>{f.ship.name}</strong>
+                            {#if shipTags(f).length}<div class="mt-0.5 flex flex-wrap gap-0.5" title="Your labels on the pledges holding this ship (edit on Pledges)">{#each shipTags(f) as t (t)}<Badge variant="outline" class="text-muted-foreground text-[10px]">{t}</Badge>{/each}</div>{/if}
+                          </div>
                         </div>
                       </Table.Cell>
                       <Table.Cell class="text-muted-foreground text-[11px]">{f.ship.manufacturer}<br />{f.ship.focus}</Table.Cell>

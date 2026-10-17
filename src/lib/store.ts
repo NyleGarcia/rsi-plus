@@ -10,6 +10,7 @@
  */
 import { token } from './api';
 import { SPECTRUM_ORIGIN } from './types';
+import { EXTRA_SHIPS } from './data/extra-ships';
 
 export interface Sku {
   id: number;
@@ -35,6 +36,8 @@ export interface CatalogShip {
   standalone: Sku[];
   /** CCU target SKUs on sale right now (Standard / Warbond / limited). */
   ccu: Sku[];
+  /** `wiki`: a hull RSI's upgrade catalog doesn't list (Kraken, Javelin…), MSRP from starcitizen.tools (`EXTRA_SHIPS`). */
+  msrpSource?: 'wiki';
 }
 
 export interface Catalog {
@@ -126,7 +129,13 @@ export async function fetchCatalog(): Promise<Catalog> {
       if (s) s.ccu = t.skus.map(sku).filter((k) => k.available);
     }
   }
-  return { at: Date.now(), ships };
+  return { at: Date.now(), ships: withExtraShips(ships) };
+}
+
+/** Add the hulls RSI's upgrade catalog never lists (`EXTRA_SHIPS`) unless it lists that name itself. */
+export function withExtraShips(ships: CatalogShip[]): CatalogShip[] {
+  const have = new Set(ships.map((s) => shipKey(s.name)));
+  return [...ships, ...EXTRA_SHIPS.filter((x) => !have.has(shipKey(x.name)) && !ships.some((s) => s.id === x.id)).map((x) => ({ ...x, standalone: [], ccu: [] }))];
 }
 
 export const isWarbondSku = (k: Pick<Sku, 'title'>) => /warbond/i.test(k.title);

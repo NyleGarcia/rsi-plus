@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planFleet, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
-import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, type CatalogShip, type Sku } from '@/lib/store';
+import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
 const ship = (id: number, name: string, msrp: number, ccu: Sku[] = [], standalone: Sku[] = []): CatalogShip => ({
@@ -46,6 +46,15 @@ describe('ccu planner', () => {
     const owned = [own(4, 5, 7, { source: 'buyback' })];
     expect(plan([...ships, E], owned, 1, 5)).toBeNull();
     expect(plan([...ships, E], owned, 1, 5, o({ buyback: true }))?.steps.at(-1)).toMatchObject({ kind: 'buyback', cost: 6000 });
+  });
+
+  it('never steps down in price', () => {
+    // A cheaper target with an oddly priced sku, an owned CCU and a buyback CCU that all go down: none are edges.
+    const X = ship(5, 'Cheaper', 9000, [sku('Odd', 12000)]);
+    const owned = [own(3, 5, 1), own(3, 2, 2, { source: 'buyback' })];
+    expect(plan([...ships, X], owned, 3, 5, o({ buyback: true }))).toBeNull();
+    expect(plan([...ships, X], owned, 3, 2, o({ buyback: true }))).toBeNull();
+    for (const st of plan([...ships, X], owned, 1, 4, o({ buyback: true }))!.steps) expect([...ships, X].find((x) => x.id === st.toId)!.msrp).toBeGreaterThan([...ships, X].find((x) => x.id === st.fromId)!.msrp);
   });
 
   it('maps hangar CCUs and ships by name', () => {
@@ -232,12 +241,74 @@ describe('plan ahead (long-term goals)', () => {
   it('fleet plan: auto skips kept hulls, can buy from the store, reports failures', () => {
     const E = ship(5, 'Mustang Alpha', 2000, [], [sku('Standalone', 2000)]);
     const all = [...ships, E];
-    const goals = [{ id: 'a', fromId: null, targetId: 2, via: [] }, { id: 'b', fromId: null, targetId: 1, via: [] }];
+    const goals = [{ id: 'a', fromId: null, targetId: 2, via: [] }, { id: 'b', fromId: null, targetId: 1, via: [] }, { id: 'c', fromId: 4, targetId: 2, via: [] }];
     const f = planFleet(all, [], goals, o({}), { hulls: [{ id: 1, count: 1 }], keep: [1], storeStart: true });
-    expect(f.legs[0]).toMatchObject({ startId: STORE_START });
+    expect(f.legs[0]).toMatchObject({ startId: STORE_START, ahead: false });
     expect(f.legs[0]!.plan!.steps.map((s) => s.toId)).toEqual([5, 2]);
-    expect(f.legs[1]!.plan).toBeNull(); // Aurora: no CCU sold to it, no cheaper hull
+    // Aurora: no CCU sold to it today, the kept Aurora can't start it → store ship, then wait for an Aurora CCU
+    expect(f.legs[1]).toMatchObject({ startId: STORE_START, ahead: true });
+    expect(f.legs[1]!.plan!.steps.map((s) => s.kind)).toEqual(['standalone', 'future']);
+    expect(f.legs[2]!.plan).toBeNull(); // Connie → Titan goes down
     expect(f.failed).toBe(1);
-    expect(ownedHulls([{ ships: ['Aurora MR'] }, { ships: ['Aurora MR', 'Cutlass Black'] }], all)).toEqual([{ id: 1, count: 2 }, { id: 3, count: 1 }]);
+    expect(ownedHulls([{ ships: ['Aurora MR'] }, { ships: ['Aurora MR', 'Cutlass Black'] }], all)).toEqual([{ id: 1, count: 2, lti: 0 }, { id: 3, count: 1, lti: 0 }]);
+  });
+
+  it('fleet plan: a target nothing sells today (Orion) is planned ahead even with the option off', () => {
+    const F = ship(6, 'Orion', 65000);
+    const f = planFleet([...ships, F], [], [{ id: 'o', fromId: 3, targetId: 6, via: [] }, { id: 'c', fromId: 1, targetId: 3, via: [] }], o({ planAhead: false }), { hulls: [] });
+    expect(f.legs[0]).toMatchObject({ ahead: true });
+    expect(f.legs[0]!.plan!.steps.at(-1)).toMatchObject({ toId: 6, kind: 'future' });
+    expect(f.legs[1]).toMatchObject({ ahead: false }); // on sale today → no waiting
+    expect(f.legs[1]!.plan!.waits).toBe(0);
+  });
+
+  it('fleet plan: auto upgrades a preferred hull (LTI token) first, even when another saves more', () => {
+    const goals = [{ id: 'd', fromId: null, targetId: 4, via: [] }];
+    const hulls = [{ id: 1, count: 1 }, { id: 2, count: 1 }];
+    const free = planFleet(ships, [], goals, o({ warbond: false }), { hulls });
+    const pref = planFleet(ships, [], goals, o({ warbond: false }), { hulls, prefer: [2] });
+    expect(pref.legs[0]!.startId).toBe(2);
+    expect(free.legs[0]!.plan).not.toBeNull();
+    // a preferred hull that can't get there is skipped, not forced
+    const up = planFleet(ships, [], [{ id: 'b', fromId: null, targetId: 2, via: [] }], o({}), { hulls: [{ id: 1, count: 1 }, { id: 3, count: 1 }], prefer: [3] });
+    expect(up.legs[0]!.startId).toBe(1);
+  });
+
+  it('extra hulls RSI does not list (Kraken, Javelin) join the catalog and plan ahead', () => {
+    const all = withExtraShips(ships);
+    const kraken = all.find((s) => s.name === 'Kraken')!;
+    expect(kraken).toMatchObject({ msrp: 165000, msrpSource: 'wiki' });
+    expect(withExtraShips([...ships, { ...kraken, id: 999, msrpSource: undefined }]).filter((s) => s.name === 'Kraken')).toHaveLength(1);
+    expect(matchShip('Kraken Privateer', all)?.name).toBe('Kraken Privateer');
+    const p = plan(all, [], 4, kraken.id, o({ planAhead: true }))!;
+    expect(p.steps.at(-1)).toMatchObject({ toId: kraken.id, kind: 'future', cost: 165000 - 24000 });
+  });
+
+  it('fleet plan: per-goal LTI and store start', () => {
+    const E = ship(5, 'Mustang Alpha', 2000, [], [sku('Standalone', 2000)]);
+    const all = [...ships, E];
+    // Aurora: 1 LTI + 1 plain copy; Titan: 1 plain copy
+    const hulls = [{ id: 1, count: 2, lti: 1 }, { id: 2, count: 1, lti: 0 }];
+    const goals = [
+      { id: 'plain', fromId: null, targetId: 3, via: [], lti: 'any' as const },
+      { id: 'lti', fromId: null, targetId: 4, via: [], lti: 'only' as const },
+      { id: 'store', fromId: null, targetId: 2, via: [], storeStart: true },
+    ];
+    const f = planFleet(all, [], goals, o({ warbond: false }), { hulls, prefer: [] });
+    // the "any" goal takes a plain copy, leaving the LTI Aurora for the LTI goal
+    expect(f.legs[0]!.lti).toBe(false);
+    expect(f.legs[1]).toMatchObject({ startId: 1, lti: true });
+    // the store goal may use the store, but a free hull that pays less now wins
+    expect(f.legs[2]!.plan).not.toBeNull();
+    const onlyStore = planFleet(all, [], [goals[2]!], o({}), { hulls: [] });
+    expect(onlyStore.legs[0]!.startId).toBe(STORE_START);
+    const noStore = planFleet(all, [], [{ ...goals[2]!, storeStart: false }], o({}), { hulls: [] });
+    expect(noStore.legs[0]!.plan).toBeNull();
+    // LTI only with no LTI copy → no chain, never a store start
+    const none = planFleet(all, [], [{ id: 'x', fromId: null, targetId: 4, via: [], lti: 'only' as const, storeStart: true }], o({}), { hulls: [{ id: 1, count: 1, lti: 0 }] });
+    expect(none.legs[0]!.plan).toBeNull();
+    // prefer LTI: picks the LTI copy's hull over a hull that saves more
+    const pref = planFleet(all, [], [{ id: 'p', fromId: null, targetId: 4, via: [], lti: 'prefer' as const }], o({ warbond: false }), { hulls: [{ id: 1, count: 1, lti: 0 }, { id: 2, count: 1, lti: 1 }] });
+    expect(pref.legs[0]).toMatchObject({ startId: 2, lti: true });
   });
 });

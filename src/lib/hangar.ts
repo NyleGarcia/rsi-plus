@@ -53,7 +53,10 @@ export interface Pledge {
   image?: string;
   /** RSI's `js-pledge-not-buybackable`: melting it gives credit but it never shows up in buyback. */
   noBuyback?: boolean;
-  /** RSI's `js-pledge-currency`: what the pledge was paid with — "Store Credit" → credit, anything else → cash. Absent on old saves. */
+  /**
+   * RSI's `js-pledge-currency`: the currency a melt pays out in — "Store Credit" → credit, anything else → cash. It is
+   * NOT how the pledge was paid (every meltable pledge, even a $0 flair, says "Store Credit"). Absent on old saves.
+   */
   paidWith?: 'credit' | 'cash';
   /** RSI's `js-pledge-configuration-value` in USD when above 0 (paid customization on top of the pledge). */
   configValue?: number;
@@ -401,7 +404,7 @@ export const cell = (v: unknown) => {
 };
 
 export function hangarCsv(list: Pledge[]): string {
-  const head = ['id', 'name', 'type', 'value_usd', 'date', 'ships', 'lti', 'insurance', 'warbond', 'giftable', 'meltable', 'upgrade_from', 'upgrade_to', 'paid_with', 'buyback', 'nickname'];
+  const head = ['id', 'name', 'type', 'value_usd', 'date', 'ships', 'lti', 'insurance', 'warbond', 'giftable', 'meltable', 'upgrade_from', 'upgrade_to', 'melt_currency', 'buyback', 'nickname'];
   return [
     head.join(','),
     ...list.map((p) =>

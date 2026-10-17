@@ -3,6 +3,9 @@
     value: V;
     label: string;
     sublabel?: string;
+    /** Short status pill after the label ("not on sale"); `tagHint` is its tooltip. */
+    tag?: string;
+    tagHint?: string;
     /** Group header; options keep their given order inside a group, groups in first-seen order. */
     group?: string;
     disabled?: boolean;
@@ -137,7 +140,7 @@
       </button>
     {/snippet}
   </Popover.Trigger>
-  <Popover.Content align="start" class="w-(--bits-popover-anchor-width) min-w-[260px] gap-0 p-0">
+  <Popover.Content align="start" class="w-(--bits-popover-anchor-width) min-w-[300px] gap-0 p-0">
     <Command.Root shouldFilter={false} bind:value={highlighted} label={ariaLabel}>
       <Command.Input bind:value={q} placeholder="Type to search…" aria-label={ariaLabel} autocomplete="off" spellcheck="false" />
       <Command.List class="max-h-80">
@@ -154,8 +157,13 @@
                 onSelect={() => pick(o)}
                 class="gap-2"
               >
-                <span class={cn('min-w-0 flex-1 truncate', o.value === value && 'font-semibold')}>{@render marked(o.label)}</span>
-                {#if o.sublabel}<span class="text-muted-foreground text-xs whitespace-nowrap">{@render marked(o.sublabel)}</span>{/if}
+                <span class="grid min-w-0 flex-1 gap-0.5">
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    <span class={cn('min-w-0 truncate', o.value === value && 'font-semibold')}>{@render marked(o.label)}</span>
+                    {#if o.tag}<span class="border-warning/40 text-warning shrink-0 rounded-full border px-1.5 text-[10px] leading-4 whitespace-nowrap" title={o.tagHint}>{o.tag}</span>{/if}
+                  </span>
+                  {#if o.sublabel}<span class="text-muted-foreground truncate text-xs">{@render marked(o.sublabel)}</span>{/if}
+                </span>
               </Command.Item>
             {/each}
           </Command.Group>

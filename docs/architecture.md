@@ -115,6 +115,23 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
   - `PlanOptions.via` (stops) also works in the single planner. Stops and forced CCUs are walked in MSRP order.
   - Goals live in `local:ccuGoals`. *Save plan* writes one `SavedChain` per goal with `group`, replacing the same group.
   - *Open* loads a goal into the single planner for verify and cart.
+- **Auto plan-ahead**:
+  - When `plan()` with today's sales returns null and `planAhead` is off, the single planner re-plans with `planAhead: true` (`planned.ahead`, notice above the stats). The chain is saved with those options.
+  - `planFleet` does the same per goal: its second pass is tried only when no candidate source works with today's sales, so a buyable-now chain always wins. That sets `FleetLeg.ahead`.
+  - `ShipSelect saleTag` tags hulls with no available CCU / standalone SKU.
+- **Extra hulls** (`src/lib/data/extra-ships.ts`): `EXTRA_SHIPS` covers Kraken, Kraken Privateer, Javelin and Idris-M.
+  - Negative ids, `msrpSource: 'wiki'`, starcitizen.tools pledge cost, link to the wiki page.
+  - `withExtraShips` adds them in `fetchCatalog` and on the background's cached catalog, unless RSI lists the name itself.
+  - They have no SKUs, so they only appear as `future` targets. The planner shows no store link for them.
+- **Per-goal options**:
+  - `Goal.lti` (`any` / `prefer` / `only`) and `Goal.storeStart` (falls back to `FleetOptions.storeStart`; the old plan-wide value is migrated into goals on load).
+  - `ownedHulls` counts LTI copies (`lti`). `planFleet` keeps free copies split `{ lti, plain }`: LTI goals take LTI copies, others take plain ones first.
+  - Auto candidate groups: LTI hulls first for `prefer` (only those for `only`, which also never adds `STORE_START`), each split by the global `prefer` list.
+  - `FleetLeg.lti` = the upgraded copy is LTI.
+- *Want* pickers (fleet *Add a ship you want*, single *Target*) list only hulls you don't own unless *include ships I own* is ticked.
+- **Fleet `prefer`**: auto candidates are tried in two groups, preferred hulls first, within each pass (today's sales, then plan ahead). So a preferred hull that gets there beats any other hull, but never beats buying today vs waiting.
+  - `ccuGoals.prefer` is stored next to `keep`.
+  - *+ my LTI hulls* = `ownedHulls` of LTI pledges.
 - Not done: speculative prices (needs a price-history store), k-best alternatives, a sale calendar, a global optimum over goal order.
 ## Items (`src/lib/items.ts`)
 - Flattens `Pledge.items` → `ItemRow` (merged by category + title, with pledges and ×count). Categories from RSI item kinds (Ship, Skin, FPS Equipment → armor/weapon/fps by title, Component, Hangar decoration, Hangar, Insurance) + titles (Digital Download = game, paint/livery).
@@ -200,6 +217,16 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 - **Unverified live**: that the tier applies on top of a paint's sale price; how a pack line behaves in the tier (`Pack in the bundle` select); the cart add for a paint SKU.
 - UI: Store → *Paint rebuy* (`#paint-rebuy`, rendered by `ShipsPanel view="bundle"`): three money tiles (melt credit incl. melt-only → rebuy cost with "bundle saves vs list" → credit you end up ahead) + a one-line strip (paints in cart, tier, next tier, cap), options (cap, melt toggles, pack select) folded behind *Options*, a compact *Do it* row with the cart buttons, **Best value by cart size** table (★ highest net, *Use* applies that set), candidates table (auto-picked, tick to override, Auto-pick / Clear / Pick all), *New paints to buy* search (store paints not owned, count toward the tier), Do-it steps, *Add N paint lines to RSI cart*, *Open RSI cart*, folded "Not counted" list by reason. Prefs (`wanted`, `limit`) in `localStorage` `rsiplus:paintbundle`. Ships for sale and Browse link here (*Paint rebuy value →*).
 
+## Labels (`src/lib/labels.ts`, `LabelEdit.svelte`, `local:pledgeLabels`)
+- Pledge id → user labels (per account, in `ACCOUNT_ITEMS`). Saved as a plain copy (`cleanLabels(JSON clone)`), and read through `cleanLabels`: a Svelte `$state` proxy written straight to `chrome.storage` turned label arrays into `{"0": …}` objects, which crashed removing a label; reads repair that shape. Matching is case-insensitive and keeps the first spelling (a preset's spelling wins). `setLabel` / `idsWith` / `allLabels`.
+- Presets with effects:
+  - `Keep` → `DedupeOptions.never` (dedupe + target planners skip it), and the CCU panel leaves its pledges out of `ownedHulls` for fleet plans.
+  - `LTI token` / `CCU fodder` → their hulls join the fleet plan's `prefer` (`labelPrefer`).
+  - `Melt` → *Pick labelled "Melt"* in the melt calculator.
+- UI:
+  - Pledges: `LabelEdit` in its own *Labels* column after Flags (a stack labels all its entries, chips show n/m) and a label filter Select.
+  - My ships: read-only chips from the pledges holding the hull.
+
 ## Melt (`src/lib/melt.ts`)
 - `meltSummary(all, picked)`: credit (= sum of pledge values), items lost for good vs still owned via another kept pledge; LTI hull counts as its own thing; a CCU pledge counts as "upgrade A → B".
 - `duplicatePlan(all)`: greedy by value — a pledge is pickable only if every item (and LTI hull) in it still has another copy among the pledges not yet picked; skips non-meltable, $0 (`canMelt`), CCUs, game packages. Result: melt everything redundant, lose nothing.
@@ -221,9 +248,14 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 - **Pre-releases (`dev` branch)**:
   - Day-to-day work lands on `dev`. Every push there runs CI and `prerelease.yml`.
   - `scripts/next-prerelease.sh` works out the next version: the base comes from `.release-please-manifest.json`, the bump from the conventional commits since the last stable `v*` tag.
-  - The workflow sets `package.json` to `<next>-dev.<run>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev.<run>` (`--prerelease --latest=false`). It keeps the newest 10 such prereleases.
-  - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev.<run>`. Firefox gets only `<next>`.
+  - The workflow sets `package.json` to `<next>-dev<run:04>` in CI only (never committed), zips all four targets, and publishes GitHub prerelease `v<next>-dev<run:04>`. The run number is zero-padded because GitHub's releases page sorts tags as text (`dev.9` > `dev.13`); an alphanumeric identifier with leading zeros is still valid semver and compares right both ways. They are created with `--prerelease --latest=false`; the newest 10 are kept (the prune matches both `-dev.N` and `-devNNNN` tags).
+  - WXT's `simplifyVersion` makes the manifest `version` `<next>`, and Chromium builds get `version_name` `<next>-dev<run:04>`. Firefox gets only `<next>`.
   - Real bumps: open a PR `dev` → `main`, merge, then release-please's PR → `vX.Y.Z` with assets as above.
+  - Local builds (`wxt.config.ts` → `localVersionName`, not in CI, not on the tagged release commit) set `version_name` `<next>-dev (local <sha>[+])`, with `+` for uncommitted changes. WXT derives the manifest `version` `<next>` from it, so an unpacked `.output/chrome-mv3` shows it is newer than the last release.
+  - `dev` is the GitHub default branch, and `release.yml` pins release-please to `target-branch: main`.
+  - Branch protection:
+    - `main`: no force push or deletion; status check `verify` required, not enforced for admins, because release-please PRs get no CI with `GITHUB_TOKEN`.
+    - `dev`: no force push or deletion.
 - CI does not auto-run on the release PR with the default `GITHUB_TOKEN` (GitHub limitation); re-run manually or switch to a PAT later.
 - `docs/changelog.md` stays the hand-written user-facing log; `CHANGELOG.md` is generated.
 

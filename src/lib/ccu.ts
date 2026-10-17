@@ -1,7 +1,7 @@
 /**
  * Cheapest CCU chain to a target ship, from a ship you own, any ship, or a ship bought from the store.
  * Edges out of ship A (msrp in cents):
- * - store: every on-sale CCU SKU of ship B with sku.price > msrp(A) → cost sku.price − msrp(A)
+ * - store: every on-sale CCU SKU of ship B with sku.price > msrp(A) and msrp(B) > msrp(A) → cost sku.price − msrp(A)
  *   (warbond SKUs need new money; standard/limited can be paid with store credit);
  * - owned: a CCU in your hangar A→B → cost 0 now; `paid` = its melt value (what it cost you);
  * - buyback (optional): a melted CCU A→B → cost ≈ msrp(B) − msrp(A) (buyback price; credit or cash);
@@ -168,16 +168,19 @@ function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeS
     if (!a) return [];
     const out: Step[] = [];
     for (const o of offers) {
-      if (o.to.id === a.id || o.price <= a.msrp) continue;
+      // RSI only sells CCUs up: the target must be worth more than the hull it starts from.
+      if (o.to.id === a.id || o.price <= a.msrp || o.to.msrp <= a.msrp) continue;
       const cost = o.price - a.msrp;
       out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, ...(o.skuId != null ? { skuId: o.skuId } : {}) });
     }
     for (const o of ownedFrom.get(a.id) ?? []) {
       const to = byId.get(o.toId);
-      if (!to) continue;
+      // Never step down: a CCU whose target now lists at or below its source (a price change, a name mapped to the
+      // wrong hull) can't be applied usefully, and a buyback one would show as a free downgrade. Unpriced targets pass.
+      if (!to || (to.msrp > 0 && to.msrp <= a.msrp)) continue;
       if (o.source === 'hangar') out.push({ fromId: a.id, toId: to.id, kind: 'owned', cost: 0, cash: 0, paid: o.value, label: 'Owned CCU', ref: o.ref });
       else {
-        const cost = Math.max(0, to.msrp - a.msrp);
+        const cost = to.msrp - a.msrp;
         out.push({ fromId: a.id, toId: to.id, kind: 'buyback', cost, cash: opt.storeCredit ? 0 : cost, paid: 0, label: 'Buyback CCU', ref: o.ref });
       }
     }
@@ -290,6 +293,13 @@ export interface Goal {
   fromId: number | null;
   targetId: number;
   via: number[];
+  /** Auto source may start by buying a store ship (unset = the plan-wide default `FleetOptions.storeStart`). */
+  storeStart?: boolean;
+  /**
+   * Insurance of the hull copy to upgrade: `any`; `prefer` an LTI copy when one gets there; `only` LTI copies (no store
+   * start — a new ship has no LTI). A CCU keeps the pledge's insurance, so LTI goals should start from LTI tokens.
+   */
+  lti?: 'any' | 'prefer' | 'only';
 }
 export interface FleetLeg {
   goal: Goal;
@@ -297,6 +307,10 @@ export interface FleetLeg {
   startId: number | null;
   plan: Plan | null;
   auto: boolean;
+  /** The upgraded hull copy is on an LTI pledge. */
+  lti: boolean;
+  /** Planned ahead although the option is off: no chain with today's sales (target not on sale — an Orion, an Arrastra). */
+  ahead: boolean;
 }
 export interface FleetPlan {
   legs: FleetLeg[];
@@ -311,11 +325,13 @@ export interface FleetPlan {
   failed: number;
 }
 export interface FleetOptions {
-  /** Hull copies you own that can be upgraded (one copy per goal). */
-  hulls: { id: number; count: number }[];
+  /** Hull copies you own that can be upgraded (one copy per goal); `lti` = how many of them are on LTI pledges. */
+  hulls: { id: number; count: number; lti?: number }[];
   /** Hulls an auto goal never upgrades (ones you want to keep flying). */
   keep?: number[];
-  /** An auto goal may start by buying a ship from the store. */
+  /** Hulls an auto goal upgrades first when one of them gets there (cheap LTI tokens, ships you don't fly). */
+  prefer?: number[];
+  /** Default for goals without their own `storeStart`: an auto goal may start by buying a ship from the store. */
   storeStart?: boolean;
 }
 
@@ -326,13 +342,31 @@ const better = (a: Plan, b: Plan) => a.savings !== b.savings ? a.savings > b.sav
  * Plans several goals together, in the given order (= priority): each goal's chain may not reuse an owned / buyback
  * CCU an earlier goal took, and each owned hull copy starts at most one chain (goals with a fixed source claim theirs
  * first). An auto goal (`fromId: null`) tries every free hull copy cheaper than the target (not in `keep`) and, with
- * `storeStart`, buying from the store, and keeps the one that saves most. `opt.include` / `opt.via` are ignored —
- * stops are per goal.
+ * its `storeStart`, buying from the store, and keeps the one that saves most. Candidates are tried in groups — LTI
+ * copies first for an `lti: 'prefer'` goal (only those for `only`), then `prefer` hulls — and the first group with a
+ * chain wins. A goal that doesn't ask for LTI uses a non-LTI copy when the hull has one, leaving LTI copies for the
+ * goals that want them. `opt.include` / `opt.via` are ignored — stops are per goal.
  */
 export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[], opt: PlanOptions, fo: FleetOptions): FleetPlan {
   const byId = new Map(ships.map((s) => [s.id, s]));
-  const free = new Map(fo.hulls.map((h) => [h.id, h.count]));
-  for (const g of goals) if (g.fromId != null && free.get(g.fromId)) free.set(g.fromId, free.get(g.fromId)! - 1);
+  /** Free copies per hull, split by insurance. */
+  const free = new Map(fo.hulls.map((h) => [h.id, { lti: Math.min(h.lti ?? 0, h.count), plain: h.count - Math.min(h.lti ?? 0, h.count) }]));
+  const wantsLti = (g: Goal) => g.lti === 'prefer' || g.lti === 'only';
+  const has = (id: number, ltiOnly: boolean) => {
+    const f = free.get(id);
+    return !!f && (ltiOnly ? f.lti > 0 : f.lti + f.plain > 0);
+  };
+  /** Take one copy: an LTI one when the goal wants it (and there is one), else a plain one first. Returns its LTI. */
+  const take = (id: number, g: Goal): boolean => {
+    const f = free.get(id);
+    if (!f) return false;
+    const lti = wantsLti(g) ? f.lti > 0 : f.plain === 0 && f.lti > 0;
+    if (lti) f.lti--;
+    else if (f.plain > 0) f.plain--;
+    return lti;
+  };
+  const claimed = new Map<string, boolean>();
+  for (const g of goals) if (g.fromId != null && g.fromId !== STORE_START && has(g.fromId, g.lti === 'only')) claimed.set(g.id, take(g.fromId, g));
   const keep = new Set(fo.keep ?? []);
   const used = new Set<number>();
   const legs: FleetLeg[] = [];
@@ -340,19 +374,37 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
     const o: PlanOptions = { ...opt, include: [], via: goal.via, exclude: [...new Set([...opt.exclude, ...used])] };
     let startId = goal.fromId;
     let best: Plan | null = null;
-    if (startId != null) best = plan(ships, owned, startId, goal.targetId, o);
-    else {
-      const target = byId.get(goal.targetId);
-      const cands = [...free].filter(([id, n]) => n > 0 && !keep.has(id) && (byId.get(id)?.msrp ?? Infinity) < (target?.msrp ?? 0)).map(([id]) => id);
-      if (fo.storeStart) cands.push(STORE_START);
-      for (const c of cands) {
-        const p = plan(ships, owned, c, goal.targetId, o);
-        if (p && (!best || better(p, best))) (best = p), (startId = c);
+    let ahead = false;
+    const target = byId.get(goal.targetId);
+    const only = goal.lti === 'only';
+    const cands =
+      goal.fromId != null
+        ? [goal.fromId]
+        : [...free.keys()].filter((id) => has(id, only) && !keep.has(id) && (byId.get(id)?.msrp ?? Infinity) < (target?.msrp ?? 0));
+    if (goal.fromId == null && !only && (goal.storeStart ?? fo.storeStart)) cands.push(STORE_START);
+    // Today's sales first; only when no source gets there, plan ahead (waiting for the target's CCU to return).
+    // Within a pass, groups in order — LTI copies (prefer-LTI goals), then preferred hulls — and the first group
+    // with a chain wins over any later one.
+    const pref = new Set(fo.prefer ?? []);
+    const ltiFirst = goal.lti === 'prefer' && goal.fromId == null;
+    const isLti = (c: number) => (free.get(c)?.lti ?? 0) > 0;
+    const groups = (ltiFirst ? [cands.filter(isLti), cands.filter((c) => !isLti(c))] : [cands]).flatMap((g) => [g.filter((c) => pref.has(c)), g.filter((c) => !pref.has(c))]);
+    search: for (const pass of o.planAhead ? [o] : [o, { ...o, planAhead: true }]) {
+      for (const group of groups) {
+        for (const c of group) {
+          const p = plan(ships, owned, c, goal.targetId, pass);
+          if (p && (!best || better(p, best))) (best = p), (startId = c);
+        }
+        if (best) {
+          ahead = pass !== o;
+          break search;
+        }
       }
-      if (startId != null && startId !== STORE_START) free.set(startId, free.get(startId)! - 1);
     }
+    let lti = claimed.get(goal.id) ?? false;
+    if (goal.fromId == null && best && startId != null && startId !== STORE_START) lti = take(startId, goal);
     for (const r of reservedRefs(best ? [best] : [])) used.add(r);
-    legs.push({ goal, startId: best ? startId : goal.fromId, plan: best, auto: goal.fromId == null });
+    legs.push({ goal, startId: best ? startId : goal.fromId, plan: best, auto: goal.fromId == null, lti, ahead });
   }
   const sum = (f: (p: Plan) => number) => legs.reduce((n, l) => n + (l.plan ? f(l.plan) : 0), 0);
   return { legs, total: sum((p) => p.total), cash: sum((p) => p.cash), paid: sum((p) => p.paid), later: sum((p) => p.later), waits: sum((p) => p.waits), msrpDiff: sum((p) => p.msrpDiff), savings: sum((p) => p.savings), failed: legs.filter((l) => !l.plan).length };
@@ -430,13 +482,17 @@ export function ownedCcus(
 }
 
 /** Hull copies you own (one per pledge listing it) — what a fleet plan can upgrade. */
-export function ownedHulls(pledges: { ships: string[] }[], ships: CatalogShip[]): { id: number; count: number }[] {
-  const n = new Map<number, number>();
+export function ownedHulls(pledges: { ships: string[]; lti?: boolean }[], ships: CatalogShip[]): { id: number; count: number; lti: number }[] {
+  const n = new Map<number, { count: number; lti: number }>();
   for (const p of pledges) for (const t of p.ships) {
     const s = matchShip(t, ships);
-    if (s) n.set(s.id, (n.get(s.id) ?? 0) + 1);
+    if (!s) continue;
+    const h = n.get(s.id) ?? { count: 0, lti: 0 };
+    h.count++;
+    if (p.lti) h.lti++;
+    n.set(s.id, h);
   }
-  return [...n].map(([id, count]) => ({ id, count }));
+  return [...n].map(([id, h]) => ({ id, ...h }));
 }
 
 /** Ships you own outright (single-ship / combo pledges, upgraded ships count as their current hull). */

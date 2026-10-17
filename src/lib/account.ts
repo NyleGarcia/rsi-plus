@@ -76,6 +76,67 @@ export const loadHangar = (onProgress: (p: Progress<Pledge>) => void | Promise<v
 export const loadBuyback = (onProgress: (p: Progress<BuybackItem>) => void | Promise<void>, signal?: AbortSignal, resume?: Progress<BuybackItem>): Promise<BuybackItem[]> =>
   loadAll('/account/buy-back-pledges', parseBuybackPage, onProgress, signal, resume);
 
+export interface HangarUpdate {
+  pledges: Pledge[];
+  /** Pages read (vs the whole hangar on a full reload). */
+  pages: number;
+  added: number;
+  removed: number;
+  changed: number;
+}
+
+const same = (a: Pledge, b: Pledge) => JSON.stringify({ ...a, page: 0 }) === JSON.stringify({ ...b, page: 0 });
+
+/**
+ * Quick update against a saved hangar: RSI lists newest first, so read from page 1 until a page matches a stretch of
+ * the saved list (same ids in the same order, same contents) and keep the saved rest after it. New pledges, and melts
+ * / gifts / upgrades above that point, are picked up; a change further down needs a full reload. Nothing is saved on
+ * the way (`onProgress` is for the progress bar only), so a stop or a failing page leaves the saved hangar as it was.
+ * With no match it simply reads to the end, which is a full reload.
+ */
+export async function updateHangar(
+  saved: Pledge[],
+  onProgress?: (p: { page: number; pages?: number; count: number }) => void,
+  signal?: AbortSignal,
+): Promise<HangarUpdate> {
+  const at = new Map(saved.map((p, i) => [p.id, i]));
+  const read: Pledge[] = [];
+  const seen = new Set<number>();
+  let pages: number | undefined;
+  let per = 0;
+  let tail: Pledge[] = [];
+  let fetched = 0;
+  for (let page = 1; page < 500; page++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const doc = await getPage('/account/pledges', page);
+    fetched++;
+    pages = pageCount(doc) ?? pages;
+    const items = parseHangarPage(doc);
+    const fresh = items.filter((i) => !seen.has(i.id));
+    if (!items.length || !fresh.length) break; // empty, or RSI repeating the last page
+    per ||= items.length;
+    for (const i of fresh) (seen.add(i.id), (i.page = page), read.push(i));
+    onProgress?.({ page, pages, count: read.length });
+    const idx = items.map((i) => at.get(i.id) ?? -1);
+    const anchored = idx[0]! >= 0 && idx.every((n, k) => n === idx[0]! + k && same(items[k]!, saved[n]!));
+    if (anchored) {
+      tail = saved.slice(idx[idx.length - 1]! + 1).filter((p) => !seen.has(p.id));
+      break;
+    }
+    if (items.length < 10) break;
+    if (page > 20) await sleep(400);
+  }
+  const pledges = [...read, ...tail.map((p, i) => ({ ...p, page: Math.floor((read.length + i) / (per || 10)) + 1 }))];
+  const kept = new Set(pledges.map((p) => p.id));
+  return {
+    pledges,
+    pages: fetched,
+    added: read.filter((p) => !at.has(p.id)).length,
+    removed: saved.filter((p) => !kept.has(p.id)).length,
+    changed: read.filter((p) => at.has(p.id) && !same(p, saved[at.get(p.id)!]!)).length,
+  };
+}
+
 /**
  * Fill in each buyback entry's contents + price from its own page (the list page only says "5 items"). One request
  * per entry that has a `url` and no `items` yet (or all of them with `force`), ~350 ms apart, 429 → wait and retry.

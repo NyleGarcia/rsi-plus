@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { fetchCredits, loadHangar } from '@/lib/account';
+  import { fetchCredits, loadHangar, updateHangar } from '@/lib/account';
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
   import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, upgradedFrom, type GameShip } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { catalogItem, gameShipsItem, hangarItem } from '@/lib/settings';
+  import { catalogItem, gameShipsItem, hangarItem, pledgeLabelsItem } from '@/lib/settings';
+  import { cleanLabels, allLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
+  import LabelEdit from './LabelEdit.svelte';
   import type { Catalog } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
@@ -38,13 +40,26 @@
   let game = $state<GameShip[]>([]);
   let loading = $state<{ page: number; count: number; pages?: number } | null>(null);
   let error = $state('');
+  /** What the last quick update found. */
+  let updated = $state('');
   let q = $state('');
+  /** Your labels (`lib/labels.ts`) and the label filter ('' = any). */
+  let labels = $state<Labels>({});
+  let labelFilter = $state('');
+  const labelList = $derived(allLabels(labels));
+  const labelIds = $derived(labelFilter ? idsWith(labels, labelFilter) : null);
+  /** Store a plain copy: a Svelte state proxy put in chrome.storage turned label arrays into `{"0": …}` objects. */
+  const saveLabels = (next: Labels) => {
+    const plain = cleanLabels(JSON.parse(JSON.stringify(next)));
+    labels = plain;
+    pledgeLabelsItem.setValue(plain);
+  };
   let type = $state<PledgeType | 'all'>('all');
-  let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'cash' | 'credit' | 'named'>('');
+  let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'named'>('');
   /** Flag filter. "Meltable" means it can actually be melted for credit (Reclaim button *and* a value) — RSI puts a
    *  Reclaim button on nearly every row, $0 flair included, so the raw flag alone filtered almost nothing out. */
   const flagPass = (p: Pledge) =>
-    !flag ? true : flag === 'meltable' ? canMelt(p) : flag === 'notMeltable' ? !canMelt(p) : flag === 'cash' || flag === 'credit' ? p.paidWith === flag : flag === 'named' ? !!(p.nickname || p.reservedNames?.length) : !!p[flag];
+    !flag ? true : flag === 'meltable' ? canMelt(p) : flag === 'notMeltable' ? !canMelt(p) : flag === 'named' ? !!(p.nickname || p.reservedNames?.length) : !!p[flag];
   type Col = 'name' | 'type' | 'value' | 'date' | 'flags' | 'qty';
   let sort = $state<SortState<Col>>({ key: 'date', dir: 'desc' });
   let ctrl: AbortController | null = null;
@@ -53,10 +68,11 @@
     hangarItem.getValue().then((v) => (data = v)).catch((e) => (error = `Couldn't read saved hangar: ${(e as Error).message}`));
     catalogItem.getValue().then((c) => (cat = c));
     gameShipsItem.getValue().then((g) => (game = g));
+    pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch(() => {}); // only needed to know which hulls a paint fits
-    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? []))];
+    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
@@ -66,8 +82,27 @@
     data = v;
   }
 
+  /** Quick update: read from the top until the pages match what's saved; the list stays on screen meanwhile. */
+  async function update() {
+    if (!data?.complete || !data.pledges.length) return load(false);
+    error = updated = '';
+    ctrl = new AbortController();
+    loading = { page: 0, count: 0 };
+    try {
+      const u = await updateHangar($state.snapshot(data.pledges) as Pledge[], (p) => (loading = p), ctrl.signal);
+      await save({ ...credits(), at: Date.now(), pledges: u.pledges, complete: true });
+      const what = [u.added && `${u.added} new`, u.changed && `${u.changed} changed`, u.removed && `${u.removed} gone`].filter(Boolean).join(', ');
+      updated = `${what || 'No changes'} · read ${u.pages} page${u.pages === 1 ? '' : 's'}`;
+      refreshCredits();
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') error = `${(e as Error).message} — the saved hangar is unchanged.`;
+    } finally {
+      loading = null;
+    }
+  }
+
   async function load(resume = false) {
-    error = '';
+    error = updated = '';
     ctrl = new AbortController();
     const from = resume && data && !data.complete ? { page: data.page ?? 0, items: $state.snapshot(data.pledges) as Pledge[] } : undefined;
     loading = { page: from?.page ?? 0, count: from?.items.length ?? 0 };
@@ -90,8 +125,11 @@
   }
 
   const all = $derived(data?.pledges ?? []);
-  /** Total pages while loading: the page's own pagination, else ~ last known size / 50 (a reload of a known hangar). */
-  const totalPages = $derived(loading?.pages ?? (all.length ? Math.max(loading?.page ?? 0, Math.ceil(all.length / 50)) : undefined));
+  /** Meltable pledges labelled *Melt* (one-click pick in the melt calculator). */
+  const meltLabelled = $derived(all.filter((p) => idsWith(labels, MELT).has(p.id) && canMelt(p)));
+  /** Total pages while loading: the page's own pagination, else the last page a saved pledge came from. */
+  const lastPage = $derived(all.reduce((m, p) => Math.max(m, p.page ?? 0), 0));
+  const totalPages = $derived(loading?.pages ?? (lastPage ? Math.max(loading?.page ?? 0, lastPage) : undefined));
 
   // ---- credits (store credit / UEC / REC) ride along on the saved hangar; shown + refreshed on the Wallet tab ----
   const credits = () => ({ credits: data?.credits ?? null, creditsAt: data?.creditsAt });
@@ -112,6 +150,7 @@
         !hiddenBySet.has(p.id) &&
         (type === 'all' || p.type === type) &&
         flagPass(p) &&
+        (!labelIds || labelIds.has(p.id)) &&
         (!query || [p.name, p.nickname, ...p.items.map((i) => i.title)].some((s) => s.toLowerCase().includes(query))),
     );
     return list;
@@ -142,8 +181,6 @@
     { value: 'upgraded', label: 'Upgraded' },
     { value: 'hasGame', label: 'Has game package' },
     { value: 'noBuyback', label: 'No buyback after melt' },
-    { value: 'cash', label: 'Paid with cash' },
-    { value: 'credit', label: 'Paid with store credit' },
     { value: 'named', label: 'Named ship' },
   ];
   /** Pledges RSI marks as never returning to buyback, among the ones picked to melt. */
@@ -261,7 +298,8 @@
     return all.filter((p) => canMelt(p) && noShip.has(p.id) && paintOnly(p) && inv.rows.filter((r) => r.pledges.some((x) => x.id === p.id)).every((r) => paintStatus(r, inv.ownedIds) === 'no-ship'));
   });
   const orphanCredit = $derived(orphanPaints.reduce((n, p) => n + p.value, 0));
-  const opts = $derived({ types: dedupe, keepLti, keep });
+  /** Pledges labelled *Keep* are never picked by the dedupe / target planners. */
+  const opts = $derived({ types: dedupe, keepLti, keep, never: idsWith(labels, KEEP) });
   const melt = $derived(meltSummary(all, picked, opts));
   /** One kept-count table per pick change for every row's "Would lose" (instead of one per row). */
   const kept = $derived(keptCounts(all, picked));
@@ -318,7 +356,7 @@
     <Card.Header>
       <Card.Title><h2 class="m-0 text-lg font-semibold">{pane === 'melt' ? 'Melt calculator' : 'Pledges'}</h2></Card.Title>
       <div class="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-        {#if loading}<span>Loading page {loading.page}{totalPages ? ` / ${totalPages}` : ''}… {loading.count} pledges</span>{#if totalPages}<Progress value={Math.min(100, Math.round((100 * loading.page) / totalPages))} class="h-1.5 w-[140px]" aria-hidden="true" />{/if}
+        {#if loading}<span>Loading page {loading.page}{totalPages ? ` / ${totalPages}` : ''}… {loading.count} {data?.complete ? 'read' : 'pledges'}</span>{#if totalPages}<Progress value={Math.min(100, Math.round((100 * loading.page) / totalPages))} class="h-1.5 w-[140px]" aria-hidden="true" />{/if}
         {:else if data}{all.length} pledges · {data.complete === false ? `partial (stopped after page ${data.page})` : 'loaded'} {new Date(data.at).toLocaleString()}
         {:else}Not loaded yet — reads every page of your RSI hangar (stays in this browser).{/if}
       </div>
@@ -329,6 +367,9 @@
           {#if data && data.complete === false}
             <Button onclick={() => load(true)}>Resume from page {(data.page ?? 0) + 1}</Button>
           {/if}
+          {#if data?.complete && data.pledges.length}
+            <Button onclick={update} title="Reads from the newest pledge down and stops at the first page that matches what's saved. Changes further down (an old pledge melted or upgraded) need Reload all.">Update</Button>
+          {/if}
           <Button variant={data ? 'outline' : 'default'} onclick={() => load(false)}>{data ? 'Reload all' : 'Load hangar'}</Button>
         {/if}
         <Button variant="outline" disabled={!shown.length} onclick={() => download(`rsi-hangar-${stamp()}.csv`, hangarCsv(shown), 'text/csv')}>CSV</Button>
@@ -337,7 +378,7 @@
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-4">
-      {#if error}<span class="text-destructive">{error}</span>{/if}
+      {#if error}<span class="text-destructive">{error}</span>{:else if updated}<span class="text-muted-foreground">{updated}</span>{/if}
 
       {#if all.length}
         {#if pane === 'pledges'}
@@ -384,6 +425,11 @@
                 </Tooltip.Trigger>
                 {#if dupes.length}<Tooltip.Content class="whitespace-pre-line">{dupes.map((p) => `${p.name} · ${money(p.value)}`).join('\n')}</Tooltip.Content>{/if}
               </Tooltip.Root>
+              {#if meltLabelled.length}
+                <Button variant="outline" size="sm" title={meltLabelled.map((p) => `${p.name} · ${money(p.value)}`).join('\n')} onclick={() => ((picked = new Set([...picked, ...meltLabelled.map((p) => p.id)])), (pickView = 'picked'))}>
+                  Pick labelled “Melt” · {meltLabelled.length} · {money(meltLabelled.reduce((n, p) => n + p.value, 0))}
+                </Button>
+              {/if}
               <Tooltip.Root>
                 <Tooltip.Trigger>
                   {#snippet child({ props })}
@@ -537,6 +583,15 @@
                 {#each FLAGS as f (f.value)}<Select.Item value={f.value || 'any'} label={f.label} />{/each}
               </Select.Content>
             </Select.Root>
+            {#if labelList.length}
+              <Select.Root type="single" bind:value={() => labelFilter || 'any', (v) => (labelFilter = v === 'any' ? '' : v)}>
+                <Select.Trigger aria-label="Label">{labelFilter ? `Label: ${labelFilter}` : 'Any label'}</Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="any" label="Any label" />
+                  {#each labelList as l (l.name)}<Select.Item value={l.name} label={`${l.name} · ${l.count}`} />{/each}
+                </Select.Content>
+              </Select.Root>
+            {/if}
             {#if setOptions.length}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
@@ -573,6 +628,7 @@
                 <SortTh key="value" bind:sort firstDir="desc">Value</SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
+                <Table.Head title="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners">Labels</Table.Head>
                 {#if melting}
                   <Table.Head>
                     <Tooltip.Root>
@@ -642,12 +698,12 @@
                       {#if p.hasGame}<Badge variant="secondary">game</Badge>{/if}
                       {#if !p.meltable}<Badge variant="outline" class="text-muted-foreground">no melt</Badge>{/if}
                       {#if p.noBuyback}<Badge variant="outline" class="border-warning/40 text-warning" title="RSI marks this pledge as not buy-backable: melting it is final">no buyback</Badge>{/if}
-                      {#if p.paidWith === 'credit'}<Badge variant="outline" class="text-muted-foreground" title="Paid with store credit (RSI's hangar page)">credit</Badge>{/if}
                       {#if p.configValue}<Badge variant="outline" class="text-muted-foreground" title="Paid customization on top of the pledge">+{money(p.configValue)} config</Badge>{/if}
                       {#if p.availability}<Badge variant="outline" class="border-warning/40 text-warning" title="RSI's availability state for this pledge">{p.availability}</Badge>{/if}
                       {#if p.reservedNames?.length}<Badge variant="secondary" title="Ship name reserved on RSI">name: {p.reservedNames.join(', ')}</Badge>{:else if p.nameable?.length}<Badge variant="outline" class="text-muted-foreground" title="RSI lets you name this ship">nameable</Badge>{/if}
                     </div>
                   </Table.Cell>
+                  <Table.Cell class="min-w-[90px] whitespace-normal"><LabelEdit ids={s.entries.map((e) => e.id)} {labels} onchange={saveLabels} /></Table.Cell>
                   {#if melting}
                     <Table.Cell class="text-xs whitespace-normal">
                       {#if !nMelt}<span class="text-muted-foreground">—</span>

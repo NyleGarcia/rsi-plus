@@ -11,6 +11,7 @@
     ariaLabel,
     onlyMine = false,
     price = true,
+    saleTag = false,
     onpick,
   }: {
     ships: CatalogShip[];
@@ -22,6 +23,8 @@
     /** Offer only `mine` (the "ship in my hangar" source mode). */
     onlyMine?: boolean;
     price?: boolean;
+    /** Tag hulls nothing sells today (no CCU, no standalone) — "not on sale", "concept". */
+    saleTag?: boolean;
     onpick?: (id: number | null) => void;
   } = $props();
 
@@ -29,6 +32,13 @@
     value: s.id,
     label: s.name,
     sublabel: [s.manufacturer, price && s.msrp ? usd(s.msrp) : ''].filter(Boolean).join(' · '),
+    ...(saleTag && !s.ccu.some((k) => k.available) && !s.standalone.some((k) => k.available)
+      ? s.msrpSource
+        ? { tag: 'wiki MSRP', tagHint: "RSI's CCU list doesn't include this hull — MSRP from starcitizen.tools; planned ahead" }
+        : s.flyable === 'Concept'
+          ? { tag: 'concept', tagHint: 'Concept ship, nothing on sale now — planned ahead at MSRP' }
+          : { tag: 'not on sale', tagHint: 'No CCU or standalone on sale now — planned ahead at MSRP' }
+      : {}),
     group,
   });
   const options = $derived.by(() => {
