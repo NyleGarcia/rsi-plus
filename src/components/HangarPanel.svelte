@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchCredits, loadHangar } from '@/lib/account';
+  import { fetchCredits, loadHangar, updateHangar } from '@/lib/account';
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
@@ -40,6 +40,8 @@
   let game = $state<GameShip[]>([]);
   let loading = $state<{ page: number; count: number; pages?: number } | null>(null);
   let error = $state('');
+  /** What the last quick update found. */
+  let updated = $state('');
   let q = $state('');
   /** Your labels (`lib/labels.ts`) and the label filter ('' = any). */
   let labels = $state<Labels>({});
@@ -80,8 +82,27 @@
     data = v;
   }
 
+  /** Quick update: read from the top until the pages match what's saved; the list stays on screen meanwhile. */
+  async function update() {
+    if (!data?.complete || !data.pledges.length) return load(false);
+    error = updated = '';
+    ctrl = new AbortController();
+    loading = { page: 0, count: 0 };
+    try {
+      const u = await updateHangar($state.snapshot(data.pledges) as Pledge[], (p) => (loading = p), ctrl.signal);
+      await save({ ...credits(), at: Date.now(), pledges: u.pledges, complete: true });
+      const what = [u.added && `${u.added} new`, u.changed && `${u.changed} changed`, u.removed && `${u.removed} gone`].filter(Boolean).join(', ');
+      updated = `${what || 'No changes'} · read ${u.pages} page${u.pages === 1 ? '' : 's'}`;
+      refreshCredits();
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') error = `${(e as Error).message} — the saved hangar is unchanged.`;
+    } finally {
+      loading = null;
+    }
+  }
+
   async function load(resume = false) {
-    error = '';
+    error = updated = '';
     ctrl = new AbortController();
     const from = resume && data && !data.complete ? { page: data.page ?? 0, items: $state.snapshot(data.pledges) as Pledge[] } : undefined;
     loading = { page: from?.page ?? 0, count: from?.items.length ?? 0 };
@@ -106,8 +127,9 @@
   const all = $derived(data?.pledges ?? []);
   /** Meltable pledges labelled *Melt* (one-click pick in the melt calculator). */
   const meltLabelled = $derived(all.filter((p) => idsWith(labels, MELT).has(p.id) && canMelt(p)));
-  /** Total pages while loading: the page's own pagination, else ~ last known size / 50 (a reload of a known hangar). */
-  const totalPages = $derived(loading?.pages ?? (all.length ? Math.max(loading?.page ?? 0, Math.ceil(all.length / 50)) : undefined));
+  /** Total pages while loading: the page's own pagination, else the last page a saved pledge came from. */
+  const lastPage = $derived(all.reduce((m, p) => Math.max(m, p.page ?? 0), 0));
+  const totalPages = $derived(loading?.pages ?? (lastPage ? Math.max(loading?.page ?? 0, lastPage) : undefined));
 
   // ---- credits (store credit / UEC / REC) ride along on the saved hangar; shown + refreshed on the Wallet tab ----
   const credits = () => ({ credits: data?.credits ?? null, creditsAt: data?.creditsAt });
@@ -334,7 +356,7 @@
     <Card.Header>
       <Card.Title><h2 class="m-0 text-lg font-semibold">{pane === 'melt' ? 'Melt calculator' : 'Pledges'}</h2></Card.Title>
       <div class="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-        {#if loading}<span>Loading page {loading.page}{totalPages ? ` / ${totalPages}` : ''}… {loading.count} pledges</span>{#if totalPages}<Progress value={Math.min(100, Math.round((100 * loading.page) / totalPages))} class="h-1.5 w-[140px]" aria-hidden="true" />{/if}
+        {#if loading}<span>Loading page {loading.page}{totalPages ? ` / ${totalPages}` : ''}… {loading.count} {data?.complete ? 'read' : 'pledges'}</span>{#if totalPages}<Progress value={Math.min(100, Math.round((100 * loading.page) / totalPages))} class="h-1.5 w-[140px]" aria-hidden="true" />{/if}
         {:else if data}{all.length} pledges · {data.complete === false ? `partial (stopped after page ${data.page})` : 'loaded'} {new Date(data.at).toLocaleString()}
         {:else}Not loaded yet — reads every page of your RSI hangar (stays in this browser).{/if}
       </div>
@@ -345,6 +367,9 @@
           {#if data && data.complete === false}
             <Button onclick={() => load(true)}>Resume from page {(data.page ?? 0) + 1}</Button>
           {/if}
+          {#if data?.complete && data.pledges.length}
+            <Button onclick={update} title="Reads from the newest pledge down and stops at the first page that matches what's saved. Changes further down (an old pledge melted or upgraded) need Reload all.">Update</Button>
+          {/if}
           <Button variant={data ? 'outline' : 'default'} onclick={() => load(false)}>{data ? 'Reload all' : 'Load hangar'}</Button>
         {/if}
         <Button variant="outline" disabled={!shown.length} onclick={() => download(`rsi-hangar-${stamp()}.csv`, hangarCsv(shown), 'text/csv')}>CSV</Button>
@@ -353,7 +378,7 @@
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-4">
-      {#if error}<span class="text-destructive">{error}</span>{/if}
+      {#if error}<span class="text-destructive">{error}</span>{:else if updated}<span class="text-muted-foreground">{updated}</span>{/if}
 
       {#if all.length}
         {#if pane === 'pledges'}
