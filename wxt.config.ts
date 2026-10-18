@@ -31,7 +31,8 @@ export default defineConfig({
   modules: ['@wxt-dev/module-svelte'],
   // Tailwind v4 (shadcn-svelte) — imported only by the hub / popup pages; content scripts stay vanilla so nothing
   // bleeds into RSI's own pages.
-  vite: () => ({ plugins: [tailwindcss()] }),
+  // RSIPLUS_NOMINIFY=1: readable function names in Chrome profiles.
+  vite: () => ({ plugins: [tailwindcss()], ...(process.env.RSIPLUS_NOMINIFY ? { build: { minify: false } } : {}) }),
   // Targets: chrome, edge, brave (same MV3 build as chrome, own file name), firefox. `wxt zip -b <target>`; CI builds all four.
   manifest: ({ browser }) => {
     const firefox = browser === 'firefox';

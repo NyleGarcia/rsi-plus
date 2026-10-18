@@ -325,6 +325,17 @@
     for (const p of list) if (canMelt(p)) on ? s.add(p.id) : s.delete(p.id);
     picked = s;
   };
+  /**
+   * Rows (or ship groups) on screen: the first few paint with the click, the rest follow a chunk per frame — building a
+   * 500-pledge table in one go blocked the page for half a second after picking Pledges in the sidebar. Starts over
+   * when the view switches (Pledges ↔ Melt calculator re-renders every row with other columns).
+   */
+  let budget = $derived.by(() => (void pane, 40));
+  $effect(() => {
+    if (budget >= Math.max(visible.length, groups.length)) return;
+    const t = setTimeout(() => (budget += 60), 16);
+    return () => clearTimeout(t);
+  });
   const visible = $derived(!melting || pickView === 'all' ? stacks : stacks.filter((s) => s.entries.some((p) => picked.has(p.id))));
   const pickedIn = (s: PledgeStack) => s.entries.filter((p) => picked.has(p.id)).length;
   const meltableIn = (s: PledgeStack) => s.entries.filter(canMelt).length;
@@ -527,7 +538,7 @@
 
 {#snippet list()}
   {#if !byShip}
-    {@render pledgeTable(visible)}
+    {@render pledgeTable(visible.slice(0, budget))}
   {:else}
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">{groups.length} ships{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
@@ -536,7 +547,7 @@
       <Button variant="outline" size="xs" onclick={() => (closed = new Set(groups.map((g) => g.key)))}>Collapse all</Button>
     </div>
     <div class="grid gap-2">
-      {#each groups as g (g.key)}
+      {#each groups.slice(0, budget) as g (g.key)}
         {@const open = !closed.has(g.key)}
         <Collapsible.Root {open} onOpenChange={() => toggleGroup(g.key)} class="rounded-lg border px-2 pt-0.5 pb-1.5">
           <Collapsible.Trigger class="focus-visible:ring-ring/50 flex w-full cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] outline-none focus-visible:ring-2">

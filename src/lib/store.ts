@@ -139,23 +139,47 @@ export function withExtraShips(ships: CatalogShip[]): CatalogShip[] {
 }
 
 export const isWarbondSku = (k: Pick<Sku, 'title'>) => /warbond/i.test(k.title);
-export const usd = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
+// Built once: `toLocaleString` makes a new formatter per call, which showed up in profiles of 500-row tables.
+const USD_WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const USD_CENTS = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const usd = (cents: number) => `$${(cents % 100 ? USD_CENTS : USD_WHOLE).format(cents / 100)}`;
 
-/** Normalize a ship name for matching hangar/buyback text against catalog names. */
+const keys = new Map<string, string>();
+/** Normalize a ship name for matching hangar/buyback text against catalog names. Memoized: matching walks the whole catalog per name. */
 export function shipKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\b(warbond|standard|edition|lti|wb|best in show|bis \d{4}|\d{4} best in show)\b/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  let k = keys.get(name);
+  if (k === undefined) {
+    k = name
+      .toLowerCase()
+      .replace(/\b(warbond|standard|edition|lti|wb|best in show|bis \d{4}|\d{4} best in show)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    if (keys.size > 50_000) keys.clear();
+    keys.set(name, k);
+  }
+  return k;
 }
 
+/** Per-catalog memo for name → match lookups (the catalog array is the key, so a new catalog starts fresh). */
+export function memoFor<T>(cache: WeakMap<object, Map<string, T>>, ships: object, name: string, find: () => T): T {
+  let m = cache.get(ships);
+  if (!m) cache.set(ships, (m = new Map()));
+  if (m.has(name)) return m.get(name)!;
+  const v = find();
+  m.set(name, v);
+  return v;
+}
+
+const matched = new WeakMap<object, Map<string, CatalogShip | null>>();
 /**
  * Find the catalog ship a free-text name refers to: exact key, then the longest catalog name contained in it, then
  * (hangar names drop model codes: "Wolf" for "L-21 Wolf") the catalog name that is the text with only a model code
  * in front — shortest wins ("Wolf" → L-21 Wolf, not L-22 Alpha Wolf).
  */
 export function matchShip(name: string, ships: CatalogShip[]): CatalogShip | null {
+  return memoFor(matched, ships, name, () => findShip(name, ships));
+}
+function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
   const k = shipKey(name);
   if (!k) return null;
   let best: CatalogShip | null = null;

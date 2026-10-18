@@ -6,7 +6,7 @@
  */
 import { cell, type Pledge } from './hangar';
 import { itemKey } from './melt';
-import { matchShip, paintKey, shipKey, type CatalogShip, type StorePaint } from './store';
+import { matchShip, memoFor, paintKey, shipKey, type CatalogShip, type StorePaint } from './store';
 
 export type Category = 'ship' | 'paint' | 'armor' | 'weapon' | 'fps' | 'component' | 'decoration' | 'hangar' | 'game' | 'insurance' | 'credits' | 'other';
 
@@ -50,12 +50,16 @@ const GENERIC = new Set(
   ),
 );
 
+const families = new WeakMap<object, Map<string, string>>();
 /**
  * Hull family of a catalog ship — the word paints are usually named after: "Cutlass Black" → "cutlass",
  * "F7C Hornet Mk II" → "hornet", "300i" → "300i". First non-generic token of ≥ 3 chars that isn't a short
  * model code (letters+digits like f7c, a2, c2) unless it's the only token.
  */
 export function family(name: string, ships: CatalogShip[] = []): string {
+  return ships.length ? memoFor(families, ships, name, () => findFamily(name, ships)) : findFamily(name, ships);
+}
+function findFamily(name: string, ships: CatalogShip[]): string {
   // Model lines the store paints as one ("100 series", "300 series"): 100i / 125a / 135c are one family, not three.
   const first = shipKey(name).split(' ').find(Boolean) ?? '';
   for (const [, hull, fam] of SERIES) if (hull.test(first)) return fam;
@@ -98,11 +102,15 @@ function baseTokens(ships: CatalogShip[]): Set<string> {
   return set;
 }
 
+const fitting = new WeakMap<object, Map<string, CatalogShip[]>>();
 /**
  * Catalog ships an item (paint/component/…) is for: ships whose full name is in the title win (most specific);
  * otherwise every ship of the family named in the title. Empty when nothing matches.
  */
 export function shipsFor(title: string, ships: CatalogShip[]): CatalogShip[] {
+  return [...memoFor(fitting, ships, title, () => findFits(title, ships))];
+}
+function findFits(title: string, ships: CatalogShip[]): CatalogShip[] {
   // RSI paint titles put the hull before a dash ("Cutlass - Black and White Livery"): when that part names a
   // ship, match only it — otherwise colour words in the paint name ("Black") look like variants (Cutlass Black).
   const head = title.split(/\s[-–—:]\s/)[0]!;

@@ -419,18 +419,24 @@ export function hangarCsv(list: Pledge[]): string {
 /** Page size every hangar read uses — a pledge's page is its position in the list (RSI order) at this size. */
 export const HANGAR_PAGE = 50;
 
+const rowOf = new WeakMap<Pledge[], Map<number, number>>();
 /**
  * Hangar page a pledge sits on (gift / melt / reclaim happen there). Page = the one it was read from, else from its
  * index in the saved list. `rsiplus=<id>` makes the RSI content script scroll to and highlight that pledge;
  * `rsiplus_do=melt|gift` also opens RSI's own melt / gift dialog for it (the password is typed there, never in RSI+).
  */
 export function hangarUrl(all: Pledge[], id: number, action?: 'melt' | 'gift', gone?: ReadonlySet<number>): string {
-  const idx = all.findIndex((p) => p.id === id);
+  // One id → row map per list: a table builds a link for each of its 500 rows.
+  let rows = rowOf.get(all);
+  if (!rows || rows.size !== all.length) rowOf.set(all, (rows = new Map(all.map((p, i) => [p.id, i]))));
+  const idx = rows.get(id) ?? -1;
   // RSI only removes rows, so every pledge after a melted one moves up by one: with `gone` (melted since the
   // hangar was read, still in `all`), the page comes from the index minus the gone rows above it.
   let before = 0;
   if (gone?.size && idx >= 0) for (let i = 0; i < idx; i++) if (gone.has(all[i]!.id)) before++;
-  const page = before ? Math.floor((idx - before) / HANGAR_PAGE) + 1 : (all[idx]?.page ?? (idx >= 0 ? Math.floor(idx / HANGAR_PAGE) + 1 : 1));
+  // RSI serves 10 a page whatever `pagesize` says: go by how many pledges were actually read from page 1.
+  const per = before ? all.filter((p) => p.page === 1).length || HANGAR_PAGE : HANGAR_PAGE;
+  const page = before ? Math.floor((idx - before) / per) + 1 : (all[idx]?.page ?? (idx >= 0 ? Math.floor(idx / HANGAR_PAGE) + 1 : 1));
   return `https://robertsspaceindustries.com/account/pledges?page=${page}&pagesize=${HANGAR_PAGE}&rsiplus=${id}${action ? `&rsiplus_do=${action}` : ''}`;
 }
 

@@ -24,6 +24,13 @@ function keysOf(p: Pledge): string[] {
 }
 /** LTI is worth keeping too: an LTI hull is a separate thing from the same hull without it. */
 const ltiKeys = (p: Pledge) => (p.lti ? p.items.filter((i) => /^(ship|vehicle)$/i.test(i.kind)).map((i) => `lti:${itemKey(i.title)}`) : []);
+const allKeyCache = new WeakMap<Pledge, string[]>();
+/** `keysOf` + `ltiKeys`, once per pledge: the planners recount every pledge on each pick or chip change. */
+function allKeys(p: Pledge): string[] {
+  let k = allKeyCache.get(p);
+  if (!k) allKeyCache.set(p, (k = [...keysOf(p), ...ltiKeys(p)]));
+  return k;
+}
 
 /** Worth melting: RSI allows it and it gives credit ($0 pledges — gifts, rewards — only lose you the item). */
 export const canMelt = (p: Pledge) => p.meltable && p.value > 0;
@@ -72,13 +79,13 @@ export interface DedupeOptions {
 
 export function duplicatePlan(all: Pledge[], opts: DedupeOptions = {}): Pledge[] {
   const count = new Map<string, number>();
-  for (const p of all) for (const k of [...keysOf(p), ...ltiKeys(p)]) count.set(k, (count.get(k) ?? 0) + 1);
+  for (const p of all) for (const k of allKeys(p)) count.set(k, (count.get(k) ?? 0) + 1);
   const pick: Pledge[] = [];
   const pool = all
     .filter((p) => canMelt(p) && p.type !== 'upgrade' && !p.hasGame && p.items.length && (!opts.types || opts.types.has(p.type)) && !(opts.keepLti && p.lti) && !opts.never?.has(p.id))
     .sort((a, b) => b.value - a.value || a.id - b.id);
   for (const p of pool) {
-    const keys = [...keysOf(p), ...ltiKeys(p)];
+    const keys = allKeys(p);
     if (!keys.every((k) => (count.get(k) ?? 0) >= need(opts.keep, k) + 1)) continue;
     for (const k of keys) count.set(k, count.get(k)! - 1);
     pick.push(p);
@@ -89,7 +96,7 @@ export function duplicatePlan(all: Pledge[], opts: DedupeOptions = {}): Pledge[]
 /** Kept copies of every key when `picked` is melted (helper for marginal checks). */
 function keptCounts(all: Pledge[], picked: Set<number>): Map<string, number> {
   const kept = new Map<string, number>();
-  for (const p of all) if (!picked.has(p.id)) for (const k of [...keysOf(p), ...ltiKeys(p)]) kept.set(k, (kept.get(k) ?? 0) + 1);
+  for (const p of all) if (!picked.has(p.id)) for (const k of allKeys(p)) kept.set(k, (kept.get(k) ?? 0) + 1);
   return kept;
 }
 
@@ -128,7 +135,6 @@ export function targetPlan(all: Pledge[], target: number, opts: DedupeOptions = 
   const picked = new Set<number>();
   let credit = 0;
   const kept = keptCounts(all, picked);
-  const allKeys = (p: Pledge) => [...keysOf(p), ...ltiKeys(p)];
   const take = (p: Pledge) => {
     picked.add(p.id);
     credit += p.value;
