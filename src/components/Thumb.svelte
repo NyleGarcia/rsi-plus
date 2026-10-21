@@ -23,6 +23,18 @@
     class?: string;
   } = $props();
 
+  /**
+   * The Tooltip mounts on the first hover only: a bits-ui Tooltip per row (state, ids, floating setup) made a
+   * 550-row store table take ~1 s to build; a bare <img> costs nothing. The first hover swaps the img for the
+   * trigger under the pointer and opens the preview; from then on the Tooltip handles hovers itself.
+   */
+  let armed = $state(false);
+  let open = $state(false);
+  const arm = () => {
+    if (armed) return;
+    armed = true;
+    open = true;
+  };
   const bigOf = (thumb: string) => thumb.replace(/\/[^/]+\.(jpe?g|png|webp)(\?.*)?$/i, '/slideshow.jpg');
   /** Fall back to the thumb when the store has no slideshow image for this media id. */
   const fallback = (e: Event, thumb: string) => {
@@ -32,15 +44,19 @@
 </script>
 
 {#if src}
-  <Tooltip.Root delayDuration={150}>
-    <Tooltip.Trigger>
-      {#snippet child({ props })}
-        <img {...props} class={cn('inline-block shrink-0 cursor-zoom-in rounded-md object-cover align-middle', className)} {src} alt="" {width} {height} loading="lazy" />
-      {/snippet}
-    </Tooltip.Trigger>
-    <Tooltip.Content side="right" align="start" sideOffset={6} class="bg-popover text-popover-foreground grid max-w-[520px] gap-0 border p-1.5 shadow-md" arrowClasses="bg-popover fill-popover">
-      <img class="block h-auto w-[508px] max-w-[calc(100vw-32px)] rounded-md" src={bigOf(src)} alt="" onerror={(e) => fallback(e, src!)} />
-      <div class="px-1 pt-1.5 pb-0.5 text-xs font-semibold">{name}</div>
-    </Tooltip.Content>
-  </Tooltip.Root>
+  {#if armed}
+    <Tooltip.Root delayDuration={150} bind:open>
+      <Tooltip.Trigger>
+        {#snippet child({ props })}
+          <img {...props} class={cn('inline-block shrink-0 cursor-zoom-in rounded-md object-cover align-middle', className)} {src} alt="" {width} {height} loading="lazy" />
+        {/snippet}
+      </Tooltip.Trigger>
+      <Tooltip.Content side="right" align="start" sideOffset={6} class="bg-popover text-popover-foreground grid max-w-[520px] gap-0 border p-1.5 shadow-md" arrowClasses="bg-popover fill-popover">
+        <img class="block h-auto w-[508px] max-w-[calc(100vw-32px)] rounded-md" src={bigOf(src)} alt="" onerror={(e) => fallback(e, src!)} />
+        <div class="px-1 pt-1.5 pb-0.5 text-xs font-semibold">{name}</div>
+      </Tooltip.Content>
+    </Tooltip.Root>
+  {:else}
+    <img class={cn('inline-block shrink-0 cursor-zoom-in rounded-md object-cover align-middle', className)} {src} alt="" {width} {height} loading="lazy" onpointerenter={arm} />
+  {/if}
 {/if}

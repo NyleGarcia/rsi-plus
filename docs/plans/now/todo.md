@@ -1,10 +1,10 @@
 ---
 title: Now
 tags: [plans]
-updated: 2026-10-13
+updated: 2026-10-20
 ---
 # Now
-- [ ] Live-verify Plan ahead: pick a hull with no CCU on sale, chain shows *Later* steps + *to pay now* / *later* tiles, Verify marks them *waits for a sale*, save it; after a catalog refresh with that CCU on sale the Feed shows the *Store* alert opening `#ccu` and the saved chain says *on sale now*; Ship catalog *Not on sale now* filter + last-seen dates after a day of refreshes
+- [ ] Live-verify Plan ahead: pick a hull with no CCU on sale, chain shows *Later* steps + *to pay now* / *later* tiles, Verify marks them *waits for a sale*, save it; after a catalog refresh with that CCU on sale the Feed shows the *Store* alert opening `#ccu` and the saved chain says *on sale now*; Ship catalog *Not on sale* segment + last-seen dates after a day of refreshes
 - [ ] Live-verify the Firefox build (`about:debugging` → Load Temporary Add-on → `rsi-plus-<v>-firefox.zip`): popup/hub open, background poll with the `Rsi-Token` cookie, hangar load from the hub page, Spectrum MAIN-world hook, badge count, party ding; then submit to AMO (sources zip) and decide listed vs self-hosted signing
 - [ ] Live-verify the Edge and Brave zips load (identical to Chrome's); Brave: Shields on robertsspaceindustries.com don't block the hub's hangar fetches
 - [ ] Live-verify thread-list row detection + badges on a channel page (logged in)
@@ -29,7 +29,7 @@ updated: 2026-10-13
 - [ ] Live-verify account switcher: cookie names captured (`Rsi-Token`, `Rsi-Account-Auth`, `_rsi_device`, `Rsi-XSRF`), switch lands logged in without 2FA, incognito list separate
 - [ ] Live-verify CCU planner v2 on a real hangar: gifted detection (melt value 0), store-start chains, saved-chain re-pricing, `Pledge.value` as paid price for owned CCUs
 - [ ] Live-verify Chairman's Club card on a Concierge account (level, since, gauge %, earned list, specials) and that a non-Concierge account shows the "starts at $1,000" line, not an error
-- [ ] Live-verify Store → Browse on your session: *Concierge* chip lists `isVip` ships + items (Ships for sale shows the Concierge badge on those hulls); *Subscribers* chip — badge read from `AccountBadgesQuery` (id 5) and the Subscribers Store rows if subscribed, else the "RSI hides it" line; category counts; owned ×n on paints / packs you hold
+- [ ] Live-verify Store → Browse on your session: *Concierge* chip lists `isVip` ships + items (Ships for sale shows the Concierge badge on those hulls); *Subscribers* chip — badge read from `AccountBadgesQuery` (id 5) and the Subscribers Store rows if subscribed, else the "RSI hides it" line; category tab counts, in-stock default with *Out of stock · n* toggle, price range; open a pack / gear kit → contents + "saves $x (y%) · $z apart" (Keystone Paint Collection 30%, Red Alert collection 18%), career kits say *not sold apart*; cart button adds a paint on your session; owned ×n on paints / packs you hold
 - [ ] Live-verify the new hangar row fields on a full hangar: a cash-paid pledge shows `paidWith: cash` (only store-credit rows were in the saved sample), a named ship shows *name: …* (sample had `null` nameable lists), `availability` other than Attributed, `configValue` > 0
 - [ ] Live-verify hangar item thumbnails: reload the hangar, Paints by ship shows pictures for owned paints with no store listing (`PledgeItem.image` from `.item .image`); if blank, save a hangar page (`/account/pledges`) and check the item markup
 - [ ] Click through the flat sidebar: every entry one page, Melt calculator keeps ticks when hopping to Pledges and back, My ships → paints link lands on Paints by ship with the hull filled in, old bookmarks (`#hangar?view=melt`, `#ships?view=bundle`, `#store?view=items&cat=concierge`) redirect, popup entries open the right page
