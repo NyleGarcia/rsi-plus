@@ -10,7 +10,10 @@
   import { fetchStoreItems, paintKey, STORE_CATEGORIES, usd, type StoreCategory, type StoreItem, type StoreListing } from '@/lib/store';
   import type { Concierge } from '@/lib/concierge';
   import { sortBy, type SortState } from '@/lib/sort';
+  import { listingEntries } from '@/lib/storelog';
+  import { saveStoreCopy } from '@/lib/storelog-save';
   import SortTh from './SortTh.svelte';
+  import StoreLog from './StoreLog.svelte';
   import Thumb from './Thumb.svelte';
   import Segmented from './Segmented.svelte';
   import * as Card from '@/components/ui/card';
@@ -70,6 +73,7 @@
       const v = await fetchStoreItems();
       await storeItemsItem.setValue(v);
       items = v;
+      await saveStoreCopy('listing', listingEntries(v), v.at);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -127,6 +131,7 @@
 </script>
 
 <div class="grid gap-4">
+  <StoreLog />
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-lg font-semibold">Browse</Card.Title>

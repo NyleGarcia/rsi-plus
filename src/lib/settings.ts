@@ -7,6 +7,7 @@ import type { OrgCache } from './orgs';
 import type { Goal, SavedChain } from './ccu';
 import type { BuybackItem, Credits, Pledge } from './hangar';
 import type { Catalog, PaintCatalog, SaleHistory, StoreListing } from './store';
+import type { StoreChange, StoreSnapshot } from './storelog';
 import type { Concierge } from './concierge';
 import type { Profiles } from './accounts';
 import type { ReadState } from './read';
@@ -110,6 +111,9 @@ export const storeItemsItem = storage.defineItem<StoreListing | null>(acct('loca
 export const conciergeItem = storage.defineItem<Concierge | null>(acct('local:concierge'), { fallback: null });
 export const paintCatalogItem = storage.defineItem<PaintCatalog | null>('local:paints', { fallback: null });
 /** Star Citizen crowdfund stats per chart range (public), for the Wallet tab; refreshed hourly when open. */
+/** Store changes log (`lib/storelog.ts`): last copy of each source + the add / remove groups, newest first. */
+export const storeSnapshotItem = storage.defineItem<StoreSnapshot>('local:storeSnapshot', { fallback: {} });
+export const storeLogItem = storage.defineItem<StoreChange[]>('local:storeLog', { fallback: [] });
 export const fundingItem = storage.defineItem<Partial<Record<FundingRange, Funding>>>('local:funding', { fallback: {} });
 /** Ships you want: notify when a warbond CCU / standalone sale appears or the price drops. */
 export interface WishShip {
