@@ -322,9 +322,12 @@ type RawListing = {
   isVip?: boolean;
   isWarbond?: boolean;
   isPackage?: boolean;
+  /** What the SKU grants: `ShipGameItem` (a hull) or `BaseGameItem` (paint, armor, weapon, insurance, hangar, UEC …). */
+  gameItems?: { __typename?: string; name: string }[] | null;
 };
+/** `gameItems` is what RSI's own *Details* modal (`DetailsItemModalQuery`) shows as a listing's contents — verified 2026-10-20. */
 const LISTING_QUERY =
-  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage } ... on TyProduct { isVip } } totalCount } } }';
+  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage gameItems { __typename name } } ... on TyProduct { isVip } } totalCount } } }';
 
 export type StoreCategory = 'paints' | 'packs' | 'gear' | 'addons' | 'ships' | 'packages' | 'subscribers';
 export const STORE_CATEGORIES: { id: StoreCategory; label: string; products: string[] }[] = [
@@ -336,6 +339,12 @@ export const STORE_CATEGORIES: { id: StoreCategory; label: string; products: str
   { id: 'addons', label: 'Add-ons', products: ['3'] },
   { id: 'subscribers', label: 'Subscribers store', products: ['65'] },
 ];
+/** One thing inside a listing, as RSI names it ("ATLS GEO", "24 Month Insurance", "890 Jump - Penumbra Paint"). */
+export interface StoreContent {
+  name: string;
+  /** A hull (`ShipGameItem`) — priced from the ship catalog's MSRP. */
+  ship?: true;
+}
 export interface StoreItem extends StorePaint {
   category: StoreCategory;
   /** RSI's own label ("Standalone Ships", "Packs" …). */
@@ -343,6 +352,8 @@ export interface StoreItem extends StorePaint {
   /** Concierge-only listing. */
   vip: boolean;
   warbond: boolean;
+  /** Everything the listing grants (`gameItems`); missing on copies saved before it was read. Two or more = a bundle. */
+  contents?: StoreContent[];
 }
 export interface StoreListing {
   at: number;
@@ -410,7 +421,8 @@ export async function fetchStoreItems(): Promise<StoreListing> {
       const it = mapListing(r);
       if (seen.has(it.id)) continue;
       seen.add(it.id);
-      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name) });
+      const contents: StoreContent[] = (r.gameItems ?? []).filter((g) => g?.name).map((g) => ({ name: g.name.replace(/\s+/g, ' ').trim(), ...(g.__typename === 'ShipGameItem' ? { ship: true as const } : {}) }));
+      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name), contents });
     }
   }
   return { at: Date.now(), items, subscriber: await fetchSubscriberBadge().catch(() => null) };
