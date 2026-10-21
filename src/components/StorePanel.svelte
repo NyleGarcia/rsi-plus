@@ -1,5 +1,6 @@
 <script lang="ts">
   import Combobox from './Combobox.svelte';
+  import Segmented from './Segmented.svelte';
   import { bg } from '@/lib/messages';
   import { inventory, ownedShipsWithPaints, type GameShip, type OwnedShip } from '@/lib/items';
   import { catalogItem, gameShipsItem, hangarItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
@@ -34,7 +35,10 @@
   let loading = $state(false);
   let q = $state('');
   let maker = $state('');
-  let only = $state<'' | 'wish' | 'warbond' | 'standalone' | 'ccu' | 'not-on-sale' | 'concept' | 'owned' | 'not-owned'>('');
+  /** Default: hulls the store sells right now (a CCU to them or a standalone). `off` = the rest, `all` = every hull. */
+  type Sale = 'sale' | 'off' | 'all';
+  let sale = $state<Sale>('sale');
+  let only = $state<'' | 'wish' | 'warbond' | 'standalone' | 'ccu' | 'concept' | 'owned' | 'not-owned'>('');
   type Col = 'wish' | 'name' | 'msrp' | 'offer' | 'saving';
   let sort = $state<SortState<Col>>({ key: 'msrp', dir: 'asc' });
 
@@ -81,6 +85,7 @@
     const query = q.trim().toLowerCase();
     const list = (cat?.ships ?? []).filter(
       (s) =>
+        (sale === 'all' || (sale === 'sale') === onSale(s)) &&
         (!maker || s.manufacturer === maker) &&
         (!query || `${s.name} ${s.manufacturer} ${s.focus}`.toLowerCase().includes(query)) &&
         (only === '' ||
@@ -88,7 +93,6 @@
           (only === 'warbond' && !!warbondOf(s)) ||
           (only === 'standalone' && s.standalone.some((k) => k.available)) ||
           (only === 'ccu' && s.ccu.length > 0) ||
-          (only === 'not-on-sale' && !onSale(s)) ||
           (only === 'concept' && /concept/i.test(s.flyable)) ||
           (only === 'owned' && owned.has(s.id)) ||
           (only === 'not-owned' && !owned.has(s.id))),
@@ -102,6 +106,13 @@
       saving: (s) => saving(s) || null,
     });
   });
+  /** Rows on screen: first 40 with the click, 40 more a frame — *All hulls* (240 rows) blocked for ~250 ms in one go. */
+  let budget = $derived.by(() => (void shown, 40));
+  $effect(() => {
+    if (budget >= shown.length) return;
+    const t = setTimeout(() => (budget += 40), 16);
+    return () => clearTimeout(t);
+  });
   type Only = typeof only;
   const ONLY = $derived<{ value: Only; label: string }[]>([
     { value: '', label: 'All ships' },
@@ -109,22 +120,26 @@
     { value: 'warbond', label: 'Warbond CCU on sale' },
     { value: 'standalone', label: 'Standalone on sale' },
     { value: 'ccu', label: 'Any CCU on sale' },
-    { value: 'not-on-sale', label: `Not on sale now (${(cat?.ships ?? []).filter((s) => !onSale(s)).length})` },
     { value: 'concept', label: 'Concept ships' },
     { value: 'owned', label: `Ships I own (${owned.size})` },
     { value: 'not-owned', label: "Ships I don't own" },
   ]);
   /** bits-ui Select treats '' as "nothing picked", so "All ships" travels as 'all'. */
   const ALL = 'all';
-
+  const onSaleCount = $derived((cat?.ships ?? []).filter(onSale).length);
+  const SALE = $derived<{ id: Sale; label: string; hint: string }[]>([
+    { id: 'sale', label: `On sale · ${onSaleCount}`, hint: 'Hulls the store sells right now: a CCU to them or a standalone' },
+    { id: 'off', label: `Not on sale · ${(cat?.ships.length ?? 0) - onSaleCount}`, hint: "Hulls with nothing on sale now — Plan CCU still works for them (Plan ahead), with the last date RSI+ saw them on sale" },
+    { id: 'all', label: `All hulls · ${cat?.ships.length ?? 0}`, hint: 'Every hull in the catalog' },
+  ]);
 </script>
 
 <Card.Root>
   <Card.Header>
     <Card.Title class="text-lg font-semibold">Ship catalog</Card.Title>
     <Card.Description>
-      {cat ? `Every ship in the pledge store — ${cat.ships.length} hulls, ${cat.ships.filter(onSale).length} on sale · prices from ${new Date(cat.at).toLocaleString()}` : loading ? 'Loading…' : ''}
-      · ★ wishlist alerts when a warbond / sale price appears (checked every 30 min) · <em>Plan CCU</em> works for hulls not on sale too (Plan ahead)
+      {cat ? `What the pledge store sells right now — ${onSaleCount} of ${cat.ships.length} hulls · prices from ${new Date(cat.at).toLocaleString()}` : loading ? 'Loading…' : ''}
+      · ★ wishlist alerts when a warbond / sale price appears (checked every 30 min) · <em>Not on sale</em> lists the rest; <em>Plan CCU</em> works for those too (Plan ahead)
     </Card.Description>
     <Card.Action class="flex flex-wrap items-center gap-2">
       <Button variant="outline" href="#paint-rebuy" title="Melt paints you own and buy them back together with RSI's multi-paint discount — best value per cart size">Paint rebuy value →</Button>
@@ -134,6 +149,7 @@
   <Card.Content class="grid gap-3">
     {#if error}<span class="text-destructive">{error}</span>{/if}
     <div class="flex flex-wrap items-center gap-2">
+      <Segmented options={SALE} bind:value={sale} ariaLabel="On sale" />
       <Input class="w-60" placeholder="Search ship, maker, role" bind:value={q} aria-label="Search ships" />
       <div class="w-[220px]"><Combobox options={makers.map((m) => ({ value: m, label: m }))} value={maker || null} onpick={(v) => (maker = v ?? '')} ariaLabel="Manufacturer" placeholder="All makers" /></div>
       <Select.Root type="single" value={only || ALL} onValueChange={(v) => (only = v === ALL ? '' : (v as Only))}>
@@ -154,7 +170,7 @@
         </Table.Row>
       </Table.Header>
       <Table.Body>
-        {#each shown as s (s.id)}
+        {#each shown.slice(0, budget) as s (s.id)}
           {@const wb = warbondOf(s)}
           {@const on = wished(s.id)}
           <Table.Row>
@@ -198,6 +214,9 @@
             </Table.Cell>
           </Table.Row>
         {/each}
+        {#if budget < shown.length}
+          <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+        {/if}
       </Table.Body>
     </Table.Root>
   </Card.Content>

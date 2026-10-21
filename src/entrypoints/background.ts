@@ -18,13 +18,16 @@ import {
   ccuChainsItem,
   paintCatalogItem,
   saleHistoryItem,
+  storeItemsItem,
   wishlistItem,
   settingsItem,
   watchesItem,
 } from '@/lib/settings';
 import { ding } from '@/lib/sound';
 import { chainEvents } from '@/lib/ccu';
-import { fetchCatalog, fetchPaints, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
+import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, withExtraShips, type Catalog, type PaintCatalog } from '@/lib/store';
+import { catalogEntries, listingEntries } from '@/lib/storelog';
+import { saveStoreCopy } from '@/lib/storelog-save';
 import { threadUrl } from '@/lib/types';
 import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
 
@@ -219,6 +222,17 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
   } catch (e) {
     errors.push(`store: ${(e as Error).message}`);
   }
+  // Store listing (paints, packs, gear …) hourly, for the store changes log on Browse.
+  try {
+    const listing = await storeItemsItem.getValue();
+    if (!listing || now - listing.at > 60 * 60_000) {
+      const v = await fetchStoreItems();
+      await storeItemsItem.setValue(v);
+      await saveStoreCopy('listing', listingEntries(v), v.at);
+    }
+  } catch (e) {
+    errors.push(`store listing: ${(e as Error).message}`);
+  }
 
   // Re-read before writing: the user may have edited watches while we polled.
   const cur = await getWatches();
@@ -301,11 +315,12 @@ let catalogPromise: Promise<Catalog> | null = null;
 /** Public pledge-store catalog; cached 30 min unless `fresh`. */
 async function catalog(fresh: boolean): Promise<Catalog> {
   const cached = await catalogItem.getValue();
-  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return cached;
+  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return { ...cached, ships: withExtraShips(cached.ships) };
   catalogPromise ??= fetchCatalog()
     .then(async (c) => {
       await catalogItem.setValue(c);
       await saleHistoryItem.setValue(recordSales(await saleHistoryItem.getValue(), c.ships, c.at));
+      await saveStoreCopy('catalog', catalogEntries(c), c.at).catch((e) => console.warn('[RSI+] store log', e));
       return c;
     })
     .finally(() => (catalogPromise = null));

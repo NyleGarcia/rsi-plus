@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prints the next prerelease version (<next>-dev.<N>); N = $RUN_NUMBER, else commit count since the last stable tag.
+# Prints the next prerelease version (<next>-devNNNN, N zero-padded to 4 so tags sort right as text on GitHub too);
+# N = $RUN_NUMBER, else commit count since the last stable tag.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -25,4 +26,4 @@ if [ "$breaking" = 1 ]; then
 elif [ "$feat" = 1 ]; then minor=$((minor + 1)); patch=0
 else patch=$((patch + 1)); fi
 
-echo "$major.$minor.$patch-dev.${RUN_NUMBER:-$count}"
+printf '%s.%s.%s-dev%04d\n' "$major" "$minor" "$patch" "${RUN_NUMBER:-$count}"

@@ -33,6 +33,11 @@ describe('melt', () => {
     expect(meltSummary(all, new Set(duplicatePlan(all).map((p) => p.id))).lost).toEqual([]);
   });
 
+  it('pledges labelled Keep are never picked', () => {
+    expect(duplicatePlan(all, { never: new Set([2]) }).map((p) => p.id)).not.toContain(2);
+    expect(targetPlan(all, 100, { never: new Set([2, 4]) }).picked.map((p) => p.id)).not.toContain(4);
+  });
+
   it('$0 pledges are never picked (nothing to gain)', () => {
     expect(canMelt(all[7]!)).toBe(false);
     expect(duplicatePlan(all).map((p) => p.id)).not.toContain(8);

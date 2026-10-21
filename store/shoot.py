@@ -24,7 +24,8 @@ random.seed(7)
 def day(y, m, d): return date(y, m, d).strftime('%B %d, %Y')
 def pledge(id, name, value, when, type, items, ships, *, lti=False, ins='', wb=False, gift=True, melt=True, game=False, up=False, upgrade=None, nick=''):
     return dict(id=id, name=name, value=value, date=when, type=type, items=items, ships=ships, upgrade=upgrade, lti=lti,
-                insurance=ins or ('LTI' if lti else ''), warbond=wb, giftable=gift, meltable=melt, hasGame=game, upgraded=up, nickname=nick, page=1 + id // 50)
+                insurance=ins or ('LTI' if lti else ''), warbond=wb, giftable=gift, meltable=melt, hasGame=game, upgraded=up, nickname=nick, page=1 + id // 50,
+                **({'paidWith': 'cash' if wb or id % 3 == 0 else 'credit'} if value > 0 else {}))
 S = lambda t: dict(title=t, kind='Ship')
 P = lambda t: dict(title=t, kind='Paints')
 I = lambda t, k='Item': dict(title=t, kind=k)
@@ -76,7 +77,7 @@ BUYBACK = dict(at=HANGAR['at'], complete=True, page=1, items=[
     bb(505, 'Carrack - Stormbringer Paint', day(2023, 11, 24), [P('Carrack - Stormbringer Paint')], 2000, 2500, type='paint'),
     bb(506, 'Syulen', day(2024, 5, 24), [S('Syulen'), I('120 Month Insurance', 'Insurance')], 8000, 8000),
 ])
-SEED = dict(hangar=HANGAR, buyback=BUYBACK)
+SEED = dict(hangar=HANGAR, buyback=BUYBACK, pledgeLabels={'2': ['Keep', 'Main flyer'], '3': ['CCU fodder'], '5': ['LTI token'], '20': ['Melt']})
 WISH = [dict(id=62, name='Carrack', lowest=None), dict(id=116, name='Polaris', lowest=None)]
 
 # ---------------------------------------------------------------- tiny CDP client
@@ -131,6 +132,21 @@ def main():
         SLEEP = "(ms) => new Promise((r) => setTimeout(r, ms))"
         shots = [
             ('hangar', '#hangar', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}}, None),
+            ('hangar-labels', '#hangar', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const inp = document.querySelector('input[aria-label=Search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, 'Cutlass Black'); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(600);
+               const t = document.querySelector('table'); t?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -20); await sleep(200);
+               [...document.querySelectorAll('table button')].find((b) => /Label|label/.test(b.getAttribute('title') ?? ''))?.click(); await sleep(700); }})()"""),
+            ('labels-remove', '#hangar', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
+             f"""(async () => {{ const sleep = {SLEEP}; const errs = []; addEventListener('error', (e) => errs.push(String(e.message)));
+               const inp = document.querySelector('input[aria-label=Search]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, 'Cutlass Black'); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(600);
+               document.querySelector('button[aria-label="Remove label Main flyer"]')?.click(); await sleep(600);
+               document.querySelector('button[aria-label="Edit labels"]')?.click(); await sleep(500);
+               [...document.querySelectorAll('label')].find((l) => /^Gift/.test(l.innerText.trim()))?.querySelector('button')?.click(); await sleep(600);
+               document.querySelector('button[aria-label="Remove label Keep"]')?.click(); await sleep(600);
+               const st = (await chrome.storage.local.get('pledgeLabels')).pledgeLabels;
+               document.querySelector('table')?.scrollIntoView({{ block: 'start' }});
+               return JSON.stringify(st) + ' errs=' + errs.join(' | '); }})()"""),
             ('hangar-by-ship', '#hangar', {'rsiplus:hangar': {'byShip': True, 'hiddenSets': []}}, None),
             ('melt-calculator', '#melt', {'rsiplus:hangar': {'byShip': False, 'hiddenSets': []}},
              f"(async () => {{ const btn = {BTN}, sleep = {SLEEP}; btn('Pick duplicates')?.click(); await sleep(300); btn('Pick paints without a ship')?.click(); await sleep(500); btn('Pick duplicates')?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -70); }})()"),
@@ -148,17 +164,32 @@ def main():
                const cat = (await chrome.storage.local.get('catalog')).catalog; const t = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 30000 && x.msrp <= 60000).sort((a, b) => b.msrp - a.msrp)[0];
                await pick('From ship', 'Cutlass Black'); if (t) await pick('Target ship', t.name); await sleep(2500);
                const el = [...document.querySelectorAll('span')].find((e) => e.innerText === 'to pay now'); (el?.closest('[data-slot=card]')?.parentElement ?? document.querySelector('fieldset, [role=group]'))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -240); return t?.name; }})()"""),
+            ('ccu-orion', '#ccu', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               const pick = async (label, text) => {{ document.querySelector(`button[aria-label="${{label}}"]`)?.click(); await sleep(600); const inp = document.querySelector(`input[aria-label="${{label}}"]`); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, text); inp.dispatchEvent(new Event('input', {{ bubbles: true }})); await sleep(700); const opt = [...document.querySelectorAll('[role=option]')].find((o) => o.innerText.trim().startsWith(text)); opt?.click(); await sleep(800); }};
+               await pick('From ship', 'Cutlass Black'); await pick('Target ship', 'Orion'); await sleep(2000);
+               const el = [...document.querySelectorAll('strong')].find((e) => e.innerText === 'Planned ahead.'); el?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -330); }})()"""),
+            ('ccu-picker', '#ccu', {},
+             f"""(async () => {{ const sleep = {SLEEP};
+               [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === 'Fleet plan')?.click(); await sleep(1500);
+               const b = document.querySelector('button[aria-label="Add a goal ship"]'); b?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -60); await sleep(300); b?.click(); await sleep(900); }})()"""),
             ('ccu-fleet', '#ccu', {},
              f"""(async () => {{ const sleep = {SLEEP};
                const cat = (await chrome.storage.local.get('catalog')).catalog; const by = (n) => cat.ships.find((x) => x.name === n);
                const later = cat.ships.filter((x) => !x.ccu.length && !x.standalone.some((k) => k.available) && x.msrp > 40000 && x.msrp <= 90000).sort((a, b) => b.msrp - a.msrp)[0];
                const mid = cat.ships.filter((x) => x.ccu.length && x.msrp > 15000 && x.msrp <= 30000).sort((a, b) => b.msrp - a.msrp)[0];
                const goals = [mid && {{ id: 'g1', fromId: null, targetId: mid.id, via: [] }}, later && {{ id: 'g2', fromId: by('Cutlass Black')?.id ?? null, targetId: later.id, via: [] }}].filter(Boolean);
+               const tab = (t) => [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === t)?.click();
+               tab('One chain'); await sleep(500);
                await chrome.storage.local.set({{ ccuGoals: {{ goals, keep: [], storeStart: false }} }});
-               [...document.querySelectorAll('[role=radio], button')].find((b) => b.innerText.trim() === 'Fleet plan')?.click(); await sleep(1500);
+               tab('Fleet plan'); await sleep(1500);
                [...document.querySelectorAll('label')].find((l) => /Plan ahead/.test(l.innerText))?.querySelector('button, [role=checkbox]')?.click(); await sleep(800);
                [...document.querySelectorAll('legend')].find((e) => /Goals/.test(e.innerText))?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -80); }})()"""),
             ('wallet', '#wallet', {}, None),
+            ('wallet-spend', '#wallet', {},
+             f"""(async () => {{ const sleep = {SLEEP}; await sleep(1500); const h = [...document.querySelectorAll('[data-slot=card-title]')].find((e) => e.innerText === 'Your spend'); h?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, -16); }})()"""),
+            ('wallet-edit', '#wallet', {},
+             f"""(async () => {{ const sleep = {SLEEP}; await sleep(1200); const btn = {BTN}; btn('Customize')?.click(); await sleep(500); const h = [...document.querySelectorAll('[data-slot=card-title]')].find((e) => e.innerText === 'Your spend'); h?.scrollIntoView({{ block: 'start' }}); window.scrollBy(0, 330); }})()"""),
             ('fan-footer', '#feed', {}, "window.scrollTo(0, document.body.scrollHeight); 1"),
             ('browse', '#browse', {}, f"(async () => {{ const sleep = {SLEEP}; for (let i = 0; i < 40 && !/listings · prices/.test(document.body.innerText); i++) await sleep(500); }})()"),
             ('store', '#store', {}, f"(async () => {{ const sleep = {SLEEP}; [...document.querySelectorAll('th button, th [role=button]')].find((b) => /Discount/.test(b.innerText))?.click(); await sleep(400); }})()"),

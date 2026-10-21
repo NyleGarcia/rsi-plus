@@ -10,6 +10,7 @@
  */
 import { token } from './api';
 import { SPECTRUM_ORIGIN } from './types';
+import { EXTRA_SHIPS } from './data/extra-ships';
 
 export interface Sku {
   id: number;
@@ -35,6 +36,8 @@ export interface CatalogShip {
   standalone: Sku[];
   /** CCU target SKUs on sale right now (Standard / Warbond / limited). */
   ccu: Sku[];
+  /** `wiki`: a hull RSI's upgrade catalog doesn't list (Kraken, Javelin…), MSRP from starcitizen.tools (`EXTRA_SHIPS`). */
+  msrpSource?: 'wiki';
 }
 
 export interface Catalog {
@@ -126,27 +129,57 @@ export async function fetchCatalog(): Promise<Catalog> {
       if (s) s.ccu = t.skus.map(sku).filter((k) => k.available);
     }
   }
-  return { at: Date.now(), ships };
+  return { at: Date.now(), ships: withExtraShips(ships) };
+}
+
+/** Add the hulls RSI's upgrade catalog never lists (`EXTRA_SHIPS`) unless it lists that name itself. */
+export function withExtraShips(ships: CatalogShip[]): CatalogShip[] {
+  const have = new Set(ships.map((s) => shipKey(s.name)));
+  return [...ships, ...EXTRA_SHIPS.filter((x) => !have.has(shipKey(x.name)) && !ships.some((s) => s.id === x.id)).map((x) => ({ ...x, standalone: [], ccu: [] }))];
 }
 
 export const isWarbondSku = (k: Pick<Sku, 'title'>) => /warbond/i.test(k.title);
-export const usd = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
+// Built once: `toLocaleString` makes a new formatter per call, which showed up in profiles of 500-row tables.
+const USD_WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const USD_CENTS = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const usd = (cents: number) => `$${(cents % 100 ? USD_CENTS : USD_WHOLE).format(cents / 100)}`;
 
-/** Normalize a ship name for matching hangar/buyback text against catalog names. */
+const keys = new Map<string, string>();
+/** Normalize a ship name for matching hangar/buyback text against catalog names. Memoized: matching walks the whole catalog per name. */
 export function shipKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\b(warbond|standard|edition|lti|wb|best in show|bis \d{4}|\d{4} best in show)\b/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  let k = keys.get(name);
+  if (k === undefined) {
+    k = name
+      .toLowerCase()
+      .replace(/\b(warbond|standard|edition|lti|wb|best in show|bis \d{4}|\d{4} best in show)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    if (keys.size > 50_000) keys.clear();
+    keys.set(name, k);
+  }
+  return k;
 }
 
+/** Per-catalog memo for name → match lookups (the catalog array is the key, so a new catalog starts fresh). */
+export function memoFor<T>(cache: WeakMap<object, Map<string, T>>, ships: object, name: string, find: () => T): T {
+  let m = cache.get(ships);
+  if (!m) cache.set(ships, (m = new Map()));
+  if (m.has(name)) return m.get(name)!;
+  const v = find();
+  m.set(name, v);
+  return v;
+}
+
+const matched = new WeakMap<object, Map<string, CatalogShip | null>>();
 /**
  * Find the catalog ship a free-text name refers to: exact key, then the longest catalog name contained in it, then
  * (hangar names drop model codes: "Wolf" for "L-21 Wolf") the catalog name that is the text with only a model code
  * in front — shortest wins ("Wolf" → L-21 Wolf, not L-22 Alpha Wolf).
  */
 export function matchShip(name: string, ships: CatalogShip[]): CatalogShip | null {
+  return memoFor(matched, ships, name, () => findShip(name, ships));
+}
+function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
   const k = shipKey(name);
   if (!k) return null;
   let best: CatalogShip | null = null;
@@ -289,9 +322,12 @@ type RawListing = {
   isVip?: boolean;
   isWarbond?: boolean;
   isPackage?: boolean;
+  /** What the SKU grants: `ShipGameItem` (a hull) or `BaseGameItem` (paint, armor, weapon, insurance, hangar, UEC …). */
+  gameItems?: { __typename?: string; name: string }[] | null;
 };
+/** `gameItems` is what RSI's own *Details* modal (`DetailsItemModalQuery`) shows as a listing's contents — verified 2026-10-20. */
 const LISTING_QUERY =
-  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage } ... on TyProduct { isVip } } totalCount } } }';
+  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage gameItems { __typename name } } ... on TyProduct { isVip } } totalCount } } }';
 
 export type StoreCategory = 'paints' | 'packs' | 'gear' | 'addons' | 'ships' | 'packages' | 'subscribers';
 export const STORE_CATEGORIES: { id: StoreCategory; label: string; products: string[] }[] = [
@@ -303,6 +339,12 @@ export const STORE_CATEGORIES: { id: StoreCategory; label: string; products: str
   { id: 'addons', label: 'Add-ons', products: ['3'] },
   { id: 'subscribers', label: 'Subscribers store', products: ['65'] },
 ];
+/** One thing inside a listing, as RSI names it ("ATLS GEO", "24 Month Insurance", "890 Jump - Penumbra Paint"). */
+export interface StoreContent {
+  name: string;
+  /** A hull (`ShipGameItem`) — priced from the ship catalog's MSRP. */
+  ship?: true;
+}
 export interface StoreItem extends StorePaint {
   category: StoreCategory;
   /** RSI's own label ("Standalone Ships", "Packs" …). */
@@ -310,6 +352,8 @@ export interface StoreItem extends StorePaint {
   /** Concierge-only listing. */
   vip: boolean;
   warbond: boolean;
+  /** Everything the listing grants (`gameItems`); missing on copies saved before it was read. Two or more = a bundle. */
+  contents?: StoreContent[];
 }
 export interface StoreListing {
   at: number;
@@ -377,7 +421,8 @@ export async function fetchStoreItems(): Promise<StoreListing> {
       const it = mapListing(r);
       if (seen.has(it.id)) continue;
       seen.add(it.id);
-      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name) });
+      const contents: StoreContent[] = (r.gameItems ?? []).filter((g) => g?.name).map((g) => ({ name: g.name.replace(/\s+/g, ' ').trim(), ...(g.__typename === 'ShipGameItem' ? { ship: true as const } : {}) }));
+      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name), contents });
     }
   }
   return { at: Date.now(), items, subscriber: await fetchSubscriberBadge().catch(() => null) };

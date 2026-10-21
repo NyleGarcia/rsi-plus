@@ -3,7 +3,8 @@
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, saleHistoryItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
+  import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
   import { lastSale, matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -34,6 +35,7 @@
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let chains = $state<SavedChain[]>([]);
   let sales = $state<SaleHistory>({});
+  let labels = $state<Labels>({});
   let error = $state('');
 
   type Mode = 'store' | 'hangar' | 'any';
@@ -66,10 +68,12 @@
     catalogItem.getValue().then((c) => (cat = c));
     ccuChainsItem.getValue().then((c) => (chains = c));
     saleHistoryItem.getValue().then((h) => (sales = h));
+    pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
-    return hangarItem.watch((h) => (hangar = h));
+    const offs = [hangarItem.watch((h) => (hangar = h)), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
+    return () => offs.forEach((o) => o());
   });
   /** Load the hangar right here (same pages and storage as the Hangar tab). */
   let hangarLoading = $state<HangarProgress | null>(null);
@@ -92,8 +96,17 @@
   const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
-  const hulls = $derived(ownedHulls(hangar?.pledges ?? [], ships));
+  /** Hull copies a fleet plan may upgrade: pledges labelled *Keep* are left out (`lib/labels.ts`). */
+  const keepIds = $derived(idsWith(labels, KEEP));
+  const hulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => !keepIds.has(p.id)), ships));
+  /** Hulls on pledges labelled *LTI token* / *CCU fodder*: Auto upgrades them first. */
+  const labelPrefer = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => idsWith(labels, PREFER).has(p.id)), ships).map((h) => h.id));
+  /** Hulls on LTI pledges (LTI tokens): one click to prefer them in a fleet plan. */
+  const ltiHulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => p.lti), ships).map((h) => h.id));
   let stopPick = $state<number | null>(null);
+  /** The target picker hides ships you already own unless asked. */
+  let targetOwned = $state(false);
+  const targetable = $derived(targetOwned ? ships : ships.filter((s) => !mine.some((m) => m.id === s.id) || s.id === toId));
   const sortedShips = $derived([...ships].sort((a, b) => a.name.localeCompare(b.name)));
   const ccus = $derived(ownedCcus(hangar?.pledges ?? [], buyback?.items ?? [], ships));
   const buybackUrl = $derived(new Map((buyback?.items ?? []).map((b) => [b.id, b.url])));
@@ -105,7 +118,17 @@
     exclude: excludeSaved ? [...new Set([...opt.exclude, ...reservedBy.keys()])] : opt.exclude,
   });
   const startId = $derived(mode === 'store' ? STORE_START : fromId);
-  const result = $derived(startId != null && toId != null ? plan(ships, ccus.owned, startId, toId, effective) : null);
+  /** Chain with today's sales; when there is none (target not on sale — Orion, Arrastra…) plan ahead without asking. */
+  const planned = $derived.by(() => {
+    if (startId == null || toId == null) return { result: null, ahead: false };
+    const r = plan(ships, ccus.owned, startId, toId, effective);
+    if (r || effective.planAhead) return { result: r, ahead: false };
+    const a = plan(ships, ccus.owned, startId, toId, { ...effective, planAhead: true });
+    return { result: a, ahead: !!a };
+  });
+  const result = $derived(planned.result);
+  /** The options the shown chain was planned with (saved with it). */
+  const used = $derived<PlanOptions>(planned.ahead ? { ...effective, planAhead: true } : effective);
   /** Running spend after each step. */
   const running = $derived(result ? result.steps.reduce<number[]>((acc, s) => [...acc, (acc.at(-1) ?? 0) + s.cost], []) : []);
   const creditCents = $derived(hangar?.credits ? Math.round(hangar.credits.usd * 100) : null);
@@ -212,7 +235,7 @@
   function link(s: Step): string | null {
     if (s.kind === 'owned' && hangar && s.ref != null) return hangarUrl(hangar.pledges, s.ref);
     if (s.kind === 'buyback' && s.ref != null) return buybackUrl.get(s.ref) ?? null;
-    if (s.kind === 'standalone' || s.kind === 'future') return byId.get(s.toId)?.link ?? null;
+    if (s.kind === 'standalone' || s.kind === 'future') return byId.get(s.toId)?.msrpSource ? null : (byId.get(s.toId)?.link ?? null);
     return UPGRADES;
   }
   const forceOf = (ref: number): 'include' | 'exclude' | '' => (opt.include.includes(ref) ? 'include' : opt.exclude.includes(ref) ? 'exclude' : '');
@@ -240,7 +263,7 @@
       steps: $state.snapshot(result.steps),
       total: result.total,
       cash: result.cash,
-      opt: $state.snapshot(effective),
+      opt: $state.snapshot(used),
     };
     await persist([...chains, c]);
     chainName = '';
@@ -254,6 +277,16 @@
     opt = { ...DEFAULT_PLAN_OPTIONS, ...c.opt, include: [...c.opt.include], exclude: [...c.opt.exclude], via: [...(c.opt.via ?? [])] };
     excludeSaved = false;
     planner = 'one';
+  }
+  /** This chain's source / target / stops as a new fleet-plan goal (last = lowest priority). */
+  let addedToFleet = $state(false);
+  async function addToFleet() {
+    if (startId == null || toId == null) return;
+    const v = await ccuGoalsItem.getValue();
+    const goal = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, fromId: startId, targetId: toId, via: [...(opt.via ?? [])], storeStart: false, lti: 'any' as const };
+    await ccuGoalsItem.setValue({ ...v, goals: [...v.goals, goal] });
+    addedToFleet = true;
+    setTimeout(() => (addedToFleet = false), 4000);
   }
   /** A fleet goal → the single planner (same options; verify + cart live there). */
   function openGoal(start: number, target: number, via: number[]) {
@@ -316,7 +349,7 @@
         hint: result
           ? `${steps.length} steps · pay ${usd(payNow)} now${waits ? ` · ${usd(result.later)} later (${waits} step${waits === 1 ? '' : 's'} wait for a sale)` : ''} · ${usd(result.savings)} under MSRP`
           : 'Source = a ship you own (or buy the cheapest from the store), target = the ship you want. Then pick what to optimise for.',
-        warn: startId != null && toId != null && !result ? (opt.planAhead ? 'No chain found with these options — allow buyback / warbond CCUs, or pick another source.' : 'No chain found with today\'s sales — turn on Plan ahead to route through ships that are not on sale now, or allow buyback / warbond CCUs.') : undefined,
+        warn: startId != null && toId != null && !result ? 'No chain found, not even planning ahead through ships not on sale — allow buyback / warbond CCUs, or pick a cheaper source.' : undefined,
       },
       {
         id: 'verify',
@@ -414,7 +447,7 @@
       </fieldset>
 
       {#if planner === 'fleet'}
-        <CcuFleet {ships} {mine} {hulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
+        <CcuFleet {ships} {mine} {hulls} {labelPrefer} keptByLabel={keepIds.size} lti={ltiHulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
       {:else}
       <div class="flex flex-wrap gap-4">
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
@@ -436,7 +469,8 @@
         </fieldset>
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
           <legend class="text-muted-foreground px-1 text-xs">4 · Target</legend>
-          <ShipSelect {ships} {mine} bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+          <ShipSelect ships={targetable} mine={targetOwned ? mine : []} saleTag bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
+          <label class="text-muted-foreground flex items-center gap-2 text-xs" title="List the ships already in your hangar too"><Checkbox bind:checked={targetOwned} /> include ships I own</label>
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <span class="text-muted-foreground" title="Hulls the chain must pass through — to fly them for a while on the way to the target">Stops</span>
             {#each opt.via ?? [] as v (v)}
@@ -452,9 +486,14 @@
           <p class="text-destructive m-0">
             No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
             it's not pricier than the start.
-            {#if !opt.planAhead}<button type="button" class="text-primary cursor-pointer border-0 bg-transparent p-0 underline-offset-4 hover:underline" onclick={() => (opt.planAhead = true)}>Turn on Plan ahead</button> to route through ships that are not on sale now.{/if}
+            Ships not on sale were tried too (Plan ahead) — pick a cheaper source or allow buyback / warbond CCUs.
           </p>
         {:else}
+          {#if planned.ahead}
+            <p class="border-warning/40 bg-warning/10 m-0 rounded-lg border px-3 py-2 text-sm">
+              <strong>Planned ahead.</strong> Nothing on sale today gets to the {name(toId)} — {byId.get(toId)?.msrpSource ? `RSI's upgrade catalog doesn't list it at all (MSRP ${usd(byId.get(toId)?.msrp ?? 0)} from starcitizen.tools; RSI sells it in rare packages / events)` : byId.get(toId)?.ccu.length ? 'its CCUs are sold out or excluded' : 'RSI sells no CCU to it right now'}{byId.get(toId)?.flyable === 'Concept' ? ' (concept ship: CCUs and sales come with events)' : ''}. Steps marked <em>Later</em> are priced at MSRP, to buy when the CCU returns ({seen(toId)}). Save the chain and the Feed tells you when it is in the store.
+            </p>
+          {/if}
           <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
             <Stat value={usd(payNow)} label="to pay now" />
             {#if result.waits}<Stat value={usd(result.later)} label={`later · ${result.waits} step${result.waits === 1 ? '' : 's'} wait for a sale`} tone="accent" />{/if}
@@ -547,7 +586,9 @@
             <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
               <Input class="h-7 w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
               <Button variant="outline" size="sm" type="submit">Save chain</Button>
+              <Button variant="outline" size="sm" type="button" onclick={addToFleet} title="Add this source → target (with its stops) as a goal at the end of your fleet plan">Add to fleet plan</Button>
               {#if saved}<span class="text-success text-[11px]">Saved “{saved}”</span>{/if}
+              {#if addedToFleet}<span class="text-success text-[11px]">Added — <button type="button" class="text-primary cursor-pointer border-0 bg-transparent p-0 underline-offset-4 hover:underline" onclick={() => (planner = 'fleet')}>open Fleet plan</button></span>{/if}
             </form>
           </div>
           <span class="text-muted-foreground text-[11px]">Or buy by hand on the RSI <a class="text-primary underline-offset-4 hover:underline" href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>

@@ -2,10 +2,12 @@ import { storage } from '#imports';
 import { NO_MUTES, type MuteRules } from './filters';
 import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
 import type { GameShip } from './items';
+import type { Labels } from './labels';
 import type { OrgCache } from './orgs';
 import type { Goal, SavedChain } from './ccu';
 import type { BuybackItem, Credits, Pledge } from './hangar';
 import type { Catalog, PaintCatalog, SaleHistory, StoreListing } from './store';
+import type { StoreChange, StoreSnapshot } from './storelog';
 import type { Concierge } from './concierge';
 import type { Profiles } from './accounts';
 import type { ReadState } from './read';
@@ -94,8 +96,10 @@ export const hangarItem = storage.defineItem<{ at: number; pledges: Pledge[]; co
 export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]; complete?: boolean; page?: number } | null>(acct('local:buyback'), { fallback: null });
 /** Saved CCU chains (planner): the CCUs they use are kept out of new plans when *Exclude saved chains* is on. */
 export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuChains'), { fallback: [] });
-/** Fleet plan (CCU planner, several goals): the goals in priority order, hulls never auto-upgraded, store start allowed. */
-export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; storeStart: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], storeStart: false } });
+/** Your labels on pledges (`lib/labels.ts`): pledge id → labels. */
+export const pledgeLabelsItem = storage.defineItem<Labels>(acct('local:pledgeLabels'), { fallback: {} });
+/** Fleet plan (CCU planner, several goals): the goals in priority order, hulls never / preferably auto-upgraded, store start allowed. */
+export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; prefer?: number[]; storeStart: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], prefer: [], storeStart: false } });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */
@@ -107,6 +111,9 @@ export const storeItemsItem = storage.defineItem<StoreListing | null>(acct('loca
 export const conciergeItem = storage.defineItem<Concierge | null>(acct('local:concierge'), { fallback: null });
 export const paintCatalogItem = storage.defineItem<PaintCatalog | null>('local:paints', { fallback: null });
 /** Star Citizen crowdfund stats per chart range (public), for the Wallet tab; refreshed hourly when open. */
+/** Store changes log (`lib/storelog.ts`): last copy of each source + the add / remove groups, newest first. */
+export const storeSnapshotItem = storage.defineItem<StoreSnapshot>('local:storeSnapshot', { fallback: {} });
+export const storeLogItem = storage.defineItem<StoreChange[]>('local:storeLog', { fallback: [] });
 export const fundingItem = storage.defineItem<Partial<Record<FundingRange, Funding>>>('local:funding', { fallback: {} });
 /** Ships you want: notify when a warbond CCU / standalone sale appears or the price drops. */
 export interface WishShip {
@@ -127,7 +134,7 @@ export const lastPollItem = storage.defineItem<{ at: number; error: string | nul
 /** Saved RSI logins for the account switcher (this context's cookie jar only — incognito has its own list). */
 export const profilesItem = storage.defineItem<Profiles>(acct('local:profiles'), { fallback: { active: null, list: [] } });
 /** Everything that belongs to one RSI account: swapped out / in with the cookies when switching profiles. */
-export const ACCOUNT_ITEMS = [readItem, watchesItem, feedItem, friendNotesItem, presenceItem, seenRequestsItem, hangarItem, buybackItem, ccuChainsItem, ccuGoalsItem, gameShipsItem, partyModeItem, partyLogItem, lastPollItem] as const;
+export const ACCOUNT_ITEMS = [readItem, watchesItem, feedItem, friendNotesItem, presenceItem, seenRequestsItem, hangarItem, buybackItem, ccuChainsItem, ccuGoalsItem, gameShipsItem, pledgeLabelsItem, partyModeItem, partyLogItem, lastPollItem] as const;
 /** Key for a profile's parked account data (`local:profileData.<id>`, incognito-prefixed like the rest). */
 export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 
