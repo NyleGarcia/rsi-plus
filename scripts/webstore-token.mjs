@@ -5,7 +5,8 @@
  *
  *   node scripts/webstore-token.mjs --extension-id <id> [--repo owner/name] [--env chrome-web-store]
  *
- * Asks for the OAuth client id and secret (Desktop app, from scripts/webstore-setup.sh), opens Google's consent page
+ * Takes the OAuth client id and secret (Desktop app, from scripts/webstore-setup.sh) from `.env.submit`, the environment
+ * or a prompt, opens Google's consent page
  * for the account that owns the listing, catches the code on a loopback port, exchanges it, checks the token against
  * the Web Store API, then `gh secret set` ×4. Needs Node 22 (fetch) and a logged-in `gh`.
  */
@@ -13,6 +14,7 @@ import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { readFile } from 'node:fs/promises';
 
 const arg = (name, def = '') => {
   const i = process.argv.indexOf(`--${name}`);
@@ -27,10 +29,19 @@ if (!/^[a-p]{32}$/.test(extensionId)) {
 }
 const SCOPE = 'https://www.googleapis.com/auth/chromewebstore';
 
+// Client id / secret: from the environment, else a git-ignored `.env.submit` (CHROME_CLIENT_ID=… / CHROME_CLIENT_SECRET=…,
+// the file `wxt submit` reads too), else asked for — the file keeps the secret out of any terminal log.
+const dotenv = Object.fromEntries(
+  (await readFile('.env.submit', 'utf8').catch(() => ''))
+    .split('\n')
+    .map((l) => l.match(/^\s*([A-Z_]+)\s*=\s*"?([^"\n]*)"?\s*$/))
+    .filter(Boolean)
+    .map((m) => [m[1], m[2]]),
+);
 const rl = createInterface({ input: stdin, output: stdout });
 const ask = async (q) => (await rl.question(q)).trim();
-const clientId = process.env.CHROME_CLIENT_ID || (await ask('OAuth client ID: '));
-const clientSecret = process.env.CHROME_CLIENT_SECRET || (await ask('OAuth client secret: '));
+const clientId = process.env.CHROME_CLIENT_ID || dotenv.CHROME_CLIENT_ID || (await ask('OAuth client ID: '));
+const clientSecret = process.env.CHROME_CLIENT_SECRET || dotenv.CHROME_CLIENT_SECRET || (await ask('OAuth client secret: '));
 rl.close();
 if (!clientId || !clientSecret) {
   console.error('client id and secret are required');
