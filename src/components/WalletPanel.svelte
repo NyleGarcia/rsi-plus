@@ -493,17 +493,20 @@
           <Stat value={money(ledger.newMoney)} label="New money for sure" sub={`${ledger.newMoneyCount} warbond pledge${ledger.newMoneyCount === 1 ? '' : 's'} by name`} hint="Warbond prices can't be paid with store credit. Only pledges still named 'Warbond' count here — import the order history for the real figure." valueTone="ok" />
         {/if}
         <Stat value={money(ledger.either)} label="Cash or store credit" sub={`${ledger.eitherCount} standard pledge${ledger.eitherCount === 1 ? '' : 's'}`} hint="Standard pledges accept both; the hangar keeps no record of which you used" />
-        <Stat value={money(ledger.melted)} label="Melted into credit" sub={`${ledger.meltedCount} in buyback${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="Buyback entries whose price was read (Buyback → Load contents & prices). Credit you got back, possibly spent again." />
+        <Stat value={money(ledger.melted)} label="Sitting in buyback" sub={`${ledger.meltedCount} melted, not bought back${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="What's melted right now (Buyback → Load contents & prices), not everything ever melted: a pledge bought back leaves the list. The credit these gave is spent or in your balance. Melting isn't money — the same dollar can be melted and spent again." />
+        {#if orderSums}
+          <Stat value={money(orderSums.credits)} label="Store credit cycled" sub={`${orderSums.count} orders · turnover, not money`} hint="Store credit spent across all orders. A dollar melted and spent, melted again and spent again counts twice here — this is how much work your credit did, not how much you had. Credit ever issued ≈ this + your balance now." />
+        {/if}
         <Stat value={`${ledger.gifted + ledger.free}`} label="$0 pledges" sub={`${ledger.gifted} gifted (ships, CCUs, paints) · ${ledger.free} flair`} hint="No melt value: received as gifts or referral rewards (a gifted CCU melts for $0), plus event flair, hangar decor and subscriber items" />
         {#if ledger.custom}<Stat value={money(ledger.custom)} label="Paid customization" hint="RSI's configuration value on top of the pledge — cash" />{/if}
         {#if orderSums}
           <Stat value={money(orderSums.cash)} label="Cash paid" context={`${orderSums.count} orders · ${money(orderSums.credits)} paid with store credit`} hint="From the order history: every order's Total is what was charged to you" tone="accent" />
         {:else}
-          <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (estimate)" context="Lower bound assumes every melted dollar bought a standard pledge; upper bound assumes none did" hint="New money + customization + standard pledges, less what melted credit could have covered. Import the order history for the real figure." tone="accent" />
+          <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (rough)" context="Lower bound: everything in buyback was re-spent on standard pledges; upper bound: none was. Credit cycled more than once makes the true figure lower still" hint="New money + customization + standard pledges, less what the credit now in buyback could have covered. The hangar can't see credit that was melted and spent several times — import the order history for the real figure." tone="accent" />
         {/if}
       </StatGrid>
     {/snippet}
-    {@render panel('Where the money went', 'what the hangar can prove: warbond took new money, standard took cash or credit, melts gave credit back', b)}
+    {@render panel('Where the money went', 'warbond took new money; standard took cash or credit; melting moves value to credit and back, it never adds money', b)}
   {:else if id === 'orders'}
     {#snippet b()}
       <div class="sens grid gap-3">
