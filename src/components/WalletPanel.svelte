@@ -41,7 +41,6 @@
   let buybacks = $state(0);
   let buybackList = $state<BuybackItem[]>([]);
   // ---- where the money went: hangar ledger + imported order history ----
-  const ledger = $derived(spendLedger(all, buybackList));
   let orders = $state<{ at: number; orders: Order[]; pages: number } | null>(null);
   let ordersBusy = $state(false);
   let ordersMsg = $state('');
@@ -146,6 +145,7 @@
 
   // ---- personal spend ----
   const all = $derived<Pledge[]>(hangar?.pledges ?? []);
+  const ledger = $derived(spendLedger(all, buybackList));
   const sum = $derived(spendSummary(all));
   const tot = $derived(totals(all));
   const byYear = $derived(spendByYear(all));
