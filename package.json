@@ -2,7 +2,7 @@
   "name": "rsi-plus",
   "description": "RSI site + Spectrum, better: hangar/buyback explorer, CCU planner, wishlist alerts, Spectrum read tracking, mutes, watches, friends manager",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",
