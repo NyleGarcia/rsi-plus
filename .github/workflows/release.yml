@@ -1,4 +1,5 @@
-# Release: release-please opens the release PR; on merge, attach the Chrome, Edge, Brave and Firefox zips (+ Firefox sources zip).
+# Release: release-please opens the release PR; on merge, attach the Chrome, Edge, Brave and Firefox zips (+ Firefox sources zip),
+# then submit the Chrome zip to the Chrome Web Store (skipped until the CHROME_* secrets exist — docs/release.md).
 name: Release
 on:
   push:
@@ -43,3 +44,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
+
+  publish:
+    needs: [release-please, assets]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    environment: chrome-web-store
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx wxt zip -b chrome
+      - name: Submit to the Chrome Web Store
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          if [ -z "$CHROME_REFRESH_TOKEN" ]; then
+            echo "::warning::CHROME_* secrets not set — zip attached to the release, nothing submitted to the Web Store (see docs/release.md)"
+            exit 0
+          fi
+          npx wxt submit --chrome-zip .output/*-chrome.zip

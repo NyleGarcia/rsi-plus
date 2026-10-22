@@ -15,3 +15,6 @@ public/undo/
 *.pem
 .DS_Store
 coverage/
+
+# Web Store credentials for a local `wxt submit --dry-run` (docs/release.md)
+.env.submit
