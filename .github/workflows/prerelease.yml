@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: prerelease-${{ github.ref }}
@@ -69,6 +69,8 @@ jobs:
   publish:
     needs: [version, assets]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create / upload / prune prereleases
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}

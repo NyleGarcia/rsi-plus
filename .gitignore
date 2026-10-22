@@ -18,3 +18,4 @@ coverage/
 
 # 1Password Environment `rsi-plus` mount (Web Store credentials, docs/release.md)
 .env.submit
+__pycache__/
