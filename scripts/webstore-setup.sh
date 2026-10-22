@@ -61,7 +61,7 @@ Done. Now:
       gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$PROVIDER"
       gh variable set GCP_SERVICE_ACCOUNT --body "$SA"
     and the chrome-web-store environment secrets CHROME_EXTENSION_ID / CHROME_PUBLISHER_ID.
- 3. Local check (impersonates the service account, nothing stored):
-      CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN=\$($GCLOUD auth print-access-token --impersonate-service-account=$SA --scopes=https://www.googleapis.com/auth/chromewebstore) \\
-        npx wxt submit --dry-run --chrome-api-version v2 --chrome-zip .output/rsi-plus-*-chrome.zip
+ 3. Local check (impersonates the service account with the chromewebstore scope; nothing stored):
+      bash scripts/webstore-token.sh   # prints nothing; exports CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN when sourced
+      source scripts/webstore-token.sh && npx wxt submit --dry-run --chrome-api-version v2 --chrome-zip .output/rsi-plus-*-chrome.zip
 MSG
