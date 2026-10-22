@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.5.0...v0.6.0) (2026-10-22)
+
+
+### Features
+
+* notifications page, pack tiles with previews and per-piece buying, paints-by-ship cart, store disclaimer ([d47a4a1](https://github.com/NyleGarcia/rsi-plus/commit/d47a4a13eff86362fc9dca8cca563e2da6d741b2))
+
 ## [0.5.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.4.0...v0.5.0) (2026-10-21)
 
 
