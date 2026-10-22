@@ -6,6 +6,7 @@ updated: 2026-10-22
 # Changelog
 
 ## Unreleased
+- **Filters read like a data table's.** The filter bar is now a row of buttons — *Insurance ▾*, *Stage ▾*, *Price ▾* — each opening its options with live counts (or a slider with min / max for ranges), *+ Filter* for the rest, and what you applied shown as chips underneath with *Clear all*.
 - **Feed and Store changes are one page.** *Feed* has two views: *Activity* (watched threads, channels, authors and keywords; friends coming online, **added or gone**; **friend requests**; **party mode** accepts and cleanup reminders; wishlist / CCU store alerts; **hangar changes** — pledges that appeared or left on a reload) with kind chips and an *Unseen only* switch, day headings, and *Store changes* (the former Notifications page, unchanged). The sidebar's Feed entry carries unseen + `+n −n` badges; the popup's too. `#notifications` still opens the store view.
 - **Footer on every page, sticky.** Fankit badge + "unofficial" line, version, Coffee / Bug / *More* (full trademark notice, Source, Changelog, Privacy, Report a bug, the referral code with copy + Enlist and what it earns). The sidebar's fankit line and support block moved into it.
 - **Sidebar regrouped.** *Hangar*: Pledges, Ships, **CCUs** (new), Items, Paints by ship, Buyback, Wallet · *Store*: Ship catalog, Browse, Store changes · *Plan*: CCU planner, Paint rebuy, Melt calculator. Popup shortcuts follow.

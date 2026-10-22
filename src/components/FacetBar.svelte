@@ -1,20 +1,23 @@
 <script lang="ts" generics="T">
   /**
-   * The filter bar every list page shares: each facet as a labelled row of chips with live counts ("LTI · 12" = rows
-   * left if you pick it), ranges as min–max fields, a Reset and "n of m". `primary` facets sit in the open; the rest
-   * fold under "More filters (n active)". Values live in the page (`bind:values`) so it can persist them.
+   * The filter bar every list page shares — a toolbar of filter buttons, like a data table's: each facet is a button
+   * that opens a list of its options with live counts ("how many rows if I pick this"), ranges open a slider with
+   * min / max fields, the rest hide behind *+ Filter*. What is applied shows as removable chips underneath with
+   * *Clear all*; *n of m* on the right. Values live in the page (`bind:values`) so it can persist them.
    */
   import type { Snippet } from 'svelte';
-  import * as Collapsible from '@/components/ui/collapsible';
-  import * as ToggleGroup from '@/components/ui/toggle-group';
-  import * as Tooltip from '@/components/ui/tooltip';
+  import * as Popover from '@/components/ui/popover';
+  import * as DropdownMenu from '@/components/ui/dropdown-menu';
   import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
+  import { Slider } from '@/components/ui/slider';
+  import Chip from './Chip.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
-  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
+  import Check from '@lucide/svelte/icons/check';
   import { cn } from '@/lib/utils';
-  import { CHIP } from './FilterChips.svelte';
   import { clearFacets, facetCounts, isActive, toggleFacet, type Facet, type FacetValues, type RangeFacet, type RangeValue } from '@/lib/facets';
 
   let {
@@ -37,7 +40,7 @@
     /** Rows after the page applied everything (for "n of m"). */
     shown: number;
     values: FacetValues;
-    /** Facet / range ids always visible; others fold. Empty = all visible. */
+    /** Facet / range ids always shown as buttons; others sit under "+ Filter" until used. Empty = all shown. */
     primary?: string[];
     /** Value ids Reset leaves alone (a page's tab, search). */
     keep?: string[];
@@ -46,7 +49,7 @@
     /** Drop options no row would match. */
     hideEmpty?: boolean;
     class?: string;
-    /** Extra controls on the first row (search, sort). */
+    /** Leading controls (search, sort). */
     children?: Snippet;
   } = $props();
 
@@ -54,79 +57,159 @@
   const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const deviates = (id: string) => !same(values[id], defaults[id]) && (isActive(values[id]) || isActive(defaults[id]));
   const active = $derived([...new Set([...Object.keys(values), ...Object.keys(defaults)])].filter(deviates).length);
-  const fold = $derived(primary.length ? [...facets.filter((f) => !primary.includes(f.id)).map((f) => f.id), ...ranges.filter((r) => !primary.includes(r.id)).map((r) => r.id)] : []);
-  const foldActive = $derived(fold.filter(deviates).length);
-  let more = $state(false);
-  const sel = (f: Facet<T>) => (f.multiple ? ((values[f.id] as string[] | undefined) ?? []) : ((values[f.id] as string | null | undefined) ?? ''));
-  const rangeVal = (id: string): RangeValue => (values[id] as RangeValue | undefined) ?? { min: null, max: null };
-  const unit = (r: RangeFacet<T>) => (r.unit === 'usd' ? '$' : '');
-  function setRange(id: string, k: 'min' | 'max', raw: string) {
-    const n = raw.trim() === '' ? null : Number(raw.replace(/[^0-9.]/g, ''));
-    values = { ...values, [id]: { ...rangeVal(id), [k]: n == null || Number.isNaN(n) ? null : n } };
+  /** Buttons on the bar: the primary ones, plus any other facet that is in use (added through + Filter). */
+  let added = $state<string[]>([]);
+  const visibleIds = $derived(primary.length ? [...primary, ...added, ...[...facets.map((f) => f.id), ...ranges.map((r) => r.id)].filter((id) => !primary.includes(id) && !added.includes(id) && isActive(values[id]))] : []);
+  const isVisible = (id: string) => !primary.length || visibleIds.includes(id);
+  const hidden = $derived([...facets.filter((f) => !isVisible(f.id)).map((f) => ({ id: f.id, label: f.label })), ...ranges.filter((r) => !isVisible(r.id)).map((r) => ({ id: r.id, label: r.label }))]);
+  let openId = $state<string | null>(null);
+  function addFilter(id: string) {
+    added = [...added, id];
+    openId = id;
   }
+
+  const sel = (f: Facet<T>): string[] => {
+    const v = values[f.id];
+    return Array.isArray(v) ? v : typeof v === 'string' && v ? [v] : [];
+  };
+  const optLabel = (f: Facet<T>, id: string) => f.options.find((o) => o.id === id)?.label ?? id;
+  const summary = (f: Facet<T>) => {
+    const s = sel(f);
+    return s.length === 0 ? '' : s.length === 1 ? optLabel(f, s[0]!) : `${optLabel(f, s[0]!)} +${s.length - 1}`;
+  };
+  const rangeVal = (id: string): RangeValue => (values[id] as RangeValue | undefined) ?? { min: null, max: null };
+  const money = (r: RangeFacet<T>, n: number) => (r.unit === 'usd' ? `$${Math.round(n).toLocaleString('en-US')}` : String(Math.round(n)));
+  const rangeText = (r: RangeFacet<T>) => {
+    const v = rangeVal(r.id);
+    if (v.min == null && v.max == null) return '';
+    return `${v.min != null ? money(r, v.min) : '…'} – ${v.max != null ? money(r, v.max) : '…'}`;
+  };
+  /** Slider domain from the rows (rounded out), so the thumbs start at the data's edges. */
+  const domain = (r: RangeFacet<T>): [number, number] => {
+    let lo = Infinity,
+      hi = -Infinity;
+    for (const row of rows) {
+      const n = r.get(row);
+      if (n == null) continue;
+      if (n < lo) lo = n;
+      if (n > hi) hi = n;
+    }
+    if (lo === Infinity) return [0, 0];
+    const step = r.unit === 'usd' ? 5 : 1;
+    return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
+  };
+  function setRange(id: string, v: RangeValue) {
+    values = { ...values, [id]: v.min == null && v.max == null ? undefined : v };
+  }
+  function removeOption(f: Facet<T>, id: string) {
+    values = toggleFacet(values, f, id);
+  }
+  const resetAll = () => {
+    values = { ...clearFacets(values, keep), ...defaults };
+    added = [];
+  };
+  /** Chips: one per picked option, one per bounded range. */
+  const chips = $derived([
+    ...facets.flatMap((f) => (deviates(f.id) ? sel(f).map((id) => ({ key: `${f.id}:${id}`, label: f.label, value: optLabel(f, id), remove: () => removeOption(f, id) })) : [])),
+    ...ranges.filter((r) => deviates(r.id)).map((r) => ({ key: r.id, label: r.label, value: rangeText(r), remove: () => setRange(r.id, { min: null, max: null }) })),
+  ]);
 </script>
 
-{#snippet facetRow(f: Facet<T>)}
-  {@const opts = hideEmpty ? f.options.filter((o) => (counts[f.id]?.[o.id] ?? 0) > 0 || (Array.isArray(sel(f)) ? (sel(f) as string[]).includes(o.id) : sel(f) === o.id)) : f.options}
-  {#if opts.length}
-    <div class="flex flex-wrap items-center gap-1.5">
-      <span class="text-muted-foreground w-24 shrink-0 text-xs">{f.label}</span>
-      <ToggleGroup.Root type={f.multiple ? 'multiple' : 'single'} variant="outline" size="sm" spacing={1} class="flex-wrap" aria-label={f.label} value={sel(f) as never} onValueChange={() => {}}>
+{#snippet facetButton(f: Facet<T>)}
+  {@const picked = sel(f)}
+  {@const opts = hideEmpty ? f.options.filter((o) => (counts[f.id]?.[o.id] ?? 0) > 0 || picked.includes(o.id)) : f.options}
+  <Popover.Root open={openId === f.id} onOpenChange={(o) => (openId = o ? f.id : openId === f.id ? null : openId)}>
+    <Popover.Trigger>
+      {#snippet child({ props })}
+        <Button {...props} variant="outline" size="sm" class={cn('gap-1', picked.length && 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')} aria-label={`${f.label} filter${picked.length ? `: ${summary(f)}` : ''}`}>
+          {f.label}{#if picked.length}<span class="font-normal opacity-80">: {summary(f)}</span>{/if}
+          <ChevronDown class="opacity-60" />
+        </Button>
+      {/snippet}
+    </Popover.Trigger>
+    <Popover.Content align="start" class="w-64 p-1.5">
+      {#if f.hint}<p class="text-muted-foreground m-0 px-1.5 pt-1 pb-2 text-xs">{f.hint}</p>{/if}
+      <div class="grid max-h-80 gap-0.5 overflow-y-auto" role="group" aria-label={f.label}>
         {#each opts as o (o.id)}
           {@const n = counts[f.id]?.[o.id] ?? 0}
-          {#if o.hint}
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  <ToggleGroup.Item {...props} value={o.id} class={cn(CHIP, !n && 'opacity-50')} onclick={() => (values = toggleFacet(values, f, o.id))}>{o.label} <span class="opacity-70">· {n}</span></ToggleGroup.Item>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content class="max-w-80">{o.hint}</Tooltip.Content>
-            </Tooltip.Root>
-          {:else}
-            <ToggleGroup.Item value={o.id} class={cn(CHIP, !n && 'opacity-50')} onclick={() => (values = toggleFacet(values, f, o.id))}>{o.label} <span class="opacity-70">· {n}</span></ToggleGroup.Item>
-          {/if}
+          {@const on = picked.includes(o.id)}
+          <label class={cn('hover:bg-muted flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm', !n && !on && 'opacity-50')} title={o.hint}>
+            {#if f.multiple}
+              <Checkbox checked={on} onCheckedChange={() => (values = toggleFacet(values, f, o.id))} aria-label={o.label} />
+            {:else}
+              <button type="button" class={cn('border-input flex size-4 shrink-0 items-center justify-center rounded-full border', on && 'border-primary bg-primary text-primary-foreground')} role="radio" aria-checked={on} aria-label={o.label} onclick={() => (values = toggleFacet(values, f, o.id))}>{#if on}<Check class="size-3" />{/if}</button>
+            {/if}
+            <span class="min-w-0 flex-1 truncate">{o.label}</span>
+            <span class="text-muted-foreground text-xs tabular-nums">{n}</span>
+          </label>
+        {:else}
+          <p class="text-muted-foreground m-0 px-1.5 py-2 text-xs">Nothing to pick here.</p>
         {/each}
-      </ToggleGroup.Root>
-    </div>
-  {/if}
+      </div>
+      {#if picked.length}
+        <div class="mt-1 border-t pt-1">
+          <Button variant="ghost" size="xs" class="w-full justify-start" onclick={() => (values = { ...values, [f.id]: f.multiple ? [] : null })}><X /> Clear {f.label.toLowerCase()}</Button>
+        </div>
+      {/if}
+    </Popover.Content>
+  </Popover.Root>
 {/snippet}
-{#snippet rangeRow(r: RangeFacet<T>)}
-  <div class="flex flex-wrap items-center gap-1.5">
-    <span class="text-muted-foreground w-24 shrink-0 text-xs">{r.label}</span>
-    <Input class="w-24" inputmode="decimal" placeholder={`${unit(r)}min`} aria-label={`${r.label} minimum`} value={rangeVal(r.id).min ?? ''} onchange={(e) => setRange(r.id, 'min', (e.currentTarget as HTMLInputElement).value)} />
-    <span class="text-muted-foreground text-xs">–</span>
-    <Input class="w-24" inputmode="decimal" placeholder={`${unit(r)}max`} aria-label={`${r.label} maximum`} value={rangeVal(r.id).max ?? ''} onchange={(e) => setRange(r.id, 'max', (e.currentTarget as HTMLInputElement).value)} />
-  </div>
+
+{#snippet rangeButton(r: RangeFacet<T>)}
+  {@const v = rangeVal(r.id)}
+  {@const [lo, hi] = domain(r)}
+  {@const on = v.min != null || v.max != null}
+  <Popover.Root open={openId === r.id} onOpenChange={(o) => (openId = o ? r.id : openId === r.id ? null : openId)}>
+    <Popover.Trigger>
+      {#snippet child({ props })}
+        <Button {...props} variant="outline" size="sm" class={cn('gap-1', on && 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')} aria-label={`${r.label} range${on ? `: ${rangeText(r)}` : ''}`}>
+          {r.label}{#if on}<span class="font-normal opacity-80">: {rangeText(r)}</span>{/if}
+          <ChevronDown class="opacity-60" />
+        </Button>
+      {/snippet}
+    </Popover.Trigger>
+    <Popover.Content align="start" class="w-72 p-3">
+      <div class="grid gap-3">
+        <div class="text-muted-foreground flex justify-between text-xs tabular-nums"><span>{money(r, lo)}</span><span>{money(r, hi)}</span></div>
+        {#if hi > lo}
+          <Slider type="multiple" min={lo} max={hi} step={r.unit === 'usd' ? 1 : 1} value={[v.min ?? lo, v.max ?? hi]} onValueCommit={(val: number[]) => setRange(r.id, { min: val[0]! <= lo ? null : val[0]!, max: val[1]! >= hi ? null : val[1]! })} aria-label={`${r.label} range`} />
+        {/if}
+        <div class="flex items-center gap-2">
+          <Input class="w-full" inputmode="decimal" placeholder={r.unit === 'usd' ? '$ min' : 'min'} aria-label={`${r.label} minimum`} value={v.min ?? ''} onchange={(e) => setRange(r.id, { ...v, min: Number((e.currentTarget as HTMLInputElement).value.replace(/[^0-9.]/g, '')) || null })} />
+          <span class="text-muted-foreground">–</span>
+          <Input class="w-full" inputmode="decimal" placeholder={r.unit === 'usd' ? '$ max' : 'max'} aria-label={`${r.label} maximum`} value={v.max ?? ''} onchange={(e) => setRange(r.id, { ...v, max: Number((e.currentTarget as HTMLInputElement).value.replace(/[^0-9.]/g, '')) || null })} />
+        </div>
+        {#if on}<Button variant="ghost" size="xs" class="justify-start" onclick={() => setRange(r.id, { min: null, max: null })}><X /> Clear {r.label.toLowerCase()}</Button>{/if}
+      </div>
+    </Popover.Content>
+  </Popover.Root>
 {/snippet}
 
 <div class={cn('grid gap-2', className)}>
-  {#if children}<div class="flex flex-wrap items-center gap-2">{@render children()}</div>{/if}
-  {#each facets.filter((f) => !fold.includes(f.id)) as f (f.id)}{@render facetRow(f)}{/each}
-  {#each ranges.filter((r) => !fold.includes(r.id)) as r (r.id)}{@render rangeRow(r)}{/each}
-  {#if fold.length}
-    <Collapsible.Root bind:open={more} class="grid gap-2">
-      <div class="flex flex-wrap items-center gap-2">
-        <Collapsible.Trigger>
+  <div class="flex flex-wrap items-center gap-2">
+    {@render children?.()}
+    {#each facets.filter((f) => isVisible(f.id)) as f (f.id)}{@render facetButton(f)}{/each}
+    {#each ranges.filter((r) => isVisible(r.id)) as r (r.id)}{@render rangeButton(r)}{/each}
+    {#if hidden.length}
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
           {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="xs" class="text-muted-foreground">
-              {#if more}<ChevronDown />{:else}<ChevronRight />{/if}
-              More filters{foldActive ? ` · ${foldActive} active` : ''}
-            </Button>
+            <Button {...props} variant="ghost" size="sm" class="text-muted-foreground gap-1"><Plus /> Filter</Button>
           {/snippet}
-        </Collapsible.Trigger>
-        <span class="text-muted-foreground ml-auto text-xs tabular-nums">{shown} of {rows.length}</span>
-        {#if active}<Button variant="ghost" size="xs" onclick={() => (values = { ...clearFacets(values, keep), ...defaults })}><X /> Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
-      </div>
-      <Collapsible.Content class="grid gap-2">
-        {#each facets.filter((f) => fold.includes(f.id)) as f (f.id)}{@render facetRow(f)}{/each}
-        {#each ranges.filter((r) => fold.includes(r.id)) as r (r.id)}{@render rangeRow(r)}{/each}
-      </Collapsible.Content>
-    </Collapsible.Root>
-  {:else}
-    <div class="flex flex-wrap items-center gap-2">
-      <span class="text-muted-foreground ml-auto text-xs tabular-nums">{shown} of {rows.length}</span>
-      {#if active}<Button variant="ghost" size="xs" onclick={() => (values = { ...clearFacets(values, keep), ...defaults })}><X /> Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="start" class="w-56">
+          {#each hidden as h (h.id)}<DropdownMenu.Item onSelect={() => addFilter(h.id)}>{h.label}</DropdownMenu.Item>{/each}
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+    {/if}
+    <span class="text-muted-foreground ml-auto text-xs tabular-nums whitespace-nowrap">{shown} of {rows.length}</span>
+  </div>
+  {#if chips.length}
+    <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Active filters">
+      {#each chips as c (c.key)}
+        <Chip variant="outline" onremove={c.remove} removeLabel={`Remove ${c.label}: ${c.value}`}><span class="text-muted-foreground">{c.label}:</span> {c.value}</Chip>
+      {/each}
+      {#if active}<Button variant="ghost" size="xs" class="text-muted-foreground" onclick={resetAll}>Clear all{active > 1 ? ` (${active})` : ''}</Button>{/if}
     </div>
   {/if}
 </div>
