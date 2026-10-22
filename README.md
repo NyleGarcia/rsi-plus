@@ -1,6 +1,6 @@
 # RSI+
 
-[![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Security](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NyleGarcia/rsi-plus/badge)](https://scorecard.dev/viewer/?uri=github.com/NyleGarcia/rsi-plus) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases)
+[![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Security](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NyleGarcia/rsi-plus/badge)](https://scorecard.dev/viewer/?uri=github.com/NyleGarcia/rsi-plus) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Browser extension (Chrome, Edge, Brave — MV3; Firefox — MV2) for the whole [Roberts Space Industries](https://robertsspaceindustries.com) site — Spectrum, hangar, buyback and the pledge store. Sibling of Crunchy+ (same stack: WXT + Svelte 5 + TS; hub UI on shadcn-svelte + Tailwind v4, charts on LayerChart). Ideas from [Hangar XPLORer](https://github.com/dolkensp/HangarXPLOR) (MIT) and [CCU Game](https://ccugame.app); no data is sent anywhere but RSI.
 
@@ -48,7 +48,7 @@ Runs only in your browser, talks only to robertsspaceindustries.com, loads no re
   ```
 - Found something? [Report it privately](https://github.com/NyleGarcia/rsi-plus/security/advisories/new) — see [SECURITY.md](SECURITY.md).
 
-Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRIVACY.md) · security: [SECURITY.md](SECURITY.md).
+Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRIVACY.md) · security: [SECURITY.md](SECURITY.md) · license: [MIT](LICENSE).
 
 Docs: [docs/README.md](docs/README.md) · [architecture](docs/architecture.md) · [changelog](docs/changelog.md).
 
