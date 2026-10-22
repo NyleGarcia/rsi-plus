@@ -3,7 +3,7 @@
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
-  import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, type Order } from '@/lib/orders';
+  import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, type Order, type SubPayment } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
   import { AreaChart, BarChart, PieChart } from 'layerchart';
@@ -41,7 +41,7 @@
   let buybacks = $state(0);
   let buybackList = $state<BuybackItem[]>([]);
   // ---- where the money went: hangar ledger + imported order history ----
-  let orders = $state<{ at: number; orders: Order[]; pages: number } | null>(null);
+  let orders = $state<{ at: number; orders: Order[]; subs?: SubPayment[]; pages: number } | null>(null);
   let ordersBusy = $state(false);
   let ordersMsg = $state('');
   $effect(() => {
@@ -86,9 +86,9 @@
     try {
       const r = await fetchOrders();
       if (r.orders.length) {
-        orders = { at: Date.now(), orders: r.orders, pages: r.pages };
+        orders = { at: Date.now(), orders: r.orders, subs: r.subs, pages: r.pages };
         await ordersItem.setValue($state.snapshot(orders));
-        ordersMsg = `${r.orders.length} orders from ${r.pages} page${r.pages === 1 ? '' : 's'}${r.debug ? ` · ${r.debug}` : ''}`;
+        ordersMsg = `${r.orders.length} orders from ${r.pages} page${r.pages === 1 ? '' : 's'}${r.subs.length ? ` · ${r.subs.length} subscription payments` : ''}${r.debug ? ` · ${r.debug}` : ''}`;
       } else ordersMsg = `No orders found${r.debug ? ` — ${r.debug}` : ''}. If Billing shows orders, RSI changed the page: copy the markup and send it over.`;
     } catch (e) {
       ordersMsg = `Could not read /account/billing: ${(e as Error).message}`;

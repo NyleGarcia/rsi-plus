@@ -47,6 +47,19 @@ export function usdToNext(c: Pick<Concierge, 'level' | 'next' | 'pct'>): number 
   return Math.max(0, Math.round(((100 - c.pct) / 100) * (nxt.usd - cur.usd)));
 }
 
+/** Where a total spend sits on the ladder: the level reached, the next one and the exact gap (RSI's thresholds). */
+export function clubFromSpend(spend: number): { level: string | null; next: string | null; toGo: number | null; pct: number | null } {
+  const cur = [...TIERS].reverse().find((t) => spend >= t.usd) ?? null;
+  const next = TIERS.find((t) => spend < t.usd) ?? null;
+  const floor = cur?.usd ?? 0;
+  return {
+    level: cur?.name ?? null,
+    next: next?.name ?? null,
+    toGo: next ? Math.round((next.usd - spend) * 100) / 100 : null,
+    pct: next ? Math.max(0, Math.min(100, Math.round(((spend - floor) / (next.usd - floor)) * 1000) / 10)) : null,
+  };
+}
+
 const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
 export function parseConciergePage(root: ParentNode, now = Date.now()): Concierge | null {

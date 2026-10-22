@@ -95,7 +95,7 @@ export const seenRequestsItem = storage.defineItem<string[] | null>(acct('local:
 export const hangarItem = storage.defineItem<{ at: number; pledges: Pledge[]; complete?: boolean; page?: number; credits?: Credits | null; creditsAt?: number } | null>(acct('local:hangar'), { fallback: null });
 export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]; complete?: boolean; page?: number } | null>(acct('local:buyback'), { fallback: null });
 /** Order history imported from /account/billing (Wallet → Where the money went). */
-export const ordersItem = storage.defineItem<{ at: number; orders: import('./orders').Order[]; pages: number } | null>(acct('local:orders'), { fallback: null });
+export const ordersItem = storage.defineItem<{ at: number; orders: import('./orders').Order[]; subs?: import('./orders').SubPayment[]; pages: number } | null>(acct('local:orders'), { fallback: null });
 /** Saved CCU chains (planner): the CCUs they use are kept out of new plans when *Exclude saved chains* is on. */
 export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuChains'), { fallback: [] });
 /** Your labels on pledges (`lib/labels.ts`): pledge id → labels. */

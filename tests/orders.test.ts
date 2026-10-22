@@ -73,3 +73,21 @@ describe('order charts', () => {
     ]);
   });
 });
+
+import { clubSpend, parseSubPayments } from '@/lib/orders';
+import { clubFromSpend } from '@/lib/concierge';
+describe("Chairman's Club from the order history", () => {
+  it('reads subscription payments', () => {
+    const subs = parseSubPayments(doc());
+    expect(subs.map((x) => [new Date(x.at).getFullYear(), x.amount, x.status])).toEqual([[2024, 220, 'Paid'], [2025, 220, 'Paid'], [2026, 220, 'Failed']]);
+  });
+  it('counts cash on orders plus paid subscriptions', () => {
+    const s = clubSpend(parseOrders(doc()), parseSubPayments(doc()));
+    expect(s).toEqual({ orders: 150, subs: 440, refunds: 0, total: 590 });
+  });
+  it('places a spend on the ladder', () => {
+    expect(clubFromSpend(590)).toEqual({ level: null, next: 'High Admiral', toGo: 410, pct: 59 });
+    expect(clubFromSpend(16_234.5)).toEqual({ level: 'Praetorian', next: 'Legatus Navium', toGo: 8765.5, pct: 12.3 });
+    expect(clubFromSpend(30_000)).toEqual({ level: 'Legatus Navium', next: null, toGo: null, pct: null });
+  });
+});

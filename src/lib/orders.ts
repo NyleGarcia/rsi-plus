@@ -134,8 +134,30 @@ export function lastPage(doc: Document): number {
   return last;
 }
 
+/** One row of a subscription's PAYMENT HISTORY table on the billing page (Date / Processor / Status / Amount). */
+export interface SubPayment {
+  at: number;
+  /** USD */
+  amount: number;
+  status: string;
+}
+/** `.history-wrapper table` rows: "2024-07-21, 01:05" · processor · "Paid" · "$220.00 USD". */
+export function parseSubPayments(doc: Document): SubPayment[] {
+  const out: SubPayment[] = [];
+  for (const tr of doc.querySelectorAll('.history-wrapper table tr')) {
+    const td = [...tr.querySelectorAll('td')].map((x) => clean(x.textContent));
+    if (td.length < 4) continue;
+    const at = Date.parse(td[0]!.replace(',', ''));
+    if (!Number.isFinite(at)) continue;
+    out.push({ at, amount: money(td[3]), status: td[2]! });
+  }
+  return out;
+}
+
 export interface OrdersResult {
   orders: Order[];
+  /** Subscription payments from page 1 (the subscription block is on every page; read once). */
+  subs: SubPayment[];
   pages: number;
   debug: string;
 }
@@ -145,6 +167,7 @@ const PAGE_SIZE = 100;
 export async function fetchOrders(signal?: AbortSignal, maxPages = 40): Promise<OrdersResult> {
   const all = new Map<string, Order>();
   const debug: string[] = [];
+  let subs: SubPayment[] = [];
   let pages = 0;
   let last = 1;
   for (let page = 1; page <= Math.min(last, maxPages); page++) {
@@ -154,7 +177,10 @@ export async function fetchOrders(signal?: AbortSignal, maxPages = 40): Promise<
       break;
     }
     const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-    if (page === 1) last = lastPage(doc);
+    if (page === 1) {
+      last = lastPage(doc);
+      subs = parseSubPayments(doc);
+    }
     const found = parseOrders(doc);
     pages++;
     if (!found.length) {
@@ -163,7 +189,7 @@ export async function fetchOrders(signal?: AbortSignal, maxPages = 40): Promise<
     }
     for (const o of found) all.set(o.id, o);
   }
-  return { orders: [...all.values()].sort((a, b) => b.at - a.at), pages, debug: debug.join(' ‖ ') };
+  return { orders: [...all.values()].sort((a, b) => b.at - a.at), subs, pages, debug: debug.join(' ‖ ') };
 }
 
 /** Copies the orders block of the billing page (first 30k chars, bill-to removed) to the clipboard, for fixing the reader. */
@@ -295,4 +321,19 @@ export function orderSlices(orders: Order[]): { key: string; label: string; valu
     { key: 'cash', label: 'cash', value: cash, count: live.filter((o) => o.total > 0).length },
     { key: 'credit', label: 'store credit', value: credits, count: live.filter((o) => o.credits > 0).length },
   ].filter((s) => s.value > 0);
+}
+
+// ---- Chairman's Club: RSI counts money paid (pledges, merch, subscriptions, VAT); store credit re-spent and gifts received don't add ----
+export interface ClubSpend {
+  /** Cash charged on orders, USD (refunds taken off). */
+  orders: number;
+  /** Subscription payments marked paid, USD. */
+  subs: number;
+  refunds: number;
+  total: number;
+}
+export function clubSpend(orders: Order[], subs: SubPayment[]): ClubSpend {
+  const t = orderTotals(orders);
+  const paid = subs.filter((x) => /paid/i.test(x.status)).reduce((n, x) => n + x.amount, 0);
+  return { orders: r2(t.cash), subs: r2(paid), refunds: r2(t.refunds), total: r2(t.cash - t.refunds + paid) };
 }
