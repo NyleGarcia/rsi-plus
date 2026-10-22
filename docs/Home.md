@@ -7,6 +7,7 @@ updated: 2026-10-22
 - [[architecture]] · [architecture](architecture.md)
 - [[changelog]] · [changelog](changelog.md)
 - [[release]] · [release and Web Store publishing](release.md)
+- [[ci]] · [CI and security checks](ci.md)
 - [[plans/now/todo]] · [now](plans/now/todo.md)
 - [[plans/next/backlog]] · [next](plans/next/backlog.md)
 - [[plans/later/ideas]] · [later](plans/later/ideas.md)
