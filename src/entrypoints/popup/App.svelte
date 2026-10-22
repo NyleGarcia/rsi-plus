@@ -23,6 +23,7 @@
     { tab: 'wallet', label: 'Wallet' },
     { tab: 'store', label: 'Ship catalog' },
     { tab: 'browse', label: 'Browse store' },
+    { tab: 'notifications', label: 'Notifications' },
     { tab: 'ccu', label: 'CCU planner' },
     { tab: 'paint-rebuy', label: 'Paint rebuy' },
     { tab: 'watching', label: 'Watching' },

@@ -11,6 +11,7 @@
   import ShipsPanel from '@/components/ShipsPanel.svelte';
   import StorePanel from '@/components/StorePanel.svelte';
   import BrowsePanel from '@/components/BrowsePanel.svelte';
+  import StoreLog from '@/components/StoreLog.svelte';
   import CcuPanel from '@/components/CcuPanel.svelte';
   import SettingsPanel from '@/components/SettingsPanel.svelte';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
@@ -32,6 +33,7 @@
   import Undo2 from '@lucide/svelte/icons/undo-2';
   import Wallet from '@lucide/svelte/icons/wallet';
   import Store from '@lucide/svelte/icons/store';
+  import BellRing from '@lucide/svelte/icons/bell-ring';
   import Route from '@lucide/svelte/icons/route';
   import Paintbrush from '@lucide/svelte/icons/paintbrush';
   import Calculator from '@lucide/svelte/icons/calculator';
@@ -43,7 +45,8 @@
   import { cn } from '@/lib/utils';
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
-  import { INCOGNITO } from '@/lib/settings';
+  import { INCOGNITO, storeLogItem } from '@/lib/settings';
+  import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
 
   type Tab = HubTab;
@@ -79,6 +82,7 @@
     {
       label: 'Store',
       items: [
+        { tab: 'notifications', label: 'Notifications', sub: 'Store changes: what was added and removed', icon: BellRing },
         { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store },
         { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · Concierge · Subscribers', icon: LayoutGrid },
         { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route },
@@ -101,6 +105,12 @@
   const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
 
   let tab = $state<Tab>(fromHash());
+  /** Store changes not yet dismissed — "+32 −5" on the Notifications entry. */
+  let notices = $state({ add: 0, remove: 0 });
+  $effect(() => {
+    storeLogItem.getValue().then((v) => (notices = tally(cleanLog(v))));
+    return storeLogItem.watch((v) => (notices = tally(cleanLog(v))));
+  });
   let ccuTo = $state<number | null>(Number(hashParam('to')) || null);
   let ccuAhead = $state(hashParam('ahead') === '1'); // `#ccu?to=&ahead=1`: the hull isn't on sale, start with Plan ahead on
 
@@ -176,7 +186,7 @@
               <Sidebar.GroupContent>
                 <Sidebar.Menu>
                   {#each g.items as it (it.tab)}
-                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} onselect={() => select(it)} />
+                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'notifications' ? notices.add + notices.remove : 0} badge={it.tab === 'notifications' ? [notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} onselect={() => select(it)} />
                   {/each}
                 </Sidebar.Menu>
               </Sidebar.GroupContent>
@@ -244,6 +254,8 @@
           <StorePanel />
         {:else if tab === 'browse'}
           <BrowsePanel />
+        {:else if tab === 'notifications'}
+          <StoreLog />
         {:else if tab === 'ccu'}
           <CcuPanel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else if tab === 'settings'}
@@ -251,7 +263,9 @@
         {:else}
           <MutesPanel />
         {/if}
-        <FanNotice variant="footer" class="mt-10" />
+        <!-- Fankit: the notice goes in an always-visible nav area and/or the home page. The sidebar footer covers every
+             page on desktop; on mobile the sidebar is a sheet, so the footer stays under every page there. -->
+        <FanNotice variant="footer" class={tab === 'feed' ? 'mt-10' : 'mt-10 sm:hidden'} />
       </main>
     </Sidebar.Inset>
   </Sidebar.Provider>

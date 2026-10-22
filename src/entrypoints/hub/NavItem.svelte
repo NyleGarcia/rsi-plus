@@ -13,8 +13,21 @@
     sub,
     icon: Icon,
     active,
+    count = 0,
+    badge = [],
     onselect,
-  }: { id: string; label: string; sub: string; icon: Component; active: boolean; onselect: () => void } = $props();
+  }: {
+    id: string;
+    label: string;
+    sub: string;
+    icon: Component;
+    active: boolean;
+    /** Pending items (the badge shows when above zero). */
+    count?: number;
+    /** What the badge says, as colored chips ("+32" green, "−5" red); the plain count when empty. */
+    badge?: { text: string; tone: 'success' | 'destructive' }[];
+    onselect: () => void;
+  } = $props();
 
   const sidebar = Sidebar.useSidebar();
 </script>
@@ -37,4 +50,13 @@
     <Icon aria-hidden="true" />
     <span class="truncate font-medium">{label}</span>
   </Sidebar.MenuButton>
+  {#if count > 0}
+    <Sidebar.MenuBadge class="flex gap-1 px-0 text-[11px] font-semibold tabular-nums">
+      {#each badge as b (b.text)}
+        <span class={['rounded-md px-1.5', b.tone === 'success' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive']}>{b.text}</span>
+      {:else}
+        <span class="bg-primary/15 text-primary rounded-md px-1.5">{count > 99 ? '99+' : count}</span>
+      {/each}
+    </Sidebar.MenuBadge>
+  {/if}
 </Sidebar.MenuItem>

@@ -59,6 +59,15 @@ describe('filterItems', () => {
     expect(ids(filterItems(ITEMS, f({ owned: 'owned' }), owned))).toEqual([1, 4]);
     expect(ids(filterItems(ITEMS, f({ owned: 'missing' }), owned))).toEqual([3, 5, 6, 7]);
   });
+  it('piece cuts: all / some / none go by what the hangar holds of the pieces, not the listing', () => {
+    // 1: owned outright · 3: a pack, two of five pieces · 4: a pack, every piece collected one by one · 7: nothing of it
+    const h = (it: StoreItem) => (it.id === 1 ? 1 : it.id === 3 ? { count: 0, have: 2, of: 5 } : it.id === 4 ? { count: 0, have: 3, of: 3 } : 0);
+    expect(ids(filterItems(ITEMS, f({ owned: 'all' }), h))).toEqual([1, 4]);
+    expect(ids(filterItems(ITEMS, f({ owned: 'some' }), h))).toEqual([3]);
+    expect(ids(filterItems(ITEMS, f({ owned: 'none' }), h))).toEqual([5, 6, 7]);
+    expect(ids(filterItems(ITEMS, f({ owned: 'owned' }), h))).toEqual([1]);
+    expect(ids(filterItems(ITEMS, f({ owned: 'missing' }), h))).toEqual([3, 4, 5, 6, 7]);
+  });
   it('price bounds apply to the price paid now (the discounted one)', () => {
     expect(matchesFilter(ITEMS[2]!, f({ max: 4000 }), 0)).toBe(true);
     expect(matchesFilter(ITEMS[2]!, f({ min: 4000 }), 0)).toBe(false);

@@ -17,6 +17,12 @@ export interface StoreEntry {
   /** USD cents (the price paid now: sale price when discounted). */
   price: number;
   kind: EntryKind;
+  /** RSI store page (ship page for CCUs / standalones, the listing's own page for items); missing on older copies. */
+  link?: string;
+  /** Catalog hull id for CCU / standalone entries (deep link to the Ship catalog row). */
+  ship?: number;
+  /** Store thumbnail (the hull's for CCUs / standalones, the listing's for items); missing on older copies. */
+  thumb?: string | null;
 }
 export interface StoreChange {
   at: number;
@@ -28,13 +34,22 @@ export type StoreSnapshot = Partial<Record<'catalog' | 'listing', { at: number; 
 
 export const MAX_CHANGES = 400;
 
+/** A SKU's title is often just the edition ("Standard Edition", "Warbond Edition"): prefix the hull unless it is already named. */
+export function skuName(ship: string, title: string): string {
+  const t = title.trim();
+  if (!t) return ship;
+  return t.toLowerCase().includes(ship.toLowerCase()) ? t : `${ship} - ${t}`;
+}
+
 /** CCU targets and standalone ships on sale now. */
 export function catalogEntries(c: Catalog): StoreEntry[] {
   const out: StoreEntry[] = [];
   for (const s of c.ships) {
     if (s.msrpSource === 'wiki') continue; // not from RSI
-    for (const k of s.ccu) if (k.available) out.push({ key: `ccu:${k.id}`, name: `${k.title || s.name} CCU`, price: k.price, kind: 'ccu' });
-    for (const k of s.standalone) if (k.available) out.push({ key: `ship:${k.id}`, name: k.title || s.name, price: k.price, kind: 'ship' });
+    const link = s.link || undefined;
+    const thumb = s.thumb;
+    for (const k of s.ccu) if (k.available) out.push({ key: `ccu:${k.id}`, name: `${skuName(s.name, k.title)} CCU`, price: k.price, kind: 'ccu', link, ship: s.id, thumb });
+    for (const k of s.standalone) if (k.available) out.push({ key: `ship:${k.id}`, name: skuName(s.name, k.title), price: k.price, kind: 'ship', link, ship: s.id, thumb });
   }
   return out;
 }
@@ -44,7 +59,51 @@ export function catalogEntries(c: Catalog): StoreEntry[] {
  * on who is signed in — logging out would read as them being removed — so both are left out.
  */
 export function listingEntries(l: StoreListing): StoreEntry[] {
-  return l.items.filter((i) => i.category !== 'ships' && i.category !== 'subscribers' && !i.vip).map((i) => ({ key: `item:${i.id}`, name: i.name, price: i.discounted, kind: i.category }));
+  return l.items
+    .filter((i) => i.category !== 'ships' && i.category !== 'subscribers' && !i.vip)
+    .map((i) => ({ key: `item:${i.id}`, name: i.name, price: i.discounted, kind: i.category, link: i.url || undefined, thumb: i.thumb }));
+}
+
+/** Groups of the same action logged close together (a catalog check and a listing check of the same poll) shown as one. */
+export interface MergedChange {
+  at: number;
+  action: StoreChange['action'];
+  entries: StoreEntry[];
+  /** The logged groups behind it, for dismissing. */
+  parts: StoreChange[];
+}
+export const MERGE_WINDOW = 10 * 60_000;
+/** The saved log with anything malformed dropped (a group written as `{}` when a reactive proxy reached chrome.storage). */
+export const cleanLog = (log: unknown): StoreChange[] =>
+  Array.isArray(log) ? log.filter((c): c is StoreChange => !!c && typeof c === 'object' && Array.isArray((c as StoreChange).entries) && typeof (c as StoreChange).at === 'number') : [];
+/** Entries added / removed across a log (or one card's parts). */
+export const tally = (groups: Pick<StoreChange, 'action' | 'entries'>[]) => groups.reduce((t, c) => ((t[c.action] += c.entries.length), t), { add: 0, remove: 0 });
+/** Newest first (as the log is); a group joins the previous one when the action matches and they are within the window. */
+export function mergeChanges(log: StoreChange[], window = MERGE_WINDOW): MergedChange[] {
+  const out: MergedChange[] = [];
+  for (const c of cleanLog(log)) {
+    const last = out[out.length - 1];
+    if (last && last.action === c.action && Math.abs(last.parts[last.parts.length - 1]!.at - c.at) <= window) {
+      last.entries = [...last.entries, ...c.entries];
+      last.parts.push(c);
+    } else out.push({ at: c.at, action: c.action, entries: [...c.entries], parts: [c] });
+  }
+  return out;
+}
+
+/**
+ * The log without a whole group (`entry` omitted), or without one / several of its entries; a group left empty goes
+ * too. The group is the one with that `at`, `action` and first entry key — so several entries go in one call, not one
+ * call each (the first key would move after the first removal).
+ */
+export function dismiss(log: StoreChange[], at: number, action: StoreChange['action'], firstKey: string, entry?: string | string[]): StoreChange[] {
+  const gone = entry == null ? null : new Set(Array.isArray(entry) ? entry : [entry]);
+  return log.flatMap((c) => {
+    if (c.at !== at || c.action !== action || c.entries[0]?.key !== firstKey) return [c];
+    if (!gone) return [];
+    const entries = c.entries.filter((e) => !gone.has(e.key));
+    return entries.length ? [{ ...c, entries }] : [];
+  });
 }
 
 /** Compare `next` with `prev` (one source). `keep` = entries of groups the outage guard held back, to carry over. */

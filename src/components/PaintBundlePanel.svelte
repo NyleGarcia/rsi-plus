@@ -1218,7 +1218,12 @@
   </Section>
 
   <h3 class="text-muted-foreground m-0 text-[11px] font-semibold tracking-wide uppercase">Reference</h3>
-  {#if buyback.length}
+  {#if !buyback.length}
+    <p class="text-muted-foreground m-0 text-xs">
+      <strong class="text-foreground font-semibold">From your buyback</strong> — paints for ships you own that you no longer have, other paints, items you don't have — needs your buyback list: open
+      <a class="text-primary hover:underline" href="#buyback">Buyback</a> and load it, then come back.
+    </p>
+  {:else}
     <Collapsible.Root bind:open={showBb} class="grid gap-2">
       <Collapsible.Trigger>
         {#snippet child({ props })}
