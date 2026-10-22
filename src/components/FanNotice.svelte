@@ -7,17 +7,21 @@
    * kit's own files, only resized — public/fankit/).
    * - `sidebar`: hub sidebar footer, always visible: badge + one short "unofficial" line (full notice as tooltip);
    *   collapsed to icons, just the badge. Kept short so the nav above isn't pushed off-screen.
-   * - `footer`: under every hub page, the full notice (the Feed home page included; covers the mobile sheet).
+   * - `footer`: under the Feed home page, and under every page on mobile (there the sidebar is a sheet, not always visible).
    * - `popup`: bottom of the toolbar popup.
+   * - `store`: top of the Store pages (Ship catalog, Browse): prices are read from the RSI store, RSI+ sells nothing,
+   *   plus the "not affiliated" line — next to the prices, not only in the footer.
    */
   import * as Tooltip from '@/components/ui/tooltip';
   import { cn } from '@/lib/utils';
 
-  let { variant = 'footer', collapsed = false, class: klass = '' }: { variant?: 'sidebar' | 'footer' | 'popup'; collapsed?: boolean; class?: string } = $props();
+  let { variant = 'footer', collapsed = false, class: klass = '' }: { variant?: 'sidebar' | 'footer' | 'popup' | 'store'; collapsed?: boolean; class?: string } = $props();
 
   const TRADEMARK = 'Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC.';
   const UNOFFICIAL = 'RSI+ is an unofficial Star Citizen fan tool, not affiliated with or endorsed by the Cloud Imperium group of companies.';
   const SHORT = 'Unofficial fan tool. Not affiliated with Cloud Imperium.';
+  const STORE =
+    'Prices, availability and listings are read from the official RSI pledge store and can lag behind it or differ. RSI+ is not a store: it sells nothing and takes no payment — every purchase happens on robertsspaceindustries.com under RSI\'s own terms.';
   const size = 44;
 </script>
 
@@ -36,6 +40,10 @@
     </Tooltip.Trigger>
     <Tooltip.Content side="right" class="max-w-72 text-[13.5px] leading-snug">{UNOFFICIAL} {TRADEMARK}</Tooltip.Content>
   </Tooltip.Root>
+{:else if variant === 'store'}
+  <aside class={cn('text-muted-foreground text-[13.5px] leading-snug', klass)} aria-label="Store notice">
+    <p class="m-0">{STORE} {UNOFFICIAL}</p>
+  </aside>
 {:else}
   <!-- 13.5px ≈ 10pt: the guidelines' minimum for the notice. -->
   <aside class={cn('text-muted-foreground flex items-start gap-2.5 text-[13.5px] leading-snug', variant === 'footer' && 'border-t pt-4', klass)} aria-label="Fan project notice">

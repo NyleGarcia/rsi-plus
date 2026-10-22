@@ -16,6 +16,7 @@
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
   import Star from '@lucide/svelte/icons/star';
+  import FanNotice from './FanNotice.svelte';
 
   let cat = $state<Catalog | null>(null);
   let wish = $state<WishShip[]>([]);
@@ -41,6 +42,34 @@
   let only = $state<'' | 'wish' | 'warbond' | 'standalone' | 'ccu' | 'concept' | 'owned' | 'not-owned'>('');
   type Col = 'wish' | 'name' | 'msrp' | 'offer' | 'saving';
   let sort = $state<SortState<Col>>({ key: 'msrp', dir: 'asc' });
+  const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
+  /** Hull to flash after a deep link (`#store?ship=<id>&q=<hull>` from Store changes). */
+  let flash = $state<number | null>(null);
+  let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  /** `#store?ship=<id>&q=<hull>`: show that hull — every hull, no maker / kind cut, the search set to it. */
+  function fromHash() {
+    const id = Number(hashParam('ship')) || null;
+    const query = hashParam('q');
+    if (!id && query == null) return;
+    sale = 'all';
+    only = '';
+    maker = '';
+    q = query ?? '';
+    flash = id;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => (flash = null), 3000);
+    history.replaceState(null, '', '#store');
+  }
+  $effect(() => {
+    if (flash == null) return;
+    void shown;
+    document.getElementById(`ship-${flash}`)?.scrollIntoView({ block: 'center' });
+  });
+  $effect(() => {
+    fromHash();
+    window.addEventListener('hashchange', fromHash);
+    return () => window.removeEventListener('hashchange', fromHash);
+  });
 
   $effect(() => {
     catalogItem.getValue().then((c) => (cat = c));
@@ -147,6 +176,7 @@
     </Card.Action>
   </Card.Header>
   <Card.Content class="grid gap-3">
+    <FanNotice variant="store" />
     {#if error}<span class="text-destructive">{error}</span>{/if}
     <div class="flex flex-wrap items-center gap-2">
       <Segmented options={SALE} bind:value={sale} ariaLabel="On sale" />
@@ -173,7 +203,7 @@
         {#each shown.slice(0, budget) as s (s.id)}
           {@const wb = warbondOf(s)}
           {@const on = wished(s.id)}
-          <Table.Row>
+          <Table.Row id={`ship-${s.id}`} class={cn(flash === s.id && 'bg-primary/10')}>
             <Table.Cell>
               <Button variant="ghost" size="icon-sm" class={on ? 'text-warning' : 'text-muted-foreground'} onclick={() => toggleWish(s)} aria-label="Wishlist" aria-pressed={on}>
                 <Star class={cn('size-[17px]', on && 'fill-current')} />

@@ -9,7 +9,20 @@ import { isBundle } from './bundle';
 export { isBundle };
 
 export type Audience = 'all' | 'concierge' | 'subscribers';
-export type Owned = 'any' | 'owned' | 'missing';
+/**
+ * Hangar cut. `owned` / `missing` go by the listing itself (its name in the hangar); `all` / `some` / `none` go by its
+ * pieces — a pack you never bought but whose paints you collected one by one is `all`, a pack with two of nine ships
+ * is `some` (only packs can be), one with none of them `none`.
+ */
+export type Owned = 'any' | 'owned' | 'missing' | 'all' | 'some' | 'none';
+/** What the hangar holds of a listing: copies of the listing itself, and pieces owned out of the pieces that can be. */
+export interface HangarMatch {
+  count: number;
+  have: number;
+  of: number;
+}
+/** A single listing's pieces are itself: owned or not, out of one. */
+export const hangarMatch = (owned: number | HangarMatch): HangarMatch => (typeof owned === 'number' ? { count: owned, have: owned > 0 ? 1 : 0, of: 1 } : owned);
 export type Edition = 'any' | 'warbond' | 'standard';
 export type Cat = StoreCategory | 'all';
 
@@ -42,15 +55,19 @@ export const discountPct = (it: Pick<StoreItem, 'price' | 'discounted'>) => (it.
 export const forWho = (it: Pick<StoreItem, 'vip' | 'category'>, w: Audience) => (w === 'all' ? true : w === 'concierge' ? it.vip : it.category === 'subscribers');
 
 /** Every cut except the category, so category tabs can count what each would show. */
-export function matchesFilter(it: StoreItem, f: BrowseFilter, owned: number, query = f.q.trim().toLowerCase()): boolean {
+export function matchesFilter(it: StoreItem, f: BrowseFilter, owned: number | HangarMatch, query = f.q.trim().toLowerCase()): boolean {
   if (!forWho(it, f.who)) return false;
   if (f.inStock && !it.available) return false;
   if (f.sale && discountPct(it) <= 0) return false;
   if (f.edition === 'warbond' && !it.warbond) return false;
   if (f.edition === 'standard' && it.warbond) return false;
   if (f.bundles && !isBundle(it)) return false;
-  if (f.owned === 'owned' && owned <= 0) return false;
-  if (f.owned === 'missing' && owned > 0) return false;
+  const h = hangarMatch(owned);
+  if (f.owned === 'owned' && h.count <= 0) return false;
+  if (f.owned === 'missing' && h.count > 0) return false;
+  if (f.owned === 'all' && (h.of === 0 || h.have < h.of)) return false;
+  if (f.owned === 'some' && (h.have === 0 || h.have >= h.of)) return false;
+  if (f.owned === 'none' && h.have > 0) return false;
   if (f.min != null && it.discounted < f.min) return false;
   if (f.max != null && it.discounted > f.max) return false;
   if (query && !`${it.name} ${it.subtitle}`.toLowerCase().includes(query)) return false;
@@ -59,7 +76,7 @@ export function matchesFilter(it: StoreItem, f: BrowseFilter, owned: number, que
 
 export const matchesCat = (it: Pick<StoreItem, 'category'>, cat: Cat) => cat === 'all' || it.category === cat;
 
-export function filterItems(items: StoreItem[], f: BrowseFilter, ownedCount: (it: StoreItem) => number): StoreItem[] {
+export function filterItems(items: StoreItem[], f: BrowseFilter, ownedCount: (it: StoreItem) => number | HangarMatch): StoreItem[] {
   const query = f.q.trim().toLowerCase();
   return items.filter((it) => matchesCat(it, f.cat) && matchesFilter(it, f, ownedCount(it), query));
 }

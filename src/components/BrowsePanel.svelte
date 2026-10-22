@@ -11,13 +11,15 @@
    * Hash: `#browse?who=concierge&cat=paints`.
    */
   import { catalogItem, conciergeItem, hangarItem, storeItemsItem } from '@/lib/settings';
-  import { fetchStoreItems, paintKey, STORE_CATEGORIES, usd, type CatalogShip, type StoreItem, type StoreListing } from '@/lib/store';
-  import { activeFilters, DEFAULT_FILTER, discountPct, filterItems, forWho, isAudience, isBundle, isCat, matchesFilter, parseUsd, type Audience, type BrowseFilter, type Cat, type Edition, type Owned } from '@/lib/browse';
+  import { fetchStoreItems, matchShip, paintKey, STORE_CATEGORIES, usd, type CatalogShip, type StoreItem, type StoreListing } from '@/lib/store';
+  import { activeFilters, DEFAULT_FILTER, discountPct, filterItems, forWho, isAudience, isBundle, isCat, matchesFilter, parseUsd, type Audience, type BrowseFilter, type Cat, type Edition, type HangarMatch, type Owned } from '@/lib/browse';
   import { addStandalone, CART_URL, CartError } from '@/lib/cart';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Check from '@lucide/svelte/icons/check';
   import ExternalLink from '@lucide/svelte/icons/external-link';
-  import { bundleValue, hasContents, insuranceOf, priceIndex, type BundleValue } from '@/lib/bundle';
+  import ImageOff from '@lucide/svelte/icons/image-off';
+  import { bundleValue, contentKey, hasContents, insuranceOf, isExtra, priceIndex, type BundleValue } from '@/lib/bundle';
+  import { PAINT_TIERS, paintDiscount } from '@/lib/paints';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { cn } from '@/lib/utils';
@@ -26,7 +28,7 @@
   import { listingEntries } from '@/lib/storelog';
   import { saveStoreCopy } from '@/lib/storelog-save';
   import SortTh from './SortTh.svelte';
-  import StoreLog from './StoreLog.svelte';
+  import FanNotice from './FanNotice.svelte';
   import Thumb from './Thumb.svelte';
   import Segmented from './Segmented.svelte';
   import * as Card from '@/components/ui/card';
@@ -52,10 +54,37 @@
     { value: 'any', label: 'Hangar: any' },
     { value: 'owned', label: 'In my hangar' },
     { value: 'missing', label: 'Not in my hangar' },
+    { value: 'all', label: 'Pieces: all owned' },
+    { value: 'some', label: 'Pieces: some owned' },
+    { value: 'none', label: 'Pieces: none owned' },
   ];
   const whoParam = hashParam('who');
   const catParam = hashParam('cat');
   let f = $state<BrowseFilter>({ ...DEFAULT_FILTER, who: isAudience(whoParam) ? whoParam : 'all', cat: isCat(catParam) ? catParam : 'all' });
+  /** Listing to flash after a deep link (`#browse?item=<id>&q=<name>` from Store changes). */
+  let flash = $state<number | null>(null);
+  let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  /** `#browse?item=<id>&q=<name>`: show that listing — every filter off (out of stock included), the search set to it. */
+  function fromHash() {
+    const id = Number(hashParam('item')) || null;
+    const query = hashParam('q');
+    if (!id && query == null) return;
+    f = { ...DEFAULT_FILTER, inStock: false, q: query ?? '' };
+    flash = id;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => (flash = null), 3000);
+    history.replaceState(null, '', '#browse');
+  }
+  $effect(() => {
+    if (flash == null) return;
+    void shown;
+    document.getElementById(`listing-${flash}`)?.scrollIntoView({ block: 'center' });
+  });
+  $effect(() => {
+    fromHash();
+    window.addEventListener('hashchange', fromHash);
+    return () => window.removeEventListener('hashchange', fromHash);
+  });
   /** Price bounds as typed (dollars); parsed into `f.min` / `f.max` on change. */
   let minText = $state('');
   let maxText = $state('');
@@ -124,6 +153,57 @@
     return [...list, ...extra];
   });
   const whoCount = (w: Audience) => all.filter((it) => forWho(it, w)).length;
+  /**
+   * Picture per piece of a pack, from the store itself: a listing that grants just that piece (by content key), any
+   * listing by its own name (a set priced as one listing: armor sets, paint packs), and hulls from the ship catalog.
+   * RSI never ships pictures with a pack's contents, so a piece nobody sells alone has none.
+   */
+  /** Where a piece is sold on its own: the store page, the SKU for the cart, the picture. */
+  interface Sold {
+    url: string;
+    sku: number | null;
+    available: boolean;
+    thumb: string | null;
+  }
+  const sold = $derived.by(() => {
+    const m = new Map<string, Sold>();
+    const put = (k: string, s: Sold) => {
+      const cur = m.get(k);
+      if (k && (!cur || (!cur.available && s.available))) m.set(k, s);
+    };
+    for (const it of all) {
+      if (it.category === 'subscribers') continue; // not for sale to everyone
+      const s: Sold = { url: it.url, sku: it.id, available: it.available, thumb: it.thumb };
+      put(paintKey(it.name), s);
+      const pieces = (it.contents ?? []).filter((c) => !c.ship && !isExtra(c.name));
+      if (pieces.length === 1) put(contentKey(pieces[0]!.name), s);
+    }
+    return m;
+  });
+  const soldOf = (name: string, ship?: true): Sold | null => {
+    if (ship) {
+      const s = matchShip(name, ships);
+      if (!s?.link) return null;
+      const sku = s.standalone.filter((k) => k.available).sort((a, b) => a.price - b.price)[0];
+      return { url: s.link, sku: sku?.id ?? null, available: !!sku, thumb: s.thumb };
+    }
+    return sold.get(contentKey(name)) ?? sold.get(paintKey(name)) ?? null;
+  };
+  /**
+   * A paint pack's paints bought as singles under RSI's multi-paint discount: these n alone, then in a cart that reaches
+   * each higher tier (the discount applies to every paint line in the cart). The pack line is priced as listed — whether
+   * RSI discounts a pack line too, or counts it toward the tier, is unverified.
+   */
+  const paintTiers = (separate: number, n: number) => {
+    const row = (paints: number, label: string) => {
+      const rate = paintDiscount(paints);
+      return { label, rate, cost: Math.round(separate * (1 - rate)) };
+    };
+    return [row(n, `${n} alone`), ...PAINT_TIERS.filter((t) => t.min > n).map((t) => row(t.min, `in a cart of ${t.min}+ paints`))];
+  };
+  /** A part's price line: its price (× copies), *included* for the extras, else *not sold apart*. */
+  const subOf = (p: { price: number | null; count: number; extra?: true }) => (p.price != null ? (p.count > 1 ? `${usd(p.price)} × ${p.count} = ${usd(p.price * p.count)}` : usd(p.price)) : p.extra ? 'included' : 'not sold apart');
+  const thumbOf = (name: string, ship?: true): string | null => soldOf(name, ship)?.thumb ?? null;
   /** Breakdown per listing id with two or more contents, priced against the whole store + ship catalog. */
   const values = $derived.by(() => {
     const idx = priceIndex(all, ships);
@@ -137,10 +217,43 @@
   const toggle = (id: number) => (open = new Set(open.has(id) ? [...open].filter((x) => x !== id) : [...open, id]));
   /** "saves $25 (20%)" / "$25 more than apart" / "$100 apart" — null when no piece is priced. */
   const valueLine = (v: BundleValue) => (!v.priced ? null : v.savings > 0 ? `saves ${usd(v.savings)} · ${v.pct}%` : v.savings < 0 ? `${usd(-v.savings)} more than apart` : 'same as apart');
+  /**
+   * Pieces of a bundle already in the hangar vs all its pieces (extras aside, duplicates counted), and what the missing
+   * ones cost bought apart (`unpriced` = missing pieces the store never sells alone; a set with any piece missing costs
+   * the whole set).
+   */
+  const ownedOf = (v: BundleValue) => {
+    let have = 0, of = 0, cost = 0, unpriced = 0;
+    for (const p of v.parts) {
+      if (p.extra) continue;
+      if (p.pieces) {
+        const h = p.pieces.filter((n) => ownedPiece(n) > 0).length;
+        have += h;
+        of += p.pieces.length;
+        if (h < p.pieces.length) p.price != null ? (cost += p.price) : (unpriced += p.pieces.length - h);
+      } else {
+        const h = Math.min(ownedPiece(p.name), p.count);
+        have += h;
+        of += p.count;
+        if (h < p.count) p.price != null ? (cost += p.price * (p.count - h)) : (unpriced += p.count - h);
+      }
+    }
+    return { have, of, cost, unpriced };
+  };
+  /** What the hangar holds of a listing: the listing itself, and its pieces (a pack's parts; a single listing is its own piece). */
+  const hangarOf = (it: StoreItem): HangarMatch => {
+    const count = ownedCount(it);
+    const v = values.get(it.id);
+    if (v && isBundle(it)) {
+      const o = ownedOf(v);
+      return { count, have: o.have, of: o.of };
+    }
+    return { count, have: count > 0 ? 1 : 0, of: 1 };
+  };
   /** Rows that pass every filter but the category — what each tab would show. */
   const filtered = $derived.by(() => {
     const query = f.q.trim().toLowerCase();
-    return all.filter((it) => matchesFilter(it, f, ownedCount(it), query));
+    return all.filter((it) => matchesFilter(it, f, hangarOf(it), query));
   });
   const bundleCount = $derived(filtered.filter((it) => isBundle(it) && (f.cat === 'all' || it.category === f.cat)).length);
   const catCount = $derived.by(() => {
@@ -154,14 +267,17 @@
     ...STORE_CATEGORIES.map((c) => ({ id: c.id as Cat, label: `${c.label} · ${catCount.get(c.id) ?? 0}`, hint: `${c.label} the store lists` })),
   ]);
   const shown = $derived.by(() => {
-    const list = filterItems(all, f, ownedCount);
+    const list = filterItems(all, f, hangarOf);
     const byName = [...list].sort((a, b) => a.name.localeCompare(b.name));
     return sortBy(byName, sort, {
       name: (it) => it.name,
       bundle: (it) => (isBundle(it) ? (values.get(it.id)?.savings ?? null) : null),
       price: (it) => it.discounted,
       discount: (it) => discountPct(it) || null,
-      owned: (it) => ownedCount(it) || null,
+      owned: (it) => {
+        const h = hangarOf(it);
+        return h.of ? h.have / h.of || null : null;
+      },
     });
   });
   /**
@@ -174,7 +290,7 @@
     const t = setTimeout(() => (budget += 40), 16);
     return () => clearTimeout(t);
   });
-  const outOfStock = $derived(all.filter((it) => !it.available && matchesFilter(it, { ...f, inStock: false }, ownedCount(it)) && (f.cat === 'all' || it.category === f.cat)).length);
+  const outOfStock = $derived(all.filter((it) => !it.available && matchesFilter(it, { ...f, inStock: false }, hangarOf(it)) && (f.cat === 'all' || it.category === f.cat)).length);
   const active = $derived(activeFilters(f));
   function reset() {
     f = { ...DEFAULT_FILTER, who: f.who, cat: f.cat };
@@ -199,8 +315,47 @@
   const subscriber = $derived(items?.subscriber ?? null);
 </script>
 
+{#snippet tile(name: string, pic: string | null, owned: number, sub: string, opts: { ship?: boolean; extra?: boolean; count?: number; small?: boolean; buy?: Sold | null } = {})}
+  {@const buy = opts.buy ?? null}
+  {@const c = buy?.sku != null ? cart[buy.sku] : undefined}
+  <li class={cn('flex min-w-0 items-center gap-2 rounded-md border px-1.5 py-1', owned ? 'border-success/30 bg-success/5' : 'border-border/40 bg-background/40', opts.extra && 'opacity-70')} title={name}>
+    {#if pic}
+      <Thumb src={pic} {name} width={opts.small ? 44 : 56} height={opts.small ? 25 : 32} />
+    {:else}
+      <span class={cn('bg-muted/40 text-muted-foreground flex shrink-0 items-center justify-center rounded-md', opts.small ? 'h-[25px] w-11' : 'h-8 w-14')} aria-hidden="true" title={opts.extra ? '' : 'No picture: the store never sells this on its own'}><ImageOff class="size-3.5 opacity-50" /></span>
+    {/if}
+    <div class="grid min-w-0 gap-0">
+      <div class="flex min-w-0 items-center gap-1 text-[12px] leading-4">
+        {#if owned}<Check class="text-success size-3 shrink-0" aria-label="in your hangar" />{/if}
+        {#if buy}
+          <a class="text-foreground truncate no-underline hover:underline" href={buy.url} target="_blank" rel="noopener" title={`${name} — open on the RSI store`}>{name}</a>
+        {:else}
+          <span class="truncate">{name}</span>
+        {/if}
+        {#if opts.count && opts.count > 1}<span class="text-muted-foreground shrink-0">×{opts.count}</span>{/if}
+        {#if opts.ship}<Badge variant="outline" class="h-4 shrink-0 px-1 text-[10px]">ship</Badge>{/if}
+      </div>
+      {#if sub || owned > 1}<div class="text-muted-foreground text-[11px] leading-4 tabular-nums">{sub}{#if sub && owned > 1}{' · '}{/if}{#if owned > 1}owned ×{owned}{/if}</div>{/if}
+    </div>
+    {#if buy}
+      <div class="ml-auto flex shrink-0 items-center gap-0.5">
+        <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-6" href={buy.url} target="_blank" rel="noopener" title="Open on the RSI store" aria-label={`Open ${name} on the RSI store`}><ExternalLink class="size-3" /></Button>
+        {#if buy.sku != null}
+          {#if c?.st === 'added'}
+            <span class="text-success inline-flex items-center gap-0.5 text-[11px]"><Check class="size-3" /> in cart</span>
+          {:else if c?.st === 'adding'}
+            <span class="text-muted-foreground text-[11px]">adding…</span>
+          {:else}
+            <Button variant="ghost" size="icon-xs" class="text-primary size-6" disabled={!buy.available} onclick={() => addOne(buy.sku!)} title={buy.available ? `Add ${name} to your RSI cart on its own (nothing is paid)` : 'Out of stock'} aria-label={`Add ${name} to cart`}><ShoppingCart class="size-3.5" /></Button>
+            {#if c?.st === 'error'}<span class="text-destructive text-[11px]">{c.msg}</span>{/if}
+          {/if}
+        {/if}
+      </div>
+    {/if}
+  </li>
+{/snippet}
+
 <div class="grid gap-4">
-  <StoreLog />
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-lg font-semibold">Browse</Card.Title>
@@ -214,6 +369,7 @@
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-3">
+      <FanNotice variant="store" />
       {#if error}<span class="text-destructive">{error}</span>{/if}
       <Segmented options={TABS} bind:value={f.cat} ariaLabel="Category" />
       <div class="flex flex-wrap items-center gap-2">
@@ -225,7 +381,7 @@
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Select.Root type="single" value={f.owned} onValueChange={(v) => (f.owned = v as Owned)}>
-          <Select.Trigger aria-label="Hangar" size="sm" class="min-w-36">{OWNED.find((o) => o.value === f.owned)?.label}</Select.Trigger>
+          <Select.Trigger aria-label="Hangar" size="sm" class="min-w-36" title="In / not in my hangar: the listing itself. Pieces: what you hold of a pack's parts — all (every paint of a collection already yours), some (two of nine ships), none">{OWNED.find((o) => o.value === f.owned)?.label}</Select.Trigger>
           <Select.Content>
             {#each OWNED as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
           </Select.Content>
@@ -268,9 +424,17 @@
             {@const bundle = !!v && isBundle(it)}
             {@const isOpen = !!v && open.has(it.id)}
             {@const ins = insuranceOf(it)}
-            <Table.Row>
-              <Table.Cell class="w-full whitespace-normal">
-                <div class="flex min-w-[240px] items-center gap-2.5">
+            {@const own = bundle && hangar ? ownedOf(v) : null}
+            <Table.Row id={`listing-${it.id}`} class={cn(flash === it.id && 'bg-primary/10')}>
+              <Table.Cell class="w-[46%] min-w-[380px] whitespace-normal">
+                <div class="flex items-center gap-2">
+                  {#if v}
+                    <button type="button" class="text-muted-foreground hover:text-foreground inline-flex size-6 shrink-0 items-center justify-center rounded border-0 bg-transparent p-0" onclick={() => toggle(it.id)} aria-expanded={isOpen} aria-controls={`bundle-${it.id}`} aria-label={isOpen ? 'Hide contents' : 'Show contents'}>
+                      {#if isOpen}<ChevronDown class="size-4" aria-hidden="true" />{:else}<ChevronRight class="size-4" aria-hidden="true" />{/if}
+                    </button>
+                  {:else}
+                    <span class="size-6 shrink-0" aria-hidden="true"></span>
+                  {/if}
                   <Thumb src={it.thumb} name={it.name} width={64} height={36} />
                   <div class="grid gap-0.5">
                     <a class="text-foreground no-underline hover:underline" href={it.url} target="_blank" rel="noopener"><strong>{it.name}</strong></a>
@@ -286,12 +450,17 @@
                   </div>
                 </div>
               </Table.Cell>
-              <Table.Cell class="align-top">
+              <Table.Cell class="align-top whitespace-nowrap">
                 {#if v}
-                  <button type="button" class="text-foreground inline-flex items-center gap-1 rounded border-0 bg-transparent p-0 text-left text-[12.5px] hover:underline" onclick={() => toggle(it.id)} aria-expanded={isOpen} aria-controls={`bundle-${it.id}`}>
-                    {#if isOpen}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
+                  <button type="button" class="text-foreground inline-flex items-center gap-1 rounded border-0 bg-transparent p-0 text-left text-[12.5px] hover:underline" onclick={() => toggle(it.id)} aria-expanded={isOpen} tabindex="-1">
                     {v.total} items
                   </button>
+                  {#if own}
+                    <div class={cn('inline-flex items-center gap-1 text-[11px] leading-4', own.have ? 'text-success' : 'text-muted-foreground')} title={`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside); ${own.have} of those are already in your hangar`}>
+                      {#if own.have}<Check class="size-3 shrink-0" aria-hidden="true" />{/if}
+                      {own.have === own.of ? `all ${own.of} in your hangar` : `${own.have} of ${own.of} in your hangar`}
+                    </div>
+                  {/if}
                   {#if !bundle}
                     <div class="text-muted-foreground text-[11px]">{v.parts.filter((p) => p.extra).map((p) => p.name).join(' · ')}</div>
                   {:else if v.priced}
@@ -307,7 +476,7 @@
               </Table.Cell>
               <Table.Cell class="tabular-nums align-top">{usd(it.discounted)}{#if off}<div class="text-muted-foreground text-[11px] leading-4">list {usd(it.price)}</div>{/if}</Table.Cell>
               <Table.Cell class="align-top">{#if off}<span class="text-success">−{off}%</span><div class="text-muted-foreground text-[11px] leading-4">{usd(it.price - it.discounted)} off</div>{:else}<span class="text-muted-foreground">—</span>{/if}</Table.Cell>
-              <Table.Cell class="align-top">
+              <Table.Cell class="w-full align-top">
                 {@const c = cart[it.id]}
                 {#if c?.st === 'added'}
                   <span class="text-success inline-flex items-center gap-0.5 text-[11px]"><Check class="size-3" /> in cart</span>
@@ -320,6 +489,8 @@
               </Table.Cell>
             </Table.Row>
             {#if v && isOpen}
+              {@const singles = v.parts.filter((p) => !p.pieces)}
+              {@const sets = v.parts.filter((p) => p.pieces)}
               <Table.Row id={`bundle-${it.id}`} class="hover:bg-transparent">
                 <Table.Cell colspan={5} class="py-2 pr-3 pl-10">
                   <div class="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2">
@@ -331,30 +502,55 @@
                           <span class={cn('font-semibold', v.savings > 0 ? 'text-success' : v.savings < 0 ? 'text-warning' : 'text-muted-foreground')}>{v.savings > 0 ? `Saves ${usd(v.savings)} · ${v.pct}%` : v.savings < 0 ? `${usd(-v.savings)} more than apart` : 'Same as apart'}</span>
                         {/if}
                         {#if v.priced < v.priceable}<span class="text-muted-foreground">{v.priced} of {v.priceable} pieces priced — the rest isn't sold on its own</span>{/if}
+                        {#if it.category === 'paints' && !sets.length && v.priced === v.priceable && v.priceable >= 2}
+                          {@const tiers = paintTiers(v.separate, v.priceable)}
+                          <div class="basis-full">
+                            <div class="text-muted-foreground mb-0.5" title="RSI takes 15 % off every paint line at 2 paints in the cart, 20 % at 3, 25 % at 5, 30 % at 7, 35 % at 10 — singles only; whether a pack line is discounted too, or counts toward the tier, is unverified">As singles with the multi-paint discount</div>
+                            <div class="grid w-fit grid-cols-[auto_auto_auto_auto] gap-x-3 gap-y-0.5 text-[11px] leading-4">
+                              {#each tiers as t, i (i)}
+                                {@const d = it.discounted - t.cost}
+                                <span class="text-muted-foreground">{t.label}</span>
+                                <span class="text-muted-foreground tabular-nums text-right">−{Math.round(t.rate * 100)}%</span>
+                                <strong class="text-foreground tabular-nums text-right">{usd(t.cost)}</strong>
+                                <span class={cn('tabular-nums', d > 0 ? 'text-success' : 'text-muted-foreground')}>{d > 0 ? `beats the pack by ${usd(d)}` : d < 0 ? `pack cheaper by ${usd(-d)}` : 'same as the pack'}</span>
+                              {/each}
+                            </div>
+                          </div>
+                        {/if}
+                        {#if own}
+                          <span class={cn(own.have === own.of ? 'text-success' : 'text-muted-foreground')} title={`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside)`}>In your hangar <strong class={cn('tabular-nums text-sm', own.have === own.of ? 'text-success' : 'text-foreground')}>{own.have} of {own.of}</strong></span>
+                          {#if own.have && own.have < own.of}
+                            <span class="text-muted-foreground" title="What the pieces you don't have would cost bought one by one">Missing apart <strong class="text-foreground tabular-nums text-sm">{usd(own.cost)}</strong>{#if own.unpriced}{` + ${own.unpriced} not sold apart`}{/if}</span>
+                          {/if}
+                        {/if}
                       </div>
                     {/if}
-                    <ul class="m-0 grid list-none gap-1.5 p-0">
-                      {#each v.parts as part, i (i)}
-                        {@const have = part.pieces ? part.pieces.filter((n) => ownedPiece(n) > 0).length : ownedPiece(part.name)}
-                        <li class={cn('grid gap-0.5', i > 0 && part.pieces && 'border-border/40 border-t pt-1.5')}>
-                          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
-                            {#if !part.pieces && have}<Check class="text-success size-3.5 shrink-0" aria-label="in your hangar" />{/if}
-                            <span class={cn(part.extra && 'text-muted-foreground')}>{part.name}{#if part.count > 1} <span class="text-muted-foreground">×{part.count}</span>{/if}</span>
-                            {#if part.ship}<Badge variant="outline" class="h-4 px-1 text-[10px]">ship</Badge>{/if}
-                            {#if part.pieces}<Badge variant="outline" class="text-muted-foreground h-4 px-1 text-[10px]">{part.pieces.length} pieces</Badge>{/if}
-                            {#if part.pieces && have}<Badge variant="outline" class="text-success h-4 px-1 text-[10px]">{have === part.pieces.length ? 'all owned' : `${have}/${part.pieces.length} owned`}</Badge>{:else if !part.pieces && have}<Badge variant="outline" class="text-success h-4 px-1 text-[10px]">owned{have > 1 ? ` ×${have}` : ''}</Badge>{/if}
-                            <span class="text-muted-foreground ml-auto tabular-nums text-xs">{part.price != null ? (part.count > 1 ? `${usd(part.price)} × ${part.count} = ${usd(part.price * part.count)}` : usd(part.price)) : part.extra ? 'included' : 'not sold apart'}</span>
-                          </div>
-                          {#if part.pieces}
-                            <ul class="text-muted-foreground m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-x-4 gap-y-0.5 p-0 pl-1 text-[11px]">
-                              {#each part.pieces as piece, j (j)}
-                                <li class="flex items-center gap-1 truncate" title={piece}>{#if ownedPiece(piece)}<Check class="text-success size-3 shrink-0" aria-label="in your hangar" />{:else}<span class="size-3 shrink-0" aria-hidden="true"></span>{/if}<span class="truncate">{piece}</span></li>
-                              {/each}
-                            </ul>
-                          {/if}
-                        </li>
-                      {/each}
-                    </ul>
+                    {#if singles.length}
+                      <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-1.5 p-0">
+                        {#each singles as part, i (i)}
+                          {@render tile(part.name, part.extra ? null : thumbOf(part.name, part.ship), ownedPiece(part.name), subOf(part), { ship: !!part.ship, extra: !!part.extra, count: part.count, buy: part.extra ? null : soldOf(part.name, part.ship) })}
+                        {/each}
+                      </ul>
+                    {/if}
+                    {#each sets as part, i (i)}
+                      {@const pieces = part.pieces ?? []}
+                      {@const have = pieces.filter((n) => ownedPiece(n) > 0).length}
+                      {@const pic = thumbOf(part.name)}
+                      <section class={cn('border-border/40 bg-background/30 rounded-md border p-1.5', (singles.length || i > 0) && 'mt-1.5')}>
+                        <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
+                          {#if pic}<Thumb src={pic} name={part.name} width={44} height={25} />{/if}
+                          <strong class="font-semibold">{part.name}</strong>
+                          <Badge variant="outline" class="text-muted-foreground h-4 px-1 text-[10px]">{pieces.length} pieces</Badge>
+                          {#if have}<Badge variant="outline" class="text-success h-4 px-1 text-[10px]">{have === pieces.length ? 'all owned' : `${have}/${pieces.length} owned`}</Badge>{/if}
+                          <span class="text-muted-foreground ml-auto tabular-nums text-xs">{part.price != null ? `${usd(part.price)} as a set` : 'not sold apart'}</span>
+                        </div>
+                        <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-1 p-0">
+                          {#each pieces as piece, j (j)}
+                            {@render tile(piece, thumbOf(piece), ownedPiece(piece), '', { small: true, buy: soldOf(piece) })}
+                          {/each}
+                        </ul>
+                      </section>
+                    {/each}
                   </div>
                 </Table.Cell>
               </Table.Row>

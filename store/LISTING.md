@@ -46,7 +46,9 @@ PRIVACY
 RSI+ only talks to robertsspaceindustries.com. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
 
 Open source: https://github.com/NyleGarcia/rsi-plus
-Not affiliated with Cloud Imperium Games or Roberts Space Industries.
+
+DISCLAIMER
+RSI+ is an unofficial Star Citizen fan tool, made by the community. It is not affiliated with, endorsed by or sponsored by Cloud Imperium Games, Roberts Space Industries or any company of the Cloud Imperium group. Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC; all game content, names and images belong to their owners. Store prices and listings are read from the official RSI pledge store and can lag behind it or differ; RSI+ is not a store, sells nothing and takes no payment — every purchase happens on robertsspaceindustries.com under RSI's own terms.
 ```
 
 **Graphic assets**

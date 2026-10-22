@@ -44,5 +44,5 @@ Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRI
 Docs: [docs/README.md](docs/README.md) · [architecture](docs/architecture.md) · [changelog](docs/changelog.md).
 
 ---
-RSI+ is an unofficial Star Citizen fan tool, not affiliated with or endorsed by the Cloud Imperium group of companies. Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC. The *Made By The Community* logo is from the official [Star Citizen Fankit](https://robertsspaceindustries.com/fankit), used under its terms.
+RSI+ is an unofficial Star Citizen fan tool, not affiliated with or endorsed by the Cloud Imperium group of companies. Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC. The *Made By The Community* logo is from the official [Star Citizen Fankit](https://robertsspaceindustries.com/fankit), used under its terms. Store prices and listings are read from the official RSI pledge store and can lag or differ; RSI+ sells nothing and takes no payment — purchases happen on robertsspaceindustries.com under RSI's terms.
 

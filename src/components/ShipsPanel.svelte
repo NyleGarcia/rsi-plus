@@ -19,10 +19,12 @@
     type PaintGroup,
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem, storeItemsItem } from '@/lib/settings';
+  import { addStandalone, CART_URL, CartError } from '@/lib/cart';
+  import { isExtra, isInsurance } from '@/lib/bundle';
   import { cleanLabels, labelsOf, type Labels } from '@/lib/labels';
   import { sortBy, type SortState } from '@/lib/sort';
-  import { usd, type Catalog, type CatalogShip, type PaintCatalog, type StorePaint } from '@/lib/store';
+  import { paintKey, usd, type Catalog, type CatalogShip, type PaintCatalog, type StoreContent, type StorePaint } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
   import SortTh from './SortTh.svelte';
   import Thumb from './Thumb.svelte';
@@ -41,6 +43,9 @@
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
   let storePaints = $state<PaintCatalog | null>(null);
+  /** The Browse listing's contents per listing id (what a paint pack grants) — the paint catalog itself keeps none. */
+  let packContents = $state(new Map<number, StoreContent[]>());
+  const contentsOf = (items: { id: number; contents?: StoreContent[] }[] | undefined) => new Map((items ?? []).filter((i) => (i.contents?.length ?? 0) > 1).map((i) => [i.id, i.contents!]));
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let game = $state<GameShip[]>([]);
   let labels = $state<Labels>({});
@@ -51,6 +56,7 @@
     hangarItem.getValue().then((h) => (hangar = h));
     catalogItem.getValue().then((c) => (cat = c));
     paintCatalogItem.getValue().then((p) => (storePaints = p));
+    storeItemsItem.getValue().then((v) => (packContents = contentsOf(v?.items)));
     buybackItem.getValue().then((b) => (buyback = b));
     gameShipsItem.getValue().then((g) => (game = g));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
@@ -58,7 +64,7 @@
       .then((c) => (cat = c))
       .catch((e) => (error = `Store catalog: ${(e as Error).message} (needed to match paints to ships)`));
     refreshPaints(false);
-    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
+    const offs = [hangarItem.watch((h) => (hangar = h)), catalogItem.watch((c) => (cat = c)), paintCatalogItem.watch((p) => (storePaints = p)), storeItemsItem.watch((v) => (packContents = contentsOf(v?.items))), buybackItem.watch((b) => (buyback = b)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {
@@ -80,8 +86,34 @@
   const ownedPaints = $derived(rows.filter((r) => r.category === 'paint'));
   /** Store paint id → the hulls it is for (exact variant when the name says one: "Hull A - Dusk Paint" → Hull A only). */
   const storeFits = $derived(new Map((storePaints?.paints ?? []).map((sp) => [sp.id, shipsFor(sp.name, ships)])));
-  /** Store paints you already have (same title in the hangar). */
-  const ownedStoreIds = $derived(new Set(rows.filter((r) => r.category === 'paint').map((r) => storePaintFor(r, storeIdx)?.id).filter((x): x is number => x != null)));
+  /**
+   * Store paints you already have: same title in the hangar, or a pack / collection whose every paint you own one by
+   * one (the pack would read "not owned" though nothing in it is missing).
+   */
+  const ownedStoreIds = $derived.by(() => {
+    const ids = new Set(rows.filter((r) => r.category === 'paint').map((r) => storePaintFor(r, storeIdx)?.id).filter((x): x is number => x != null));
+    const have = new Set(rows.map((r) => paintKey(r.title)));
+    for (const sp of storePaints?.paints ?? []) {
+      const pieces = (packContents.get(sp.id) ?? []).filter((c) => !c.ship && !isExtra(c.name) && !isInsurance(c.name));
+      if (pieces.length > 1 && pieces.every((c) => have.has(paintKey(c.name)))) ids.add(sp.id);
+    }
+    return ids;
+  });
+  // ---- add a store paint to the RSI cart (same call as Browse / Paint rebuy; never retried, nothing paid) ----
+  type CartState = { st: 'adding' } | { st: 'added' } | { st: 'error'; msg: string };
+  let cart = $state<Record<number, CartState>>({});
+  async function addOne(sku: number) {
+    if (cart[sku]?.st === 'adding') return;
+    cart = { ...cart, [sku]: { st: 'adding' } };
+    try {
+      await addStandalone(sku, 1);
+      cart = { ...cart, [sku]: { st: 'added' } };
+    } catch (e) {
+      const ce = e instanceof CartError ? e : new CartError('refused', (e as Error).message);
+      cart = { ...cart, [sku]: { st: 'error', msg: ce.code === 'signed-out' ? 'Sign in to RSI' : ce.code === 'conflict' ? 'Cart busy' : ce.code === 'network' ? 'No answer — check your cart' : ce.message } };
+    }
+  }
+  const inCart = $derived(Object.values(cart).filter((c) => c.st === 'added').length);
 
   // ---- view prefs ----
   type View = 'paints' | 'ships' | 'bundle';
@@ -279,7 +311,18 @@
 
 {#snippet links(r: Row)}
   <span class="inline-flex flex-wrap gap-2">
-    {#if r.store}<a class={linkCls} href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Buy on the store'}><ShoppingCart class="size-3" /> {r.owned ? 'store' : `buy ${price(r.store)}`}</a>{/if}
+    {#if r.store}
+      <a class={linkCls} href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Open on the store'}><ExternalLink class="size-3" /> {r.owned ? 'store' : `store ${price(r.store)}`}</a>
+      {@const c = cart[r.store.id]}
+      {#if c?.st === 'added'}
+        <span class="text-success inline-flex items-center gap-0.5"><Check class="size-3" /> in cart</span>
+      {:else if c?.st === 'adding'}
+        <span class="text-muted-foreground">adding…</span>
+      {:else if r.store.available}
+        <button type="button" class={cn(linkCls, 'cursor-pointer border-0 bg-transparent p-0')} onclick={() => addOne(r.store!.id)} title="Add to your RSI cart (nothing is paid)"><ShoppingCart class="size-3" /> + cart</button>
+        {#if c?.st === 'error'}<span class="text-destructive">{c.msg}</span>{/if}
+      {/if}
+    {/if}
     {#if r.owned}
       {#each [...new Map(r.owned.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
         <a class={linkCls} href={hangarUrl(hangar?.pledges ?? [], p.id)} target="_blank" rel="noopener" title={`Open the hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
@@ -313,7 +356,8 @@
                 {#if storePaints}· {storePaints.paints.length} store paints from {new Date(storePaints.at).toLocaleString()}{/if}
                 {#if ownedPaints.length}· pictures for {ownedPaints.filter((r) => r.image || storePaintFor(r, storeIdx)).length} of {ownedPaints.length} owned paints{#if !ownedPaints.some((r) => r.image)} <span class="text-warning" title="The hangar page's item pictures are kept when the hangar is loaded — reload it on Pledges. If this stays, RSI's hangar markup differs from what the parser expects.">(none from the hangar page — reload it on Pledges)</span>{/if}{/if}
               </Card.Description>
-              <Card.Action>
+              <Card.Action class="flex flex-wrap items-center gap-2">
+                {#if inCart}<Button variant="outline" size="sm" href={CART_URL} target="_blank" rel="noopener">Open RSI cart ({inCart}) <ExternalLink /></Button>{/if}
                 <Button variant="outline" size="sm" disabled={paintsLoading} onclick={() => refreshPaints(true)}>{paintsLoading ? 'Loading…' : 'Refresh store paints'}</Button>
               </Card.Action>
             </Card.Header>

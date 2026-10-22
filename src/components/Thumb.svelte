@@ -43,7 +43,10 @@
   };
 </script>
 
+<!-- One wrapper for both states: the first hover swaps the <img> for the trigger under the pointer, and if the pointer
+     leaves before the Tooltip's own listeners are attached nothing would ever close it — the wrapper's leave does. -->
 {#if src}
+  <span class="inline-flex shrink-0" role="presentation" onpointerleave={() => (open = false)}>
   {#if armed}
     <Tooltip.Root delayDuration={150} bind:open>
       <Tooltip.Trigger>
@@ -59,4 +62,5 @@
   {:else}
     <img class={cn('inline-block shrink-0 cursor-zoom-in rounded-md object-cover align-middle', className)} {src} alt="" {width} {height} loading="lazy" onpointerenter={arm} />
   {/if}
+  </span>
 {/if}
