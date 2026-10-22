@@ -29,6 +29,9 @@
   import { dateStamp, downloadFile } from '@/lib/download';
   import * as Alert from '@/components/ui/alert';
   import { cn } from '@/lib/utils';
+  import { hangarEvents } from '@/lib/hangar-events';
+  import { mergeEvents } from '@/lib/watch';
+  import { feedItem } from '@/lib/settings';
   import Thumb from './Thumb.svelte';
   import * as Card from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
@@ -90,14 +93,21 @@
   }
 
   /** Quick update: read from the top until the pages match what's saved; the list stays on screen meanwhile. */
+  /** Pledges that appeared or left since the last complete read → Feed (Hangar kind). */
+  async function noteHangarEvents(prev: Pledge[], next: Pledge[]) {
+    const ev = hangarEvents(prev, next, Date.now());
+    if (ev.length) await feedItem.setValue(mergeEvents(await feedItem.getValue(), ev));
+  }
   async function update() {
     if (!data?.complete || !data.pledges.length) return load(false);
     error = updated = '';
     ctrl = new AbortController();
     loading = { page: 0, count: 0 };
     try {
-      const u = await updateHangar($state.snapshot(data.pledges) as Pledge[], (p) => (loading = p), ctrl.signal);
+      const prev = $state.snapshot(data.pledges) as Pledge[];
+      const u = await updateHangar(prev, (p) => (loading = p), ctrl.signal);
       await save({ ...credits(), at: Date.now(), pledges: u.pledges, complete: true });
+      await noteHangarEvents(prev, u.pledges);
       const what = [u.added && `${u.added} new`, u.changed && `${u.changed} changed`, u.removed && `${u.removed} gone`].filter(Boolean).join(', ');
       updated = `${what || 'No changes'} · read ${u.pages} page${u.pages === 1 ? '' : 's'}`;
       refreshCredits();
@@ -122,7 +132,9 @@
         ctrl.signal,
         from,
       );
+      const prev = data?.complete ? ($state.snapshot(data.pledges) as Pledge[]) : [];
       await save({ ...credits(), at: Date.now(), pledges, complete: true });
+      await noteHangarEvents(prev, pledges);
       refreshCredits();
     } catch (e) {
       if ((e as Error).name !== 'AbortError') error = `${(e as Error).message}${data?.pledges.length ? ' — what was read so far is kept; Resume to continue.' : ''}`;

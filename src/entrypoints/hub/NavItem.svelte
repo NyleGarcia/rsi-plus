@@ -26,7 +26,7 @@
     /** Pending items (the badge shows when above zero). */
     count?: number;
     /** What the badge says, as colored chips ("+32" green, "−5" red); the plain count when empty. */
-    badge?: { text: string; tone: 'success' | 'destructive' }[];
+    badge?: { text: string; tone: 'success' | 'destructive' | 'info' }[];
     onselect: () => void;
   } = $props();
 
@@ -57,7 +57,7 @@
   {#if count > 0}
     <Sidebar.MenuBadge class="flex gap-1 px-0">
       {#each badge as b (b.text)}
-        <Badge variant={b.tone === 'success' ? 'success-soft' : 'destructive'} class="h-4 rounded-md px-1.5 text-[11px] font-semibold tabular-nums">{b.text}</Badge>
+        <Badge variant={b.tone === 'success' ? 'success-soft' : b.tone === 'info' ? 'info' : 'destructive'} class="h-4 rounded-md px-1.5 text-[11px] font-semibold tabular-nums">{b.text}</Badge>
       {:else}
         <Badge variant="info" class="h-4 rounded-md px-1.5 text-[11px] font-semibold tabular-nums">{count > 99 ? '99+' : count}</Badge>
       {/each}

@@ -123,3 +123,16 @@ describe('party mode', () => {
     expect(log.map((l) => l.requestId)).toEqual(['b', 'a', 'old']);
   });
 });
+
+import { noteEvents } from '../src/lib/friends';
+describe('noteEvents', () => {
+  const m = (id: string) => ({ id, nickname: `n${id}`, displayname: `D${id}` }) as never;
+  it('skips the baseline and reports added / gone friends', () => {
+    expect(noteEvents({}, { a: { note: '', tags: [], firstSeen: 5, lastOnline: null } }, [m('a')], 5)).toEqual([]);
+    const before = { a: { note: '', tags: [], firstSeen: 0, lastOnline: null }, b: { note: '', tags: [], firstSeen: 0, lastOnline: null } };
+    const after = { ...before, b: { ...before.b, removedAt: 9 }, c: { note: '', tags: [], firstSeen: 9, lastOnline: null } };
+    const ev = noteEvents(before, after, [m('a'), m('c')], 9);
+    expect(ev.map((e) => e.title).sort()).toEqual(['Dc is now your friend', 'Member b is no longer on your friends list']);
+    expect(ev.every((e) => e.kind === 'friend')).toBe(true);
+  });
+});

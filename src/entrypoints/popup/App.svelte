@@ -6,7 +6,8 @@
    */
   import FanNotice from '@/components/FanNotice.svelte';
   import { bg, type HubTab } from '@/lib/messages';
-  import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, type Settings } from '@/lib/settings';
+  import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, storeLogItem, type Settings } from '@/lib/settings';
+  import { cleanLog, tally } from '@/lib/storelog';
   import { partyActive, type PartyMode } from '@/lib/friends';
   import { HUB_PAGES } from '@/lib/hub-pages';
   import { QUICK_TOGGLES } from '@/lib/settings-ui';
@@ -39,6 +40,10 @@
   $effect(() => {
     getSettings().then((v) => (s = v));
     feedItem.getValue().then((f) => (unseen = f.filter((e) => !e.seen).length));
+    storeLogItem.getValue().then((v) => {
+      const n = tally(cleanLog(v));
+      unseen += n.add + n.remove;
+    });
   });
 
   async function set<K extends keyof Settings>(k: K, v: Settings[K]) {

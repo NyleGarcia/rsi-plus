@@ -11,7 +11,6 @@
   import ShipsPanel from '@/components/ShipsPanel.svelte';
   import StorePanel from '@/components/StorePanel.svelte';
   import BrowsePanel from '@/components/BrowsePanel.svelte';
-  import StoreLog from '@/components/StoreLog.svelte';
   import CcuPanel from '@/components/CcuPanel.svelte';
   import SettingsPanel from '@/components/SettingsPanel.svelte';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
@@ -28,7 +27,7 @@
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
   import { HUB_GROUPS, HUB_PAGES, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
-  import { INCOGNITO, storeLogItem } from '@/lib/settings';
+  import { INCOGNITO, feedItem, storeLogItem } from '@/lib/settings';
   import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
 
@@ -48,11 +47,14 @@
   const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
 
   let tab = $state<Tab>(fromHash());
-  /** Store changes not yet dismissed — "+32 −5" on the Notifications entry. */
+  /** Feed entry badges: unseen events, and store changes not yet dismissed ("+32 −5"). */
   let notices = $state({ add: 0, remove: 0 });
+  let unseen = $state(0);
   $effect(() => {
     storeLogItem.getValue().then((v) => (notices = tally(cleanLog(v))));
-    return storeLogItem.watch((v) => (notices = tally(cleanLog(v))));
+    feedItem.getValue().then((f) => (unseen = (f ?? []).filter((e) => !e.seen).length));
+    const offs = [storeLogItem.watch((v) => (notices = tally(cleanLog(v)))), feedItem.watch((f) => (unseen = (f ?? []).filter((e) => !e.seen).length))];
+    return () => offs.forEach((off) => off());
   });
   let ccuTo = $state<number | null>(Number(hashParam('to')) || null);
   let ccuAhead = $state(hashParam('ahead') === '1'); // `#ccu?to=&ahead=1`: the hull isn't on sale, start with Plan ahead on
@@ -129,7 +131,7 @@
               <Sidebar.GroupContent>
                 <Sidebar.Menu>
                   {#each g.items as it (it.tab)}
-                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'notifications' ? notices.add + notices.remove : 0} badge={it.tab === 'notifications' ? [notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} onselect={() => select(it)} />
+                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'feed' ? unseen + notices.add + notices.remove : 0} badge={it.tab === 'feed' ? [unseen ? { text: String(unseen), tone: 'info' as const } : null, notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} onselect={() => select(it)} />
                   {/each}
                 </Sidebar.Menu>
               </Sidebar.GroupContent>
@@ -193,8 +195,6 @@
           <StorePanel />
         {:else if tab === 'browse'}
           <BrowsePanel />
-        {:else if tab === 'notifications'}
-          <StoreLog />
         {:else if tab === 'ccus'}
           <CcusPanel />
         {:else if tab === 'ccu'}

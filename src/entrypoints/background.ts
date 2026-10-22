@@ -1,6 +1,6 @@
 import * as api from '@/lib/api';
 import { normThread } from '@/lib/capture';
-import { appendLog, blankNote, markRemoved, partyActive, partyEvent, partyTargets, requestEvents, touchNotes, type PartyLogEntry } from '@/lib/friends';
+import { appendLog, blankNote, markRemoved, noteEvents, partyActive, partyEvent, partyTargets, requestEvents, touchNotes, type PartyLogEntry } from '@/lib/friends';
 import { respond, type BgRequest, type BgResponses, type BulkResult, type HubTab } from '@/lib/messages';
 import { citizenOrgsUrl, ORG_TTL, parseCitizenOrgs, type OrgCache } from '@/lib/orgs';
 import {
@@ -199,6 +199,7 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     await presenceItem.setValue(Object.fromEntries(f.friends.map((m) => [m.id, m.presence?.status ?? 'offline'])));
     const notes = await snapshot(f, now);
     events.push(...requestEvents(await seenRequestsItem.getValue(), f.requests, f.me.id, now));
+    events.push(...pendingFriendEvents.splice(0));
     await seenRequestsItem.setValue(f.requests.filter((r) => r.target_member_id === f.me.id).map((r) => r.id));
     const party = partyEvent(notes, new Set(f.friends.map((m) => m.id)), s.partyRemindHours, now);
     if (party) events.push(party);
@@ -266,9 +267,15 @@ async function friends(): Promise<api.FriendsData> {
 async function snapshot(f: api.FriendsData, now: number) {
   const notes = await friendNotesItem.getValue();
   const touched = touchNotes(notes, f.friends, now, f.friends.length > 0);
-  if (touched) await friendNotesItem.setValue(touched);
+  if (touched) {
+    await friendNotesItem.setValue(touched);
+    // Friends added / gone become feed events; the next poll (or this one) merges them.
+    pendingFriendEvents.push(...noteEvents(notes, touched, f.friends, now));
+  }
   return touched ?? notes;
 }
+/** Feed events found while snapshotting the friend list outside a poll (hub reads); drained by the next poll. */
+const pendingFriendEvents: FeedEvent[] = [];
 
 async function bulk(ids: string[], fn: (id: string) => Promise<unknown>): Promise<BulkResult> {
   const out: BulkResult = { done: [], failed: [] };
@@ -386,7 +393,7 @@ async function doPartyTick() {
     await friendNotesItem.setValue(next);
     const ev: FeedEvent = {
       key: `party-accept:${accepted.map((e) => e.requestId).join(',')}`,
-      kind: 'friend',
+      kind: 'party',
       title: `Party mode: accepted ${accepted.length} friend request${accepted.length === 1 ? '' : 's'}`,
       body: accepted.map((e) => e.displayname).join(', '),
       url: 'hub.html#friends',

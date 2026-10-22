@@ -15,7 +15,6 @@ import Palette from '@lucide/svelte/icons/palette';
 import Package from '@lucide/svelte/icons/package';
 import Undo2 from '@lucide/svelte/icons/undo-2';
 import Wallet from '@lucide/svelte/icons/wallet';
-import BellRing from '@lucide/svelte/icons/bell-ring';
 import Store from '@lucide/svelte/icons/store';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import Route from '@lucide/svelte/icons/route';
@@ -24,7 +23,7 @@ import Settings from '@lucide/svelte/icons/settings';
 import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 
 export interface HubPage {
-  tab: Exclude<HubTab, 'ships'>;
+  tab: Exclude<HubTab, 'ships' | 'notifications'>;
   label: string;
   /** One line under the label in the sidebar / its tooltip when collapsed. */
   sub: string;
@@ -43,7 +42,7 @@ export const HUB_GROUPS: HubGroup[] = [
   {
     label: 'Spectrum',
     items: [
-      { tab: 'feed', label: 'Feed', sub: 'What your watches found', icon: Rss, popup: true, short: 'Feed' },
+      { tab: 'feed', label: 'Feed', sub: 'Watches, friends, store alerts, store changes', icon: Rss, popup: true, short: 'Feed' },
       { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
       { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true, short: 'Friends' },
       { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
@@ -65,8 +64,7 @@ export const HUB_GROUPS: HubGroup[] = [
     label: 'Store',
     items: [
       { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, size, stage', icon: Store, popup: true, short: 'Catalog' },
-      { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · limited time, new, special', icon: LayoutGrid },
-      { tab: 'notifications', label: 'Store changes', sub: 'What was added and removed', icon: BellRing, popup: true, short: 'Changes' },
+      { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · limited time, new, special', icon: LayoutGrid, popup: true, short: 'Browse' },
     ],
   },
   {
@@ -82,6 +80,6 @@ export const HUB_GROUPS: HubGroup[] = [
 export const SETTINGS_PAGE: HubPage = { tab: 'settings', label: 'Settings', sub: 'Theme, Spectrum, notifications', icon: Settings };
 export const HUB_PAGES: HubPage[] = [...HUB_GROUPS.flatMap((g) => g.items), SETTINGS_PAGE];
 const byTab = new Map(HUB_PAGES.map((p) => [p.tab, p]));
-/** Page by tab (`ships` → My ships, the legacy alias). */
-export const pageOf = (tab: HubTab): HubPage => byTab.get(tab === 'ships' ? 'fleet' : tab) ?? SETTINGS_PAGE;
-export const isHubTab = (s: string): s is HubTab => byTab.has(s as HubPage['tab']) || s === 'ships';
+/** Page by tab (`ships` → My ships, `notifications` → Feed's Store changes view: legacy aliases). */
+export const pageOf = (tab: HubTab): HubPage => byTab.get(tab === 'ships' ? 'fleet' : tab === 'notifications' ? 'feed' : tab) ?? SETTINGS_PAGE;
+export const isHubTab = (s: string): s is HubTab => byTab.has(s as HubPage['tab']) || s === 'ships' || s === 'notifications';

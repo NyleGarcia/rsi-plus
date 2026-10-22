@@ -130,6 +130,23 @@ export function touchNotes(notes: FriendNotes, friends: Member[], now = Date.now
 }
 
 /** Notes for people just unfriended (so a re-add is detected even between polls). */
+/** Friends added or gone between two note snapshots (what `touchNotes` just recorded): one feed event per person. */
+export function noteEvents(before: FriendNotes, after: FriendNotes, friends: Member[], now: number): FeedEvent[] {
+  if (!Object.keys(before).length) return []; // first snapshot = baseline, nobody is "new"
+  const by = new Map(friends.map((m) => [m.id, m]));
+  const out: FeedEvent[] = [];
+  for (const [id, n] of Object.entries(after)) {
+    const prev = before[id];
+    const m = by.get(id);
+    if (n.firstSeen === now && prev?.firstSeen !== now && !n.removedAt) {
+      out.push({ key: `friend-added:${id}:${now}`, kind: 'friend', title: `${m?.displayname ?? `Member ${id}`} is now your friend`, body: m ? `@${m.nickname}` : 'Friend request accepted', url: 'hub.html#friends', at: now, seen: false });
+    } else if (n.removedAt === now && !prev?.removedAt) {
+      out.push({ key: `friend-gone:${id}:${now}`, kind: 'friend', title: `${m?.displayname ?? `Member ${id}`} is no longer on your friends list`, body: 'Unfriended, or they removed you', url: 'hub.html#friends', at: now, seen: false });
+    }
+  }
+  return out;
+}
+
 export function markRemoved(notes: FriendNotes, ids: string[], now = Date.now()): FriendNotes {
   const out = { ...notes };
   for (const id of ids) if (out[id]) out[id] = { ...out[id]!, removedAt: now };
@@ -178,7 +195,7 @@ export function partyEvent(notes: FriendNotes, current: Set<string>, hours: numb
   if (!due.length) return null;
   return {
     key: `party:${due.join(',')}`,
-    kind: 'friend',
+    kind: 'party',
     title: `${due.length} party friend${due.length === 1 ? '' : 's'} ready to remove`,
     body: `Added over ${hours} h ago — open Friends → Party to unfriend them.`,
     url: 'hub.html#friends',
@@ -198,7 +215,7 @@ export function requestEvents(prev: string[] | null, reqs: FriendRequest[], me: 
       const m = r.members?.find((x) => x.id === r.requesting_member_id);
       return {
         key: `request:${r.id}`,
-        kind: 'friend' as const,
+        kind: 'request' as const,
         title: `Friend request from ${m?.displayname ?? 'someone'}`,
         body: m ? `@${m.nickname} — accept or decline in Friends` : 'Accept or decline in Friends',
         url: 'hub.html#friends',
