@@ -3,7 +3,7 @@
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
-  import { captureBilling, fetchOrders, orderTotals, type Order } from '@/lib/orders';
+  import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, type Order } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
   import { AreaChart, BarChart, PieChart } from 'layerchart';
@@ -48,7 +48,38 @@
     // Orders saved by the first beta reader (no line items) are dropped: the shape changed with RSI's real markup.
     ordersItem.getValue().then((o) => (orders = o && o.orders.every((x) => Array.isArray(x.lines)) ? o : null));
   });
+  let months = $state(24);
   const orderSums = $derived(orders ? orderTotals(orders.orders) : null);
+  // ---- basis: the hangar (melt value of what you hold) or the order history (what RSI charged) drives the heroes + charts ----
+  type Basis = 'orders' | 'hangar';
+  const BASIS_KEY = 'rsiplus:spend:basis';
+  let basisPick = $state<Basis>(
+    (() => {
+      try {
+        return (localStorage.getItem(BASIS_KEY) as Basis) || 'orders';
+      } catch {
+        return 'orders';
+      }
+    })(),
+  );
+  const setBasis = (b: Basis) => {
+    basisPick = b;
+    try {
+      localStorage.setItem(BASIS_KEY, b);
+    } catch {
+      /* not remembered */
+    }
+  };
+  /** Orders only count once imported. */
+  const useOrders = $derived(basisPick === 'orders' && !!orders?.orders.length);
+  const orderList = $derived<Order[]>(orders?.orders ?? []);
+  const oYear = $derived(ordersByYear(orderList));
+  const oMonth = $derived(ordersByMonth(orderList, months));
+  const oCum = $derived(ordersCumulative(orderList));
+  const oLast24 = $derived(ordersByMonth(orderList, 24).map((b) => b.cash));
+  const oPrev12 = $derived(oLast24.slice(0, 12).reduce((a, b) => a + b, 0));
+  const oThis12 = $derived(oLast24.slice(12).reduce((a, b) => a + b, 0));
+  const oFirst = $derived(orderList.reduce((t, o) => Math.min(t, o.at), Infinity));
   async function importOrders() {
     ordersBusy = true;
     ordersMsg = '';
@@ -150,7 +181,6 @@
   const sum = $derived(spendSummary(all));
   const tot = $derived(totals(all));
   const byYear = $derived(spendByYear(all));
-  let months = $state(24);
   const byMonth = $derived(spendByMonth(all, months));
   const byType = $derived(spendByType(all));
   const byPayment = $derived(spendByPayment(all));
@@ -168,12 +198,14 @@
     { id: 'payment', size: 'wide' },
     { id: 'type', size: 'wide' },
     { id: 'time', size: 'wide' },
+    { id: 'ledger', size: 'wide' },
+    { id: 'orders', size: 'wide' },
     { id: 'facts', size: 'sm' },
     { id: 'actions', size: 'sm' },
   ];
-  const WIDGET_LABELS: Record<string, string> = { year: 'By year', month: 'By month', payment: 'How you paid', type: 'By type', time: 'Backing over time', facts: 'At a glance', actions: 'Quick actions' };
+  const WIDGET_LABELS: Record<string, string> = { year: 'By year', month: 'By month', payment: 'How you paid', type: 'By type', time: 'Backing over time', ledger: 'Where the money went', orders: 'Order history', facts: 'At a glance', actions: 'Quick actions' };
   const LAYOUT_KEY = 'rsiplus:spend:layout';
-  const PAY_COLORS: Record<string, string> = { warbond: 'var(--accent-2)', standard: 'var(--chart-1)', free: 'var(--chart-8)' };
+  const PAY_COLORS: Record<string, string> = { warbond: 'var(--accent-2)', standard: 'var(--chart-1)', free: 'var(--chart-8)', cash: 'var(--accent-2)', credit: 'var(--chart-1)' };
   const ACTIONS = [
     { href: '#hangar', label: 'Pledges', hint: 'refresh your hangar', icon: Wallet },
     { href: '#melt', label: 'Melt calculator', hint: 'pick what to melt', icon: Flame },
@@ -272,13 +304,17 @@
   } satisfies Chart.ChartConfig;
   const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)', 'var(--chart-9)', 'var(--chart-10)'];
   const plural = (n: number) => `${n} pledge${n === 1 ? '' : 's'}`;
-  const yearBars = $derived<BarPoint[]>(byYear.map((b) => ({ key: b.key, label: b.label, value: b.value, hint: plural(b.count) })));
-  const monthBars = $derived<BarPoint[]>(byMonth.map((b) => ({ key: b.key, label: months > 12 ? (b.key.endsWith('-01') ? b.key.slice(0, 4) : b.label) : b.label, value: b.value, hint: `${b.key} · ${plural(b.count)}` })));
+  const orderHint = (b: { credits: number; count: number }) => `${b.count} order${b.count === 1 ? '' : 's'}${b.credits ? ` · +${money0(b.credits)} store credit` : ''}`;
+  const yearBars = $derived<BarPoint[]>(useOrders ? oYear.map((b) => ({ key: b.key, label: b.label, value: b.cash, hint: orderHint(b) })) : byYear.map((b) => ({ key: b.key, label: b.label, value: b.value, hint: plural(b.count) })));
+  const monthLabel = (b: { key: string; label: string }) => (months > 12 ? (b.key.endsWith('-01') ? b.key.slice(0, 4) : b.label) : b.label);
+  const monthBars = $derived<BarPoint[]>(
+    useOrders ? oMonth.map((b) => ({ key: b.key, label: monthLabel(b), value: b.cash, hint: `${b.key} · ${orderHint(b)}` })) : byMonth.map((b) => ({ key: b.key, label: monthLabel(b), value: b.value, hint: `${b.key} · ${plural(b.count)}` })),
+  );
   const fundingBars = $derived<BarPoint[]>(funding ? funding.points.map((p, i, a) => ({ key: p.key, label: p.label, value: p.usd, hint: p.key, last: i === a.length - 1 })) : []);
   const typeSlices = $derived<Slice[]>(byType.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
-  const paymentSlices = $derived<Slice[]>(byPayment.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
+  const paymentSlices = $derived<Slice[]>(useOrders ? orderSlices(orderList) : byPayment.map((b) => ({ key: b.key, label: b.label, value: b.value, count: b.count })));
   /** Running total as dated points for the big area chart. */
-  const cumulativeDated = $derived(cumulative.map((c) => ({ date: new Date(Number(c.key.slice(0, 4)), Number(c.key.slice(5, 7)) - 1, 1), key: c.key, value: c.value })));
+  const cumulativeDated = $derived((useOrders ? oCum : cumulative).map((c) => ({ date: new Date(Number(c.key.slice(0, 4)), Number(c.key.slice(5, 7)) - 1, 1), key: c.key, value: c.value })));
   /** Hovered donut slice per chart (legend row or arc): the others dim, the centre shows its share. */
   let hot = $state<Record<string, string | null>>({});
   /** Sparkline colour: fixed tone, or trend (last vs first) when `auto`. */
@@ -426,20 +462,68 @@
 {#snippet tile(id: string, size: WidgetSize)}
   {#if id === 'year'}
     {#snippet b()}{@render fill(yearChart)}{/snippet}
-    {@render panel('By year', 'melt value per year pledged', b)}
+    {@render panel('By year', useOrders ? 'cash charged per year · hover for store credit' : 'melt value per year pledged', b)}
   {:else if id === 'month'}
     {#snippet b()}{@render fill(monthChart)}{/snippet}
     {#snippet a()}<Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />{/snippet}
     {@render panel('By month', `last ${months} months`, b, a)}
   {:else if id === 'time'}
     {#snippet b()}{@render fill(timeChart)}{/snippet}
-    {@render panel('Backing over time', 'running total since your first pledge', b)}
+    {@render panel('Backing over time', useOrders ? 'cash paid, running total since your first order' : 'running total since your first pledge', b)}
   {:else if id === 'type'}
     {#snippet b()}<div>{@render donut('type', typeSlices, money0)}</div>{/snippet}
-    {@render panel('By type', `${byType.length} kinds of pledge`, b)}
+    {@render panel('By type', `${byType.length} kinds of pledge · hangar melt value`, b)}
   {:else if id === 'payment'}
-    {#snippet b()}<div class="sens grid gap-2">{@render donut('payment', paymentSlices, money0, PAY_COLORS)}<span class="text-muted-foreground text-[11px]">RSI's hangar doesn't say whether a standard pledge was paid with cash or store credit — only warbonds are sure to be new money.</span></div>{/snippet}
-    {@render panel('How you paid', 'warbond needs new money; standard takes cash or store credit', b)}
+    {#snippet b()}
+      <div class="sens grid gap-2">
+        {@render donut('payment', paymentSlices, money0, PAY_COLORS)}
+        <span class="text-muted-foreground text-[11px]">
+          {#if useOrders}Cash is what RSI charged your card or PayPal; store credit is melt value spent again. Every order's goods = cash + credit.{:else}RSI's hangar doesn't say whether a standard pledge was paid with cash or store credit — only warbonds are sure to be new money. Import the order history for the real split.{/if}
+        </span>
+      </div>
+    {/snippet}
+    {@render panel('How you paid', useOrders ? 'from your order history' : 'warbond needs new money; standard takes cash or store credit', b)}
+  {:else if id === 'ledger'}
+    {#snippet b()}
+      <StatGrid layout="divided" class="sens">
+        <Stat value={money(ledger.newMoney)} label="New money for sure" sub={`${ledger.newMoneyCount} warbond pledge${ledger.newMoneyCount === 1 ? '' : 's'}`} hint="Warbond prices can't be paid with store credit" valueTone="ok" />
+        <Stat value={money(ledger.either)} label="Cash or store credit" sub={`${ledger.eitherCount} standard pledge${ledger.eitherCount === 1 ? '' : 's'}`} hint="Standard pledges accept both; the hangar keeps no record of which you used" />
+        <Stat value={money(ledger.melted)} label="Melted into credit" sub={`${ledger.meltedCount} in buyback${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="Buyback entries whose price was read (Buyback → Load contents & prices). Credit you got back, possibly spent again." />
+        <Stat value={`${ledger.gifted}`} label="Gifted / free" sub={`${ledger.gifted} gifts · ${ledger.free} flair`} hint="Pledges with no melt value: received as gifts, referral rewards, event flair" />
+        {#if ledger.custom}<Stat value={money(ledger.custom)} label="Paid customization" hint="RSI's configuration value on top of the pledge — cash" />{/if}
+        {#if orderSums}
+          <Stat value={money(orderSums.cash)} label="Cash paid" context={`${orderSums.count} orders · ${money(orderSums.credits)} paid with store credit`} hint="From the order history: every order's Total is what was charged to you" tone="accent" />
+        {:else}
+          <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (estimate)" context="Lower bound assumes every melted dollar bought a standard pledge; upper bound assumes none did" hint="New money + customization + standard pledges, less what melted credit could have covered. Import the order history for the real figure." tone="accent" />
+        {/if}
+      </StatGrid>
+    {/snippet}
+    {@render panel('Where the money went', 'what the hangar can prove: warbond took new money, standard took cash or credit, melts gave credit back', b)}
+  {:else if id === 'orders'}
+    {#snippet b()}
+      <div class="sens grid gap-3">
+        {#if orderSums}
+          <StatGrid layout="divided">
+            <Stat value={money(orderSums.cash)} label="Cash paid" valueTone="ok" hint="Sum of every order's Total — what RSI charged your card / PayPal" />
+            <Stat value={money(orderSums.credits)} label="Store credit used" hint="Sum of Credits used — melt value spent again" />
+            <Stat value={money(orderSums.items)} label="Goods at the price paid" hint="Sum of the line totals (after RSI's sale and multi-paint discounts); cash + credit should match it" />
+            <Stat value={money(orderSums.discounts)} label="Discounts taken" hint="Line discounts (multi-paint tiers, sales) plus any additional discount" />
+            {#if orderSums.free}<Stat value={orderSums.free} label="Free orders" hint="Nothing charged and nothing priced: gifts received, giveaways, referral rewards" />{/if}
+            {#if orderSums.refunds}<Stat value={money(orderSums.refunds)} label="Refunded" valueTone="warn" />{/if}
+            {#if orderSums.cancelled}<Stat value={orderSums.cancelled} label="Cancelled" hint="Left out of every total" />{/if}
+          </StatGrid>
+        {:else}
+          <span class="text-muted-foreground text-xs">Not imported yet. <em>Import order history</em> reads every page of RSI's Billing (orders, lines, what was cash and what was store credit) in this browser — nothing is sent anywhere.</span>
+        {/if}
+        <div class="flex flex-wrap items-center gap-2">
+          <TipButton variant={orders ? 'outline' : 'default'} size="sm" disabled={ordersBusy} onclick={importOrders} tip="Reads your order history pages from robertsspaceindustries.com/account/billing in this browser — nothing is sent anywhere">{ordersBusy ? 'Reading…' : orders ? 'Re-import order history' : 'Import order history'}</TipButton>
+          {#if ordersMsg.startsWith('No orders') || ordersMsg.startsWith('Could not')}<TipButton variant="ghost" size="sm" onclick={copyBilling} tip="Copies the billing page's markup (bill-to removed) to the clipboard, for fixing the reader when RSI changes the page">Copy billing markup</TipButton>{/if}
+          {#if orders}<span class="text-muted-foreground text-xs">{orders.orders.length} orders · read {new Date(orders.at).toLocaleString()}</span>{/if}
+          {#if ordersMsg}<span class="text-muted-foreground text-xs">{ordersMsg}</span>{/if}
+        </div>
+      </div>
+    {/snippet}
+    {@render panel('Order history', orderSums ? `${orderSums.count} orders from RSI's Billing` : 'the real cash vs store credit split', b)}
   {:else if id === 'facts'}
     {#snippet b()}
       <dl class="grid content-start gap-1.5 text-xs">
@@ -467,8 +551,8 @@
   {/if}
 {/snippet}
 
-{#snippet yearChart()}<div class="sens h-full">{@render bars(yearBars, short, 0, 'Melt value')}</div>{/snippet}
-{#snippet monthChart()}<div class="sens h-full">{@render bars(monthBars, short, 0, 'Melt value')}</div>{/snippet}
+{#snippet yearChart()}<div class="sens h-full">{@render bars(yearBars, short, 0, useOrders ? 'Cash paid' : 'Melt value')}</div>{/snippet}
+{#snippet monthChart()}<div class="sens h-full">{@render bars(monthBars, short, 0, useOrders ? 'Cash paid' : 'Melt value')}</div>{/snippet}
 {#snippet timeChart()}
   {#if cumulativeDated.length > 1}
     <Chart.Container config={{ value: { label: 'Running total', color: 'var(--chart-1)' } }} class="sens aspect-auto h-full w-full">
@@ -557,9 +641,20 @@
       <Card.Title>Your spend</Card.Title>
       {#if all.length}
         <Card.Description class="text-xs">
-          Melt value of what's in your hangar by the pledge's <em>Created</em> date — not cash paid: CCU chains, discounts, gifts received and melted pledges aren't in it.
+          {#if useOrders}What RSI charged you, from your order history by order date: cash on the charts, store credit on hover. Melted pledges, CCU chains and discounts are all in it.{:else}Melt value of what's in your hangar by the pledge's <em>Created</em> date — not cash paid: CCU chains, discounts, gifts received and melted pledges aren't in it.{/if}
         </Card.Description>
         <Card.Action class="flex flex-wrap items-center gap-2">
+          {#if orders?.orders.length}
+            <Segmented
+              options={[
+                { id: 'orders', label: 'Order history', hint: 'What RSI charged: cash and store credit per order' },
+                { id: 'hangar', label: 'Hangar', hint: 'Melt value of the pledges you hold, by Created date' },
+              ]}
+              bind:value={() => basisPick, setBasis}
+              ariaLabel="Spend basis"
+              size="sm"
+            />
+          {/if}
           {#if editing}
             <Button variant="ghost" onclick={resetLayout}><RotateCcw /> Reset</Button>
             <Button onclick={() => (editing = false)}><Check /> Done</Button>
@@ -574,25 +669,39 @@
     {:else}
       <Card.Content class="grid gap-4">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {@render hero(Wallet, 'Hangar melt value', money(sum.value), `${sum.pledges} pledges · since ${sum.since ? new Date(sum.since).getFullYear() : '—'}`, null, cumulative.map((c) => c.value), 'accent')}
-          {@render hero(
-            CalendarRange,
-            'Last 12 months',
-            money0(this12),
-            `${money0(sum.perYear)} a year on average`,
-            prev12 > 0 ? { pct: ((this12 - prev12) / prev12) * 100, against: 'vs the 12 months before' } : null,
-            last12,
-            'auto',
-          )}
-          {@render hero(
-            Banknote,
-            'Warbond (new money)',
-            money0(warbond),
-            `${payment.warbond?.count ?? 0} warbond pledges · ${sum.value ? ((100 * warbond) / sum.value).toFixed(warbond && warbond < sum.value / 100 ? 1 : 0) : 0}% of melt value`,
-            null,
-            [],
-            'muted',
-          )}
+          {#if useOrders && orderSums}
+            {@render hero(Wallet, 'Cash paid', money(orderSums.cash), `${orderSums.count} orders · since ${Number.isFinite(oFirst) ? new Date(oFirst).getFullYear() : '—'}`, null, oCum.map((c) => c.value), 'accent')}
+            {@render hero(
+              CalendarRange,
+              'Last 12 months',
+              money0(oThis12),
+              `cash · ${money0(orderSums.credits)} store credit used overall`,
+              oPrev12 > 0 ? { pct: ((oThis12 - oPrev12) / oPrev12) * 100, against: 'vs the 12 months before' } : null,
+              oLast24.slice(12),
+              'auto',
+            )}
+            {@render hero(Banknote, 'Store credit used', money0(orderSums.credits), `${orderSums.items ? ((100 * orderSums.credits) / orderSums.items).toFixed(0) : 0}% of goods · ${money0(orderSums.discounts)} in discounts`, null, [], 'muted')}
+          {:else}
+            {@render hero(Wallet, 'Hangar melt value', money(sum.value), `${sum.pledges} pledges · since ${sum.since ? new Date(sum.since).getFullYear() : '—'}`, null, cumulative.map((c) => c.value), 'accent')}
+            {@render hero(
+              CalendarRange,
+              'Last 12 months',
+              money0(this12),
+              `${money0(sum.perYear)} a year on average`,
+              prev12 > 0 ? { pct: ((this12 - prev12) / prev12) * 100, against: 'vs the 12 months before' } : null,
+              last12,
+              'auto',
+            )}
+            {@render hero(
+              Banknote,
+              'Warbond (new money)',
+              money0(warbond),
+              `${payment.warbond?.count ?? 0} warbond pledges · ${sum.value ? ((100 * warbond) / sum.value).toFixed(warbond && warbond < sum.value / 100 ? 1 : 0) : 0}% of melt value`,
+              null,
+              [],
+              'muted',
+            )}
+          {/if}
           {@render hero(Rocket, 'Ships', String(tot.ships), `${tot.lti} with LTI · ${buybacks} in buyback`, null, [], 'muted')}
         </div>
         <WidgetGrid bind:items={layout} editable={editing} labels={WIDGET_LABELS} onchange={saveLayout}>
@@ -602,56 +711,6 @@
         </WidgetGrid>
       </Card.Content>
     {/if}
-  </Card.Root>
-
-  <Card.Root>
-    <Card.Header>
-      <Card.Title>Where the money went</Card.Title>
-      <Card.Description>
-        What your hangar can tell: warbond pledges took new money; standard pledges took cash <em>or</em> store credit (RSI's hangar does not say which); melted pledges put credit back that may have paid for later ones. The exact cash figure needs your order history — import it below.
-      </Card.Description>
-    </Card.Header>
-    <Card.Content class="grid gap-4">
-      <StatGrid layout="divided">
-        <Stat value={money(ledger.newMoney)} label="New money for sure" sub={`${ledger.newMoneyCount} warbond pledge${ledger.newMoneyCount === 1 ? '' : 's'}`} hint="Warbond prices can't be paid with store credit" valueTone="ok" />
-        <Stat value={money(ledger.either)} label="Cash or store credit" sub={`${ledger.eitherCount} standard pledge${ledger.eitherCount === 1 ? '' : 's'}`} hint="Standard pledges accept both; the hangar keeps no record of which you used" />
-        <Stat value={money(ledger.melted)} label="Melted into credit" sub={`${ledger.meltedCount} in buyback${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="Buyback entries whose price was read (Buyback → Load contents & prices). Credit you got back, possibly spent again." />
-        <Stat value={`${ledger.gifted}`} label="Gifted / free" sub={`${ledger.gifted} gifts · ${ledger.free} flair`} hint="Pledges with no melt value: received as gifts, referral rewards, event flair" />
-        {#if ledger.custom}<Stat value={money(ledger.custom)} label="Paid customization" hint="RSI's configuration value on top of the pledge — cash" />{/if}
-        {#if orderSums}
-          <Stat value={money(orderSums.cash)} label="Cash paid" context={`${orderSums.count} orders · ${money(orderSums.credits)} paid with store credit`} hint="RSI's order history: the Total of every order is what was charged to you; Credits used is store credit" tone="accent" />
-        {:else}
-          <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (estimate)" context="Lower bound assumes every melted dollar bought a standard pledge; upper bound assumes none did" hint="New money + customization + standard pledges, less what melted credit could have covered. Import the order history for the real figure." tone="accent" />
-        {/if}
-      </StatGrid>
-      <div class="flex flex-wrap items-center gap-2">
-        <TipButton variant={orders ? 'outline' : 'default'} size="sm" disabled={ordersBusy} onclick={importOrders} tip="Reads your order history pages from robertsspaceindustries.com/account/billing in this browser — nothing is sent anywhere">{ordersBusy ? 'Reading…' : orders ? 'Re-import order history' : 'Import order history'}</TipButton>
-        {#if ordersMsg.startsWith('No orders') || ordersMsg.startsWith('Could not')}<TipButton variant="ghost" size="sm" onclick={copyBilling} tip="Copies the billing page's markup (bill-to removed) to the clipboard, for fixing the reader when RSI changes the page">Copy billing markup</TipButton>{/if}
-        {#if orders}<span class="text-muted-foreground text-xs">{orders.orders.length} orders · read {new Date(orders.at).toLocaleString()}</span>{/if}
-        {#if ordersMsg}<span class="text-muted-foreground text-xs">{ordersMsg}</span>{/if}
-      </div>
-      {#if orderSums}
-        <StatGrid>
-          <Stat value={money(orderSums.cash)} label="Cash paid" valueTone="ok" hint="Sum of every order's Total — what RSI charged your card / PayPal" />
-          <Stat value={money(orderSums.credits)} label="Store credit used" hint="Sum of Credits used — melt value spent again" />
-          <Stat value={money(orderSums.items)} label="Goods at the price paid" hint="Sum of the line totals (after RSI's sale and multi-paint discounts); cash + credit should match it" />
-          <Stat value={money(orderSums.discounts)} label="Discounts taken" hint="Line discounts (multi-paint tiers, sales) plus any additional discount" />
-          {#if orderSums.free}<Stat value={orderSums.free} label="Free orders" hint="Nothing charged and nothing priced: gifts received, giveaways, referral rewards" />{/if}
-          {#if orderSums.refunds}<Stat value={money(orderSums.refunds)} label="Refunded" valueTone="warn" />{/if}
-          {#if orderSums.cancelled}<Stat value={orderSums.cancelled} label="Cancelled" hint="Left out of every total" />{/if}
-        </StatGrid>
-        {#if orderSums.byYear.length}
-          <Table.Root>
-            <Table.Header><Table.Row><Table.Head>Year</Table.Head><Table.Head class="text-right">Cash</Table.Head><Table.Head class="text-right">Store credit</Table.Head><Table.Head class="text-right">Goods</Table.Head><Table.Head class="text-right">Orders</Table.Head></Table.Row></Table.Header>
-            <Table.Body>
-              {#each orderSums.byYear as y (y.year)}
-                <Table.Row><Table.Cell>{y.year}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.cash)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.credits)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.items)}</Table.Cell><Table.Cell class="text-right tabular-nums">{y.orders}</Table.Cell></Table.Row>
-              {/each}
-            </Table.Body>
-          </Table.Root>
-        {/if}
-      {/if}
-    </Card.Content>
   </Card.Root>
 
   {#if all.length && ships.length}

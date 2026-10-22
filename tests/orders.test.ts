@@ -51,3 +51,25 @@ describe('orders', () => {
     expect(t.byYear.map((y) => [y.year, y.cash, y.orders])).toEqual([[2026, 0, 1], [2025, 150, 1], [2024, 0, 1]]);
   });
 });
+
+import { orderSlices, ordersByMonth, ordersByYear, ordersCumulative } from '@/lib/orders';
+describe('order charts', () => {
+  const o = parseOrders(doc());
+  it('buckets by year and month', () => {
+    expect(ordersByYear(o).map((b) => [b.key, b.cash, b.credits, b.count])).toEqual([['2024', 0, 0, 1], ['2025', 150, 50, 1], ['2026', 0, 33.15, 1]]);
+    const m = ordersByMonth(o, 3, new Date(2026, 9, 30));
+    expect(m.map((b) => b.key)).toEqual(['2026-08', '2026-09', '2026-10']);
+    expect(m[2]).toMatchObject({ label: 'Oct', cash: 0, credits: 33.15, count: 1 });
+  });
+  it('runs the cash total up from the first order', () => {
+    const c = ordersCumulative(o, new Date(2026, 9, 30));
+    expect(c[0]!.key).toBe('2024-03');
+    expect(c.at(-1)).toMatchObject({ key: '2026-10', value: 150 });
+  });
+  it('slices cash vs credit', () => {
+    expect(orderSlices(o)).toEqual([
+      { key: 'cash', label: 'cash', value: 150, count: 1 },
+      { key: 'credit', label: 'store credit', value: 83.15, count: 2 },
+    ]);
+  });
+});

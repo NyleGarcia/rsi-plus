@@ -230,3 +230,69 @@ export function orderTotals(orders: Order[]): OrderTotals {
   t.byYear = [...years.values()].sort((a, b) => b.year - a.year);
   return t;
 }
+
+// ---- charts: the same buckets the hangar spend uses, from orders (cash charged, credit applied) ----
+export interface OrderBucket {
+  key: string;
+  label: string;
+  /** Cash charged, USD. */
+  cash: number;
+  /** Store credit applied, USD. */
+  credits: number;
+  count: number;
+}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const r2 = (n: number) => Math.round(n * 100) / 100;
+const counted = (o: Order) => o.kind !== 'cancelled' && o.kind !== 'refund';
+/** Cash + credit per year, oldest first. */
+export function ordersByYear(orders: Order[]): OrderBucket[] {
+  const m = new Map<string, OrderBucket>();
+  for (const o of orders) {
+    if (!counted(o)) continue;
+    const k = String(new Date(o.at).getFullYear());
+    const b = m.get(k) ?? { key: k, label: k, cash: 0, credits: 0, count: 0 };
+    b.cash = r2(b.cash + o.total);
+    b.credits = r2(b.credits + o.credits);
+    b.count++;
+    m.set(k, b);
+  }
+  return [...m.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+/** Cash + credit per calendar month over the last `months` months, zeros kept. */
+export function ordersByMonth(orders: Order[], months = 24, now = new Date()): OrderBucket[] {
+  const m = new Map<string, OrderBucket>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    m.set(k, { key: k, label: MONTHS[d.getMonth()]!, cash: 0, credits: 0, count: 0 });
+  }
+  for (const o of orders) {
+    if (!counted(o)) continue;
+    const d = new Date(o.at);
+    const b = m.get(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    if (!b) continue;
+    b.cash = r2(b.cash + o.total);
+    b.credits = r2(b.credits + o.credits);
+    b.count++;
+  }
+  return [...m.values()];
+}
+/** Running cash total by month from the first order (for the area chart). */
+export function ordersCumulative(orders: Order[], now = new Date()): { key: string; label: string; value: number }[] {
+  const first = orders.filter(counted).reduce((t, o) => Math.min(t, o.at), Infinity);
+  if (!Number.isFinite(first)) return [];
+  const f = new Date(first);
+  const span = (now.getFullYear() - f.getFullYear()) * 12 + (now.getMonth() - f.getMonth()) + 1;
+  let acc = 0;
+  return ordersByMonth(orders, Math.max(2, span), now).map((b) => ((acc = r2(acc + b.cash)), { key: b.key, label: b.label, value: acc }));
+}
+/** Donut slices: cash vs store credit, with how many orders used each. */
+export function orderSlices(orders: Order[]): { key: string; label: string; value: number; count: number }[] {
+  const live = orders.filter(counted);
+  const cash = r2(live.reduce((n, o) => n + o.total, 0));
+  const credits = r2(live.reduce((n, o) => n + o.credits, 0));
+  return [
+    { key: 'cash', label: 'cash', value: cash, count: live.filter((o) => o.total > 0).length },
+    { key: 'credit', label: 'store credit', value: credits, count: live.filter((o) => o.credits > 0).length },
+  ].filter((s) => s.value > 0);
+}
