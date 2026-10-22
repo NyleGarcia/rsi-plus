@@ -5,14 +5,16 @@
    * product type; an *audience* segmented control (Everyone / Concierge / Subscribers) cuts by who the store shows it
    * to — Concierge and subscriber listings span ships and items, so they are audiences, not categories: RSI only returns
    * `isVip` rows on a Chairman's Club session and the Subscribers Store (type 65) only to sessions with the subscriber
-   * badge. Filters (`lib/browse.ts`) default to what the store sells now: in stock only; out-of-stock rows are a switch.
+   * badge. Facets (`lib/browse.ts` → `FacetBar`) default to what the store sells now: in stock only; saved in
+   * `localStorage` (`rsiplus:browse`). RSI's ribbons (Limited time, New, Best value, Bonus …) show as tags.
    * Bundles (two or more pieces — ship packs, game packages, career kits, paint collections, weapon kits) expand to
    * their contents, each priced as the store sells it alone (`lib/bundle.ts`), with what the pack saves against that.
    * Hash: `#browse?who=concierge&cat=paints`.
    */
   import { catalogItem, conciergeItem, hangarItem, storeItemsItem } from '@/lib/settings';
-  import { fetchStoreItems, matchShip, paintKey, STORE_CATEGORIES, usd, type CatalogShip, type StoreItem, type StoreListing } from '@/lib/store';
-  import { activeFilters, DEFAULT_FILTER, discountPct, filterItems, forWho, isAudience, isBundle, isCat, matchesFilter, parseUsd, type Audience, type BrowseFilter, type Cat, type Edition, type HangarMatch, type Owned } from '@/lib/browse';
+  import { bonusOf, fetchStoreItems, fitsOf, isBestValue, isLimitedTime, isLowStock, isNewListing, matchShip, paintKey, STORE_CATEGORIES, usd, type CatalogShip, type StoreItem, type StoreListing } from '@/lib/store';
+  import { BROWSE_PREFS_KEY, BROWSE_PRIMARY, BROWSE_RANGES, browseFacets, DEFAULT_FACETS, discountPct, forWho, isAudience, isBundle, isCat, matchesCat, matchesQuery, parseFacetValues, type Audience, type Cat, type HangarMatch } from '@/lib/browse';
+  import { applyFacets, type FacetValues } from '@/lib/facets';
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { hashParam, useDeepLink } from '@/lib/deep-link.svelte';
@@ -37,48 +39,55 @@
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
+  import FacetBar from './FacetBar.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Tooltip from '@/components/ui/tooltip';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
-  import * as Select from '@/components/ui/select';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
-  import { Toggle } from '@/components/ui/toggle';
 
   const WHO: { id: Audience; label: string; hint: string }[] = [
     { id: 'all', label: 'Everyone', hint: 'Every listing the store shows your session' },
     { id: 'concierge', label: 'Concierge', hint: "Listings RSI flags Concierge-only (ships and items) plus the specials on your Chairman's Club page" },
     { id: 'subscribers', label: 'Subscribers', hint: 'The Subscribers Store — RSI only lists it to sessions with the subscriber badge' },
   ];
-  const EDITION: { id: Edition; label: string; hint: string }[] = [
-    { id: 'any', label: 'Any edition', hint: 'Warbond and standard' },
-    { id: 'warbond', label: 'Warbond', hint: 'New money only (no store credit), usually cheaper' },
-    { id: 'standard', label: 'Standard', hint: 'Store credit welcome' },
-  ];
-  const OWNED: { value: Owned; label: string }[] = [
-    { value: 'any', label: 'Hangar: any' },
-    { value: 'owned', label: 'In my hangar' },
-    { value: 'missing', label: 'Not in my hangar' },
-    { value: 'all', label: 'Pieces: all owned' },
-    { value: 'some', label: 'Pieces: some owned' },
-    { value: 'none', label: 'Pieces: none owned' },
-  ];
   const whoParam = hashParam('who');
   const catParam = hashParam('cat');
-  let f = $state<BrowseFilter>({ ...DEFAULT_FILTER, who: isAudience(whoParam) ? whoParam : 'all', cat: isCat(catParam) ? catParam : 'all' });
+  let who = $state<Audience>(isAudience(whoParam) ? whoParam : 'all');
+  let cat = $state<Cat>(isCat(catParam) ? catParam : 'all');
+  let q = $state('');
+  /** Facet picks (edition, special, hangar, stock, bundles, price), kept across visits. */
+  const readPrefs = (): string | null => {
+    try {
+      return localStorage.getItem(BROWSE_PREFS_KEY);
+    } catch {
+      return null;
+    }
+  };
+  let fv = $state<FacetValues>(parseFacetValues(readPrefs(), browseFacets(() => 0), BROWSE_RANGES, DEFAULT_FACETS));
+  $effect(() => {
+    const json = JSON.stringify(fv);
+    try {
+      localStorage.setItem(BROWSE_PREFS_KEY, json);
+    } catch {
+      /* private window / blocked storage: not kept */
+    }
+  });
   /** `#browse?item=<id>&q=<name>` (from Store changes): show that listing — every filter off (out of stock included), the search set to it — and flash it. */
   const deepLink = useDeepLink({
     hash: '#browse',
     idParam: 'item',
     elId: (id) => `listing-${id}`,
-    apply: (query) => (f = { ...DEFAULT_FILTER, inStock: false, q: query ?? '' }),
+    apply: (query) => {
+      who = 'all';
+      cat = 'all';
+      fv = {};
+      q = query ?? '';
+    },
     rendered: () => shown,
   });
-  /** Price bounds as typed (dollars); parsed into `f.min` / `f.max` on change. */
-  let minText = $state('');
-  let maxText = $state('');
   let items = $state<StoreListing | null>(null);
   let concierge = $state<Concierge | null>(null);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
@@ -106,8 +115,8 @@
   /** Keep the hash in step so the page can be bookmarked / linked (`#browse?who=concierge&cat=paints`). */
   $effect(() => {
     const p = new URLSearchParams();
-    if (f.who !== 'all') p.set('who', f.who);
-    if (f.cat !== 'all') p.set('cat', f.cat);
+    if (who !== 'all') p.set('who', who);
+    if (cat !== 'all') p.set('cat', cat);
     const hash = `#browse${p.size ? `?${p}` : ''}`;
     if (location.hash.startsWith('#browse') && location.hash !== hash) history.replaceState(null, '', hash);
   });
@@ -151,6 +160,8 @@
     sku: number | null;
     available: boolean;
     thumb: string | null;
+    /** The listing itself (its ribbons), when the piece is a store listing. */
+    item?: StoreItem;
   }
   const sold = $derived.by(() => {
     const m = new Map<string, Sold>();
@@ -160,7 +171,7 @@
     };
     for (const it of all) {
       if (it.category === 'subscribers') continue; // not for sale to everyone
-      const s: Sold = { url: it.url, sku: it.id, available: it.available, thumb: it.thumb };
+      const s: Sold = { url: it.url, sku: it.id, available: it.available, thumb: it.thumb, item: it };
       put(paintKey(it.name), s);
       const pieces = (it.contents ?? []).filter((c) => !c.ship && !isExtra(c.name));
       if (pieces.length === 1) put(contentKey(pieces[0]!.name), s);
@@ -237,12 +248,16 @@
     }
     return { count, have: count > 0 ? 1 : 0, of: 1 };
   };
-  /** Rows that pass every filter but the category — what each tab would show. */
-  const filtered = $derived.by(() => {
-    const query = f.q.trim().toLowerCase();
-    return all.filter((it) => matchesFilter(it, f, hangarOf(it), query));
-  });
-  const bundleCount = $derived(filtered.filter((it) => isBundle(it) && (f.cat === 'all' || it.category === f.cat)).length);
+  /** Hangar match per listing id, built once per hangar / listing change (the Hangar facet asks for it per row). */
+  const hangarById = $derived(new Map(all.map((it) => [it.id, hangarOf(it)])));
+  const facets = $derived(browseFacets((it) => hangarById.get(it.id) ?? 0));
+  const query = $derived(q.trim().toLowerCase());
+  /** Audience + search, before the category tab and the facets. */
+  const scoped = $derived(all.filter((it) => forWho(it, who) && matchesQuery(it, query)));
+  /** What the FacetBar filters (and counts): the picked category. */
+  const rows = $derived(scoped.filter((it) => matchesCat(it, cat)));
+  /** Rows that pass every facet but the category — what each tab would show. */
+  const filtered = $derived(applyFacets(scoped, facets, fv, BROWSE_RANGES));
   const catCount = $derived.by(() => {
     const m = new Map<Cat, number>([['all', filtered.length]]);
     for (const it of filtered) m.set(it.category, (m.get(it.category) ?? 0) + 1);
@@ -254,7 +269,7 @@
     ...STORE_CATEGORIES.map((c) => ({ id: c.id as Cat, label: `${c.label} · ${catCount.get(c.id) ?? 0}`, hint: `${c.label} the store lists` })),
   ]);
   const shown = $derived.by(() => {
-    const list = filterItems(all, f, hangarOf);
+    const list = filtered.filter((it) => matchesCat(it, cat));
     const byName = [...list].sort((a, b) => a.name.localeCompare(b.name));
     return sortBy(byName, sort, {
       name: (it) => it.name,
@@ -262,7 +277,7 @@
       price: (it) => it.discounted,
       discount: (it) => discountPct(it) || null,
       owned: (it) => {
-        const h = hangarOf(it);
+        const h = hangarById.get(it.id) ?? hangarOf(it);
         return h.of ? h.have / h.of || null : null;
       },
     });
@@ -277,12 +292,8 @@
     const t = setTimeout(() => (budget += 40), 16);
     return () => clearTimeout(t);
   });
-  const outOfStock = $derived(all.filter((it) => !it.available && matchesFilter(it, { ...f, inStock: false }, hangarOf(it)) && (f.cat === 'all' || it.category === f.cat)).length);
-  const active = $derived(activeFilters(f));
-  function reset() {
-    f = { ...DEFAULT_FILTER, who: f.who, cat: f.cat };
-    minText = maxText = '';
-  }
+  /** Out-of-stock rows the in-stock cut hides (for the empty state). */
+  const outOfStock = $derived(fv.stock === 'in' ? applyFacets(rows, facets, { ...fv, stock: 'out' }, BROWSE_RANGES).length : 0);
   // ---- add a listing to the RSI cart (same call as Buyback / the paint planner; never retried, nothing paid) ----
   const cart = createCartLedger();
   const addOne = (sku: number) => cart.add(sku, () => addStandalone(sku, 1));
@@ -290,15 +301,17 @@
   const subscriber = $derived(items?.subscriber ?? null);
 </script>
 
-{#snippet tipToggle(tip: string, pressed: boolean, set: (v: boolean) => void, label: string, text: string)}
-  <Tooltip.Root>
-    <Tooltip.Trigger>
-      {#snippet child({ props })}
-        <Toggle {...props} variant="outline" size="sm" {pressed} onPressedChange={set} aria-label={label}>{text}</Toggle>
-      {/snippet}
-    </Tooltip.Trigger>
-    <Tooltip.Content class="max-w-80">{tip}</Tooltip.Content>
-  </Tooltip.Root>
+{#snippet ribbons(it: StoreItem, size: 'default' | 'xs')}
+  {@const off = discountPct(it)}
+  {@const bonus = bonusOf(it)}
+  {@const fits = fitsOf(it)}
+  {#if isLimitedTime(it)}<Tag kind="limited" {size} class="shrink-0" />{/if}
+  {#if isNewListing(it)}<Tag kind="new" {size} class="shrink-0" />{/if}
+  {#if isBestValue(it)}<Tag kind="bestvalue" {size} class="shrink-0" />{/if}
+  {#if bonus}<Tag kind="bonus" value={bonus} {size} class="shrink-0" />{/if}
+  {#if fits}<Tag kind="fits" value={fits} {size} class="shrink-0" />{/if}
+  {#if isLowStock(it)}<Tag kind="lowstock" {size} class="shrink-0" />{/if}
+  {#if off}<Tag kind="discount" value={`−${off}%`} {size} class="shrink-0" />{/if}
 {/snippet}
 
 {#snippet tile(name: string, pic: string | null, owned: number, sub: string, opts: { ship?: boolean; extra?: boolean; count?: number; small?: boolean; buy?: Sold | null } = {})}
@@ -318,6 +331,7 @@
         {/if}
         {#if opts.count && opts.count > 1}<span class="text-muted-foreground shrink-0">×{opts.count}</span>{/if}
         {#if opts.ship}<Tag kind="ship" size="xs" class="shrink-0" />{/if}
+        {#if buy?.item}{@render ribbons(buy.item, 'xs')}{/if}
       </div>
       {#if sub || owned > 1}<div class="text-muted-foreground text-[11px] leading-4 tabular-nums">{sub}{#if sub && owned > 1}{' · '}{/if}{#if owned > 1}owned ×{owned}{/if}</div>{/if}
     </div>
@@ -349,34 +363,17 @@
     <Card.Content class="grid gap-3">
       <FanNotice variant="store" />
       {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
-      <Segmented options={TABS} bind:value={f.cat} ariaLabel="Category" />
+      <Segmented options={TABS} bind:value={cat} ariaLabel="Category" />
       <div class="flex flex-wrap items-center gap-2">
-        <Segmented size="sm" options={WHO.map((w) => ({ id: w.id, label: `${w.label} · ${whoCount(w.id)}`, hint: w.hint }))} bind:value={f.who} ariaLabel="Audience" />
-        <Segmented size="sm" options={EDITION} bind:value={f.edition} ariaLabel="Edition" />
-        {@render tipToggle('Discounted below list price', f.sale, (v) => (f.sale = v), 'On sale', 'On sale')}
-        {@render tipToggle('Packs, kits and collections — two or more pieces; open one to see what each would cost apart', f.bundles, (v) => (f.bundles = v), 'Bundles', f.bundles || !bundleCount ? 'Bundles' : `Bundles · ${bundleCount}`)}
-        {@render tipToggle('Also list what the store reports out of stock', !f.inStock, (v) => (f.inStock = !v), 'Include out of stock', f.inStock && outOfStock ? `Out of stock · ${outOfStock}` : 'Out of stock')}
+        <Segmented size="sm" options={WHO.map((w) => ({ id: w.id, label: `${w.label} · ${whoCount(w.id)}`, hint: w.hint }))} bind:value={who} ariaLabel="Audience" />
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <Select.Root type="single" value={f.owned} onValueChange={(v) => (f.owned = v as Owned)}>
-          <Select.Trigger aria-label="Hangar" class="min-w-36">{OWNED.find((o) => o.value === f.owned)?.label}</Select.Trigger>
-          <Select.Content>
-            <Select.Label class="max-w-72">In / not in my hangar: the listing itself. Pieces: what you hold of a pack's parts — all (every paint of a collection already yours), some (two of nine ships), none</Select.Label>
-            {#each OWNED as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
-          </Select.Content>
-        </Select.Root>
-        <div class="flex items-center gap-1 text-xs text-muted-foreground">
-          <Input class="w-20 text-xs" inputmode="decimal" placeholder="$ min" aria-label="Minimum price" bind:value={minText} oninput={() => (f.min = parseUsd(minText))} />
-          –
-          <Input class="w-20 text-xs" inputmode="decimal" placeholder="$ max" aria-label="Maximum price" bind:value={maxText} oninput={() => (f.max = parseUsd(maxText))} />
-        </div>
-        <Input class="w-52" placeholder="Search listings" bind:value={f.q} aria-label="Search listings" />
-        {#if active}<Button variant="ghost" onclick={reset}>Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
-      </div>
+      <FacetBar {facets} ranges={BROWSE_RANGES} {rows} shown={shown.length} bind:values={fv} primary={BROWSE_PRIMARY} defaults={DEFAULT_FACETS} hideEmpty>
+        <Input class="w-52" placeholder="Search listings" bind:value={q} aria-label="Search listings" />
+      </FacetBar>
 
-      {#if f.who === 'concierge'}
+      {#if who === 'concierge'}
         {#if !concierge && !whoCount('concierge')}<p class="text-muted-foreground m-0 text-xs">RSI only returns Concierge-only listings to a Chairman's Club session — your level is on <a class="text-primary hover:underline" href="#wallet">Wallet</a>; non-members see nothing here, by design.</p>{/if}
-      {:else if f.who === 'subscribers'}
+      {:else if who === 'subscribers'}
         <div class="flex flex-wrap items-center gap-2 text-xs">
           {#if subscriber === true}<Badge variant="success">Subscriber</Badge><span class="text-muted-foreground">Your session has RSI's subscriber badge — the Subscribers Store lists for you.</span>
           {:else if subscriber === false}<Badge variant="muted">Not a subscriber</Badge><span class="text-muted-foreground">RSI hides the Subscribers Store until you subscribe; the count above is what your session gets (usually nothing).</span>
@@ -422,6 +419,7 @@
                       {#if it.vip}<Tag kind="concierge" />{/if}
                       {#if it.category === 'subscribers'}<Tag kind="subscribers" />{/if}
                       <Tag kind={it.warbond ? 'warbond' : 'standard'} />
+                      {@render ribbons(it, 'default')}
                       {#if ins}<Tag kind="insurance" value={ins} />{/if}
                       {#if !it.available}<Tag kind="oos" />{/if}
                       {#if n}<Tag kind="owned" count={n} label={`owned ×${n}`} />{/if}
@@ -550,8 +548,8 @@
           {:else if !shown.length}
             <Empty colspan={5}>
               {#if loading}Loading…
-              {:else if f.who === 'subscribers' && subscriber !== true}Nothing listed for this session.
-              {:else if f.inStock && outOfStock}Nothing in stock matches — {outOfStock} out-of-stock {outOfStock === 1 ? 'listing does' : 'listings do'}; switch on <em>Out of stock</em> to see {outOfStock === 1 ? 'it' : 'them'}.
+              {:else if who === 'subscribers' && subscriber !== true}Nothing listed for this session.
+              {:else if outOfStock}Nothing in stock matches — {outOfStock} out-of-stock {outOfStock === 1 ? 'listing does' : 'listings do'}; pick <em>Stock: Out of stock</em> (More filters) or unpick <em>In stock</em> to see {outOfStock === 1 ? 'it' : 'them'}.
               {:else}Nothing matches.{/if}
             </Empty>
           {/if}

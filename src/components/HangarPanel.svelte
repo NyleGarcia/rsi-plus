@@ -3,12 +3,16 @@
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
-  import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, upgradedFrom, type GameShip } from '@/lib/items';
+  import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
+  import { storeLinksFor } from '@/lib/paints';
+  import { applyFacets, type FacetValues } from '@/lib/facets';
+  import { isGifted, pledgeFacets, pledgeRanges, PLEDGE_PRIMARY, PLEDGE_TYPES as TYPES } from '@/lib/pledge-facets';
+  import FacetBar from './FacetBar.svelte';
   import { bg } from '@/lib/messages';
-  import { catalogItem, gameShipsItem, hangarItem, pledgeLabelsItem } from '@/lib/settings';
-  import { cleanLabels, allLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
+  import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
+  import { cleanLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
-  import type { Catalog } from '@/lib/store';
+  import type { Catalog, StorePaint } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import Stat from './Stat.svelte';
@@ -31,7 +35,6 @@
   import { Badge } from '@/components/ui/badge';
   import * as Table from '@/components/ui/table';
   import * as Tooltip from '@/components/ui/tooltip';
-  import * as Select from '@/components/ui/select';
   import * as Collapsible from '@/components/ui/collapsible';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
   import { Checkbox } from '@/components/ui/checkbox';
@@ -53,23 +56,16 @@
   /** What the last quick update found. */
   let updated = $state('');
   let q = $state('');
-  /** Your labels (`lib/labels.ts`) and the label filter ('' = any). */
+  /** Your labels (`lib/labels.ts`); the Labels facet filters by them. */
   let labels = $state<Labels>({});
-  let labelFilter = $state('');
-  const labelList = $derived(allLabels(labels));
-  const labelIds = $derived(labelFilter ? idsWith(labels, labelFilter) : null);
+  /** Store paint listings (loaded by Paints / Buyback / the background) — for the "In store" facet. */
+  let storePaints = $state<StorePaint[] | null>(null);
   /** Store a plain copy: a Svelte state proxy put in chrome.storage turned label arrays into `{"0": …}` objects. */
   const saveLabels = (next: Labels) => {
     const plain = cleanLabels(JSON.parse(JSON.stringify(next)));
     labels = plain;
     pledgeLabelsItem.setValue(plain);
   };
-  let type = $state<PledgeType | 'all'>('all');
-  let flag = $state<'' | 'lti' | 'warbond' | 'giftable' | 'meltable' | 'notMeltable' | 'upgraded' | 'hasGame' | 'noBuyback' | 'named'>('');
-  /** Flag filter. "Meltable" means it can actually be melted for credit (Reclaim button *and* a value) — RSI puts a
-   *  Reclaim button on nearly every row, $0 flair included, so the raw flag alone filtered almost nothing out. */
-  const flagPass = (p: Pledge) =>
-    !flag ? true : flag === 'meltable' ? canMelt(p) : flag === 'notMeltable' ? !canMelt(p) : flag === 'named' ? !!(p.nickname || p.reservedNames?.length) : !!p[flag];
   type Col = 'name' | 'type' | 'value' | 'date' | 'flags' | 'qty';
   let sort = $state<SortState<Col>>({ key: 'date', dir: 'desc' });
   let ctrl: AbortController | null = null;
@@ -79,10 +75,11 @@
     catalogItem.getValue().then((c) => (cat = c));
     gameShipsItem.getValue().then((g) => (game = g));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
+    paintCatalogItem.getValue().then((p) => (storePaints = p?.paints ?? null)).catch(() => {});
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch(() => {}); // only needed to know which hulls a paint fits
-    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l)))];
+    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l))), paintCatalogItem.watch((p) => (storePaints = p?.paints ?? null))];
     return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
@@ -153,22 +150,39 @@
       /* Wallet tab shows the details */
     }
   }
+  // ---- filters: FacetBar over the pledges left after "Hide sets" (`lib/pledge-facets.ts`), then the search ----
+  const base = $derived(all.filter((p) => !hiddenBySet.has(p.id)));
+  /**
+   * Pledges with something the store sells today (a paint listing in stock / a ship with an available standalone),
+   * worked out once per listing — same lookup as Buyback's store links. Null until a store listing is loaded.
+   */
+  const inStoreIds = $derived.by(() => {
+    if (!storePaints && !cat?.ships.length) return null;
+    const idx = storePaintIndex(storePaints ?? []);
+    const ships = cat?.ships ?? [];
+    const out = new Set<number>();
+    for (const p of all) {
+      if (p.type === 'upgrade' || p.upgrade) continue;
+      const titles = p.items.length ? p.items.map((i) => i.title) : [p.name];
+      if (storeLinksFor(titles, ships, idx).length) out.add(p.id);
+    }
+    return out;
+  });
+  const facets = $derived(
+    pledgeFacets({
+      labels,
+      ships: cat?.ships ?? [],
+      inStore: inStoreIds ? (p) => inStoreIds.has(p.id) : null,
+      types: TYPES.filter((t) => all.some((p) => p.type === t)),
+    }),
+  );
   const shown = $derived.by(() => {
     const query = q.trim().toLowerCase();
-    const list = all.filter(
-      (p) =>
-        !hiddenBySet.has(p.id) &&
-        (type === 'all' || p.type === type) &&
-        flagPass(p) &&
-        (!labelIds || labelIds.has(p.id)) &&
-        (!query || [p.name, p.nickname, ...p.items.map((i) => i.title)].some((s) => s.toLowerCase().includes(query))),
-    );
-    return list;
+    const list = applyFacets(base, facets, facetValues, pledgeRanges);
+    return query ? list.filter((p) => [p.name, p.nickname, ...p.items.map((i) => i.title)].some((s) => s.toLowerCase().includes(query))) : list;
   });
-  /** Identical pledges as one row (toggle); unstacked = one stack per pledge, so the table code is the same. */
-  let stacked = $state(true);
   const stacks = $derived.by(() => {
-    const st = stacked ? stackPledges(shown) : shown.map((p) => ({ key: String(p.id), rep: p, entries: [p] }) as PledgeStack);
+    const st = grouping === 'identical' ? stackPledges(shown) : shown.map((p) => ({ key: String(p.id), rep: p, entries: [p] }) as PledgeStack);
     // Ties keep RSI's order (newest first); same-day pledges stay in that order.
     return sortBy(st, sort, {
       name: (s) => s.rep.name,
@@ -180,25 +194,11 @@
     });
   });
   const sum = $derived(totals(shown));
-  const TYPES: PledgeType[] = ['ship', 'package', 'combo', 'upgrade', 'paint', 'gear', 'hangar', 'subscriber', 'other'];
-  const FLAGS: { value: typeof flag; label: string }[] = [
-    { value: '', label: 'Any' },
-    { value: 'lti', label: 'LTI' },
-    { value: 'warbond', label: 'Warbond' },
-    { value: 'giftable', label: 'Giftable' },
-    { value: 'meltable', label: 'Meltable (melts for credit)' },
-    { value: 'notMeltable', label: 'Not meltable or $0' },
-    { value: 'upgraded', label: 'Upgraded' },
-    { value: 'hasGame', label: 'Has game package' },
-    { value: 'noBuyback', label: 'No buyback after melt' },
-    { value: 'named', label: 'Named ship' },
-  ];
   /** Pledges RSI marks as never returning to buyback, among the ones picked to melt. */
   const noBuybackPicked = $derived(all.filter((p) => picked.has(p.id) && p.noBuyback));
   const money = ownDollars;
-  /** Pledge-type chips (count · value) for the list filter and the planner's "May pick". */
+  /** Pledge-type count · value for the planner's "May pick" chips. */
   const byType = $derived(totals(all).byType);
-  const typeOptions = $derived(TYPES.filter((t) => byType[t]).map((t) => ({ id: t, label: `${t} · ${byType[t].count} · ${money(byType[t].value)}` })));
   const dedupeOptions = $derived(
     TYPES.filter((t) => t !== 'upgrade' && byType[t]).map((t) => {
       const d = dupesByType.get(t);
@@ -209,11 +209,12 @@
   // ---- panes: Pledges (the list) / Melt calculator (same list with the tick + "Would lose" columns) ----
   type Pane = 'pledges' | 'melt';
   const PREFS = 'rsiplus:hangar';
+  type Prefs = Partial<{ byShip: boolean; hiddenSets: string[]; facets: FacetValues; group: 'identical' | 'none' }>;
   const savedPrefs = (() => {
     try {
-      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ byShip: boolean; hiddenSets: string[] }>;
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Prefs;
     } catch {
-      return {} as Partial<{ byShip: boolean; hiddenSets: string[] }>;
+      return {} as Prefs;
     }
   })();
   /** Which page the hub shows: Pledges (`#hangar`) or the Melt calculator (`#melt`). Same instance for both. */
@@ -222,9 +223,13 @@
   let byShip = $state(savedPrefs.byShip ?? false);
   /** Event / flair sets (Luminalia, IAE, Subscriber, "RSI Disc.", "AA" …) whose pledges are hidden from the list. */
   let hiddenSets = $state<string[]>(savedPrefs.hiddenSets ?? []);
+  /** Facet choices on the Pledges list (FacetBar). */
+  let facetValues = $state<FacetValues>(savedPrefs.facets ?? {});
+  /** Identical pledges as one row (Group: identical pledges); none = one stack per pledge, so the table code is the same. */
+  let grouping = $state<'identical' | 'none'>(savedPrefs.group ?? 'identical');
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ byShip, hiddenSets }));
+      localStorage.setItem(PREFS, JSON.stringify({ byShip, hiddenSets, facets: facetValues, group: grouping }));
     } catch {
       /* no persistence — fine */
     }
@@ -552,58 +557,51 @@
 {/snippet}
 
 {#snippet filters()}
-          <FilterChips options={typeOptions} bind:value={() => (type === 'all' ? null : type), (v) => (type = (v as PledgeType | null) ?? 'all')} ariaLabel="Pledge type" />
-          <div class="flex flex-wrap items-center gap-2">
-            <Input class="w-64" placeholder="Search name, items, ship nickname" bind:value={q} aria-label="Search" />
-            <label class="text-muted-foreground flex items-center gap-1.5 text-xs"><Checkbox bind:checked={stacked} /> Stack identical pledges</label>
-            <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
-              <Tooltip.Root>
-                <Tooltip.Trigger>
-                  {#snippet child({ props })}<Checkbox {...props} id="hangar-by-ship" bind:checked={byShip} />{/snippet}
-                </Tooltip.Trigger>
-                <Tooltip.Content>Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row</Tooltip.Content>
-              </Tooltip.Root>
-              <label for="hangar-by-ship">Group by ship</label>
-            </span>
-            <label class="text-muted-foreground flex items-center gap-1.5 text-xs"><Checkbox bind:checked={allItems} /> Show all items in every pledge</label>
-            <Select.Root type="single" bind:value={() => flag || 'any', (v) => (flag = v === 'any' ? '' : (v as typeof flag))}>
-              <Select.Trigger aria-label="Flag">{FLAGS.find((f) => f.value === flag)?.label}</Select.Trigger>
-              <Select.Content>
-                {#each FLAGS as f (f.value)}<Select.Item value={f.value || 'any'} label={f.label} />{/each}
-              </Select.Content>
-            </Select.Root>
-            {#if labelList.length}
-              <Select.Root type="single" bind:value={() => labelFilter || 'any', (v) => (labelFilter = v === 'any' ? '' : v)}>
-                <Select.Trigger aria-label="Label">{labelFilter ? `Label: ${labelFilter}` : 'Any label'}</Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="any" label="Any label" />
-                  {#each labelList as l (l.name)}<Select.Item value={l.name} label={`${l.name} · ${l.count}`} />{/each}
-                </Select.Content>
-              </Select.Root>
-            {/if}
-            {#if setOptions.length}
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  {#snippet child({ props })}
-                    <Button {...props} variant="outline" size="sm"><EyeOff class="size-3.5" /> Hide sets{hiddenSets.length ? ` · ${hiddenBySet.size} hidden` : ''}</Button>
-                  {/snippet}
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="start" class="max-h-[60vh] w-72 overflow-y-auto">
-                  <DropdownMenu.Label class="text-muted-foreground text-[11px] font-normal">Events (Luminalia, IAE, Subscriber…) and item collections ("RSI Disc.", "AA"). A pledge is hidden only when everything in it belongs to hidden sets — ships always stay.</DropdownMenu.Label>
-                  <div class="flex gap-1 px-1 py-1">
-                    <Button variant="outline" size="xs" onclick={() => (hiddenSets = setOptions.map(([s]) => s))}>Hide all</Button>
-                    <Button variant="outline" size="xs" disabled={!hiddenSets.length} onclick={() => (hiddenSets = [])}>Show all</Button>
-                  </div>
-                  <DropdownMenu.Separator />
-                  {#each setOptions as [s, n] (s)}
-                    <DropdownMenu.CheckboxItem checked={hiddenSets.includes(s)} onCheckedChange={(v) => toggleSet(s, v)} closeOnSelect={false}>
-                      <span class="flex-1">{s}</span><span class="text-muted-foreground text-xs">{n} pledge{n === 1 ? '' : 's'}</span>
-                    </DropdownMenu.CheckboxItem>
-                  {/each}
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            {/if}
+  <FacetBar {facets} ranges={pledgeRanges} rows={base} shown={shown.length} bind:values={facetValues} primary={PLEDGE_PRIMARY}>
+    <Input class="w-64" placeholder="Search name, items, ship nickname" bind:value={q} aria-label="Search" />
+    <span class="text-muted-foreground text-xs">Group:</span>
+    <Segmented
+      options={[
+        { id: 'identical', label: 'identical pledges', hint: 'Identical pledges (same name, contents and flags) share one row with a count' },
+        { id: 'none', label: 'none' },
+      ]}
+      bind:value={grouping}
+      ariaLabel="Group pledges"
+      size="sm"
+    />
+    <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          {#snippet child({ props })}<Checkbox {...props} id="hangar-by-ship" bind:checked={byShip} />{/snippet}
+        </Tooltip.Trigger>
+        <Tooltip.Content>Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row</Tooltip.Content>
+      </Tooltip.Root>
+      <label for="hangar-by-ship">Group by ship</label>
+    </span>
+    <label class="text-muted-foreground flex items-center gap-1.5 text-xs"><Checkbox bind:checked={allItems} /> Show all items in every pledge</label>
+    {#if setOptions.length}
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          {#snippet child({ props })}
+            <Button {...props} variant="outline" size="sm"><EyeOff class="size-3.5" /> Hide sets{hiddenSets.length ? ` · ${hiddenBySet.size} hidden` : ''}</Button>
+          {/snippet}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="start" class="max-h-[60vh] w-72 overflow-y-auto">
+          <DropdownMenu.Label class="text-muted-foreground text-[11px] font-normal">Events (Luminalia, IAE, Subscriber…) and item collections ("RSI Disc.", "AA"). A pledge is hidden only when everything in it belongs to hidden sets — ships always stay.</DropdownMenu.Label>
+          <div class="flex gap-1 px-1 py-1">
+            <Button variant="outline" size="xs" onclick={() => (hiddenSets = setOptions.map(([s]) => s))}>Hide all</Button>
+            <Button variant="outline" size="xs" disabled={!hiddenSets.length} onclick={() => (hiddenSets = [])}>Show all</Button>
           </div>
+          <DropdownMenu.Separator />
+          {#each setOptions as [s, n] (s)}
+            <DropdownMenu.CheckboxItem checked={hiddenSets.includes(s)} onCheckedChange={(v) => toggleSet(s, v)} closeOnSelect={false}>
+              <span class="flex-1">{s}</span><span class="text-muted-foreground text-xs">{n} pledge{n === 1 ? '' : 's'}</span>
+            </DropdownMenu.CheckboxItem>
+          {/each}
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+    {/if}
+  </FacetBar>
 {/snippet}
 
 {#snippet pledgeTable(rows: PledgeStack[])}
@@ -698,9 +696,10 @@
                     <div class="flex flex-wrap gap-0.5">
                       {#if p.insurance}<Tag kind="insurance" value={p.insurance} />{:else if p.lti}<Tag kind="insurance" value="LTI" />{/if}
                       {#if p.warbond}<Badge variant="secondary">WB</Badge>{/if}
-                      {#if s.entries.some((e) => e.giftable)}<Badge variant="secondary">gift{n > 1 ? ` ${s.entries.filter((e) => e.giftable).length}/${n}` : ''}</Badge>{/if}
-                      {#if p.upgraded}<HintBadge variant="secondary" hint="A CCU was applied to this pledge">upgraded</HintBadge>{/if}
-                      {#if p.hasGame}<Badge variant="secondary">game</Badge>{/if}
+                      {#if s.entries.some((e) => e.giftable)}<Tag kind="giftable" label={n > 1 ? `Giftable ${s.entries.filter((e) => e.giftable).length}/${n}` : null} />{/if}
+                      {#if isGifted(p)}<Tag kind="gifted" />{/if}
+                      {#if p.upgraded}<Tag kind="upgraded" />{/if}
+                      {#if p.hasGame}<Tag kind="game" />{/if}
                       {#if !p.meltable}<Badge variant="muted">no melt</Badge>{/if}
                       {#if p.noBuyback}<HintBadge variant="warning" hint="RSI marks this pledge as not buy-backable: melting it is final">no buyback</HintBadge>{/if}
                       {#if p.configValue}<HintBadge variant="muted" hint="Paid customization on top of the pledge">+{money(p.configValue)} config</HintBadge>{/if}
@@ -739,7 +738,7 @@
                         {#if e.giftable}<TipButton variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'gift')} target="_blank" rel="noopener" tip="Open RSI's gift dialog for this pledge">gift</TipButton>{/if}
                         {#if n > 1}<span class="text-muted-foreground">{e.date}</span>{/if}
                         {#if e.nickname}<span class="text-muted-foreground">“{e.nickname}”</span>{/if}
-                        {#if n > 1 && e.giftable}<Badge variant="secondary">gift</Badge>{/if}
+                        {#if n > 1 && e.giftable}<Tag kind="giftable" size="xs" />{/if}
                       </div>
                       {#if on}
                         {@const where = copiesElsewhere(all, picked, e)}

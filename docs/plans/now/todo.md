@@ -4,7 +4,7 @@ tags: [plans]
 updated: 2026-10-20
 ---
 # Now
-- [ ] Facets, labels and the sidebar — [[specs/filters-and-labels]]: Pledges / Ships / CCUs / Ship catalog / Browse facets, RSI ribbons as tags, new CCUs page
+- [ ] Live-verify facets and labels — [[specs/filters-and-labels]]: Pledges / Ships / CCUs / Browse / Catalog bars on a real hangar (gifted guess, sold-today, counts), RSI ribbons on Browse; then planner `from=` param + exclude list for the CCUs page
 - [ ] Live-verify Plan ahead: pick a hull with no CCU on sale, chain shows *Later* steps + *to pay now* / *later* tiles, Verify marks them *waits for a sale*, save it; after a catalog refresh with that CCU on sale the Feed shows the *Store* alert opening `#ccu` and the saved chain says *on sale now*; Ship catalog *Not on sale* segment + last-seen dates after a day of refreshes
 - [ ] Live-verify the Firefox build (`about:debugging` → Load Temporary Add-on → `rsi-plus-<v>-firefox.zip`): popup/hub open, background poll with the `Rsi-Token` cookie, hangar load from the hub page, Spectrum MAIN-world hook, badge count, party ding; then submit to AMO (sources zip) and decide listed vs self-hosted signing
 - [ ] Live-verify the Edge and Brave zips load (identical to Chrome's); Brave: Shields on robertsspaceindustries.com don't block the hub's hangar fetches

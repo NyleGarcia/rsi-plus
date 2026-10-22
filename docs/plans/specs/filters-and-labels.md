@@ -39,5 +39,8 @@ Group-by: Pledges gets `Group: identical pledges / none` (today's *Stack identic
 - **CCUs page** (`CcusPanel.svelte`, `#ccus`): rows = `OwnedCcu` from `ownedCcus()` (hangar + buyback) joined with catalog: From → To (names, makers, thumbs), paid (hangar melt value; buyback price when detailed), target MSRP, source MSRP, gap = target − source MSRP, saving = gap − paid (negative = you paid over the gap), place, flags (warbond, insurance from the pledge, giftable, gifted, meltable), stage/size of target, used by a saved chain (SavedChain steps). Actions: open in hangar / buyback, *Plan from this* (CCU planner `#ccu?from=&to=`), exclude from planner. Totals row: count, paid, gap, saving. CSV export.
 - Search stays a plain Input in every FacetBar's first row; sort stays `SortTh`.
 
+## Done 2026-10-22 / follow-ups
+Built (3 pages + CCUs page). Open: the planner has no `from=` hash parameter, so *Plan from this* on the CCUs page targets the hull and lets the planner pick the owned CCU; an *exclude from planner* action needs a stored exclude list in CcuPanel. Gifted = `value === 0` on ship / package / combo / upgrade / paint / gear pledges (RSI shows no gift marker).
+
 ## Out of scope
 Loaners; RSI's "Time Limited" for standalone *ships* (the catalog API has no ribbon; Browse's standalone-ships category carries it, so the catalog row shows `limited` only when the standalone listing by the same name has the tag).

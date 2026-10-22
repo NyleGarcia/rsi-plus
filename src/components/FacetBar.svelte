@@ -15,7 +15,7 @@
   import X from '@lucide/svelte/icons/x';
   import { cn } from '@/lib/utils';
   import { CHIP } from './FilterChips.svelte';
-  import { activeCount, clearFacets, facetCounts, toggleFacet, type Facet, type FacetValues, type RangeFacet, type RangeValue } from '@/lib/facets';
+  import { clearFacets, facetCounts, isActive, toggleFacet, type Facet, type FacetValues, type RangeFacet, type RangeValue } from '@/lib/facets';
 
   let {
     facets,
@@ -25,6 +25,7 @@
     values = $bindable({}),
     primary = [],
     keep = [],
+    defaults = {},
     hideEmpty = false,
     class: className = '',
     children,
@@ -40,6 +41,8 @@
     primary?: string[];
     /** Value ids Reset leaves alone (a page's tab, search). */
     keep?: string[];
+    /** What Reset returns to (e.g. `{ stock: 'in' }`); a value equal to its default does not count as active. */
+    defaults?: FacetValues;
     /** Drop options no row would match. */
     hideEmpty?: boolean;
     class?: string;
@@ -48,9 +51,11 @@
   } = $props();
 
   const counts = $derived(facetCounts(rows, facets, values, ranges));
-  const active = $derived(activeCount(values));
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const deviates = (id: string) => !same(values[id], defaults[id]) && (isActive(values[id]) || isActive(defaults[id]));
+  const active = $derived([...new Set([...Object.keys(values), ...Object.keys(defaults)])].filter(deviates).length);
   const fold = $derived(primary.length ? [...facets.filter((f) => !primary.includes(f.id)).map((f) => f.id), ...ranges.filter((r) => !primary.includes(r.id)).map((r) => r.id)] : []);
-  const foldActive = $derived(fold.filter((id) => values[id] != null && (Array.isArray(values[id]) ? (values[id] as string[]).length : typeof values[id] === 'object' ? (values[id] as RangeValue).min != null || (values[id] as RangeValue).max != null : true)).length);
+  const foldActive = $derived(fold.filter(deviates).length);
   let more = $state(false);
   const sel = (f: Facet<T>) => (f.multiple ? ((values[f.id] as string[] | undefined) ?? []) : ((values[f.id] as string | null | undefined) ?? ''));
   const rangeVal = (id: string): RangeValue => (values[id] as RangeValue | undefined) ?? { min: null, max: null };
@@ -111,7 +116,7 @@
           {/snippet}
         </Collapsible.Trigger>
         <span class="text-muted-foreground ml-auto text-xs tabular-nums">{shown} of {rows.length}</span>
-        {#if active}<Button variant="ghost" size="xs" onclick={() => (values = clearFacets(values, keep))}><X /> Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
+        {#if active}<Button variant="ghost" size="xs" onclick={() => (values = { ...clearFacets(values, keep), ...defaults })}><X /> Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
       </div>
       <Collapsible.Content class="grid gap-2">
         {#each facets.filter((f) => fold.includes(f.id)) as f (f.id)}{@render facetRow(f)}{/each}
@@ -121,7 +126,7 @@
   {:else}
     <div class="flex flex-wrap items-center gap-2">
       <span class="text-muted-foreground ml-auto text-xs tabular-nums">{shown} of {rows.length}</span>
-      {#if active}<Button variant="ghost" size="xs" onclick={() => (values = clearFacets(values, keep))}><X /> Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
+      {#if active}<Button variant="ghost" size="xs" onclick={() => (values = { ...clearFacets(values, keep), ...defaults })}><X /> Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
     </div>
   {/if}
 </div>

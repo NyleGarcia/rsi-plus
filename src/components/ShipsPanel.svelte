@@ -59,6 +59,9 @@
   import X from '@lucide/svelte/icons/x';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
   import { shipLines, xplorCsv, xplorRows } from '@/lib/export';
+  import { applyFacets, stageOf, type FacetValues } from '@/lib/facets';
+  import { shipFacets, shipRanges, SHIP_PRIMARY } from '@/lib/pledge-facets';
+  import FacetBar from './FacetBar.svelte';
 
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
@@ -130,7 +133,7 @@
   const PREFS = 'rsiplus:ships';
   const saved = (() => {
     try {
-      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ own: Own; groupShow: GroupShow; withEmpty: boolean }>;
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ own: Own; groupShow: GroupShow; withEmpty: boolean; shipFacets: FacetValues }>;
     } catch {
       return {};
     }
@@ -140,9 +143,11 @@
   let own = $state<Own>(saved.own ?? 'both');
   let groupShow = $state<GroupShow>(saved.groupShow ?? '');
   let withEmpty = $state(saved.withEmpty ?? true);
+  /** My ships facet choices (FacetBar). */
+  let shipValues = $state<FacetValues>(saved.shipFacets ?? {});
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ own, groupShow, withEmpty }));
+      localStorage.setItem(PREFS, JSON.stringify({ own, groupShow, withEmpty, shipFacets: shipValues }));
     } catch {
       /* no persistence — fine */
     }
@@ -279,14 +284,14 @@
 
   // ---- my ships + compare ----
   let shipQ = $state('');
-  let noPaints = $state(false);
   let compare = $state<number[]>([]);
   let shipSort = $state<SortState<'name' | 'count' | 'msrp' | 'paints' | 'maker' | 'insurance'>>({ key: 'name', dir: 'asc' });
   /** Sort key: LTI first, then longest term. */
   const insRank = (ins: string[]) => (ins.includes('LTI') ? 10_000 : Math.max(0, ...ins.map((i) => parseInt(i, 10) || 0)));
+  const fleetFacets = $derived(shipFacets(fleet));
   const fleetShown = $derived(
     sortBy(
-      fleet.filter((f) => (!noPaints || !f.paints.length) && (!shipQ.trim() || `${f.ship.name} ${f.ship.manufacturer} ${f.ship.focus}`.toLowerCase().includes(shipQ.trim().toLowerCase()))),
+      applyFacets(fleet, fleetFacets, shipValues, shipRanges).filter((f) => !shipQ.trim() || `${f.ship.name} ${f.ship.manufacturer} ${f.ship.focus}`.toLowerCase().includes(shipQ.trim().toLowerCase())),
       shipSort,
       { name: (f) => f.ship.name, count: (f) => f.count, msrp: (f) => f.ship.msrp || null, paints: (f) => f.paints.length, maker: (f) => f.ship.manufacturer, insurance: (f) => insRank(f.insurance) || null },
     ),
@@ -505,10 +510,9 @@
               </Card.Action>
             </Card.Header>
             <Card.Content class="grid gap-4">
-              <div class="flex flex-wrap items-center gap-2">
+              <FacetBar facets={fleetFacets} ranges={shipRanges} rows={fleet} shown={fleetShown.length} bind:values={shipValues} primary={SHIP_PRIMARY}>
                 <Input class="w-64" placeholder="Search ships" bind:value={shipQ} aria-label="Search my ships" />
-                <label class="text-muted-foreground flex items-center gap-2"><Checkbox bind:checked={noPaints} /> Only ships with no paints</label>
-              </div>
+              </FacetBar>
               <div class="bg-muted/40 grid gap-2 rounded-lg border p-3">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase"><Gamepad2 class="size-3.5" /> In-game ships</span>
@@ -564,6 +568,12 @@
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
                           <div>
                             <strong>{f.ship.name}</strong>
+                            {#if (f.ship.flyable && stageOf(f.ship.flyable) !== 'ready') || f.ship.size}
+                              <div class="mt-0.5 flex flex-wrap gap-0.5">
+                                {#if f.ship.flyable && stageOf(f.ship.flyable) !== 'ready'}<Tag kind="stage" value={f.ship.flyable} size="xs" />{/if}
+                                {#if f.ship.size}<Tag kind="size" value={f.ship.size} size="xs" />{/if}
+                              </div>
+                            {/if}
                             {#if shipTags(f).length}<div class="mt-0.5 flex flex-wrap gap-0.5">{#each shipTags(f) as t (t)}<HintBadge variant="muted" class="text-[10px]" hint="Your label on the pledges holding this ship (edit on Pledges)">{t}</HintBadge>{/each}</div>{/if}
                           </div>
                         </div>
@@ -590,6 +600,7 @@
                       </Table.Cell>
                     </Table.Row>
                   {/each}
+                  {#if !fleetShown.length}<Empty colspan={8}>Nothing matches.</Empty>{/if}
                 </Table.Body>
               </Table.Root>
               {#if unmatchedShips.length}

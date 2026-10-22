@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { activeFilters, DEFAULT_FILTER, discountPct, filterItems, matchesFilter, parseUsd, type BrowseFilter } from '@/lib/browse';
+import { activeFilters, BROWSE_RANGES, browseFacets, DEFAULT_FACETS, DEFAULT_FILTER, discountPct, filterItems, matchesFilter, matchesQuery, parseFacetValues, parseUsd, type BrowseFilter } from '@/lib/browse';
+import { applyFacets, facetCounts, type FacetValues } from '@/lib/facets';
 import type { StoreItem } from '@/lib/store';
 
 const item = (o: Partial<StoreItem> & { id: number }): StoreItem => ({
@@ -92,5 +93,61 @@ describe('helpers', () => {
     expect(activeFilters(f({ who: 'concierge', cat: 'gear' }))).toBe(0);
     expect(activeFilters(f({ inStock: false, sale: true, min: 100, q: 'x' }))).toBe(4);
     expect(activeFilters(f({ bundles: true }))).toBe(1);
+  });
+});
+
+describe('browse facets', () => {
+  const RIB = [
+    ...ITEMS,
+    item({ id: 8, tags: ['Limited Time', 'New'], stockLevel: 'low' }),
+    item({ id: 9, tags: ['Best Value', 'Bonus Paints'], stockLevel: 'high' }),
+    item({ id: 10, tags: ['FITS Cutlass'], available: false, stockLevel: 'low' }),
+  ];
+  const own = (it: StoreItem) => (it.id === 1 ? 1 : it.id === 3 ? { count: 0, have: 2, of: 5 } : it.id === 4 ? { count: 0, have: 3, of: 3 } : 0);
+  const facets = browseFacets(own);
+  const run = (v: FacetValues) => ids(applyFacets(RIB, facets, v, BROWSE_RANGES));
+
+  it('defaults to in stock only', () => {
+    expect(run(DEFAULT_FACETS)).toEqual([1, 3, 4, 5, 6, 7, 8, 9]);
+    expect(run({ stock: 'out' })).toEqual([2, 10]);
+    expect(run({})).toHaveLength(RIB.length);
+  });
+  it('special is OR within the facet', () => {
+    expect(run({ special: ['sale'] })).toEqual([3]);
+    expect(run({ special: ['limited'] })).toEqual([8]);
+    expect(run({ special: ['new', 'bestvalue'] })).toEqual([8, 9]);
+    expect(run({ special: ['bonus'] })).toEqual([9]);
+    expect(run({ special: ['concierge', 'subscribers'] })).toEqual([5, 6]);
+    expect(run({ special: ['lowstock'] })).toEqual([8]); // 10 is low but out of stock
+  });
+  it('edition, bundles, hangar and price stack with the rest', () => {
+    expect(run({ ...DEFAULT_FACETS, edition: 'warbond' })).toEqual([4]);
+    expect(run({ ...DEFAULT_FACETS, edition: 'standard' })).toEqual([1, 3, 5, 6, 7, 8, 9]);
+    expect(run({ bundles: 'yes' })).toEqual([7]);
+    expect(run({ owned: 'all' })).toEqual([1, 4]);
+    expect(run({ owned: 'some' })).toEqual([3]);
+    expect(run({ owned: 'owned' })).toEqual([1]);
+    expect(run({ ...DEFAULT_FACETS, price: { min: 10, max: 50 } })).toEqual([1, 3, 7, 8, 9]);
+    expect(run({ ...DEFAULT_FACETS, price: { min: null, max: 5 } })).toEqual([4, 6]);
+  });
+  it('counts per option apply the other facets', () => {
+    const c = facetCounts(RIB, facets, { stock: 'in', edition: 'warbond' }, BROWSE_RANGES);
+    expect(c.edition).toEqual({ warbond: 1, standard: 7 });
+    expect(c.stock).toEqual({ in: 1, out: 0 });
+  });
+  it('search matches name and subtitle', () => {
+    expect(matchesQuery(RIB[4]!, 'standalone')).toBe(true);
+    expect(matchesQuery(RIB[4]!, 'paint')).toBe(false);
+    expect(matchesQuery(RIB[4]!, '')).toBe(true);
+  });
+  it('saved values: unknown ids and junk are dropped, nothing saved → defaults', () => {
+    expect(parseFacetValues(null, facets, BROWSE_RANGES, DEFAULT_FACETS)).toEqual({ stock: 'in' });
+    expect(parseFacetValues('{nope', facets, BROWSE_RANGES, DEFAULT_FACETS)).toEqual({ stock: 'in' });
+    expect(parseFacetValues(JSON.stringify({ special: ['new', 'bogus'], edition: 'x', stock: null, price: { min: 5, max: null }, zz: 1 }), facets, BROWSE_RANGES, DEFAULT_FACETS)).toEqual({
+      special: ['new'],
+      stock: null,
+      price: { min: 5, max: null },
+    });
+    expect(parseFacetValues('{}', facets, BROWSE_RANGES, DEFAULT_FACETS)).toEqual({});
   });
 });

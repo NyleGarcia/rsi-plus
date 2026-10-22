@@ -9,7 +9,7 @@
   import { catalogItem, gameShipsItem, hangarItem, storeItemsItem, storeLogItem, storeSnapshotItem } from '@/lib/settings';
   import type { GameShip } from '@/lib/items';
   import { ownedHulls as ownedHullMap, ownedTitleCounts } from '@/lib/owned-counts';
-  import { paintKey, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
+  import { isBestValue, isLimitedTime, isLowStock, isNewListing, paintKey, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
   import { cleanLog, dismiss, mergeChanges, skuName, tally, type EntryKind, type MergedChange, type StoreChange, type StoreEntry, type StoreSnapshot } from '@/lib/storelog';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import X from '@lucide/svelte/icons/x';
@@ -106,7 +106,15 @@
   const tagsOf = (e: StoreEntry) => {
     const it = itemOf(e);
     const name = nameOf(e);
-    return { warbond: it ? it.warbond : /\bwarbond\b/i.test(name), insurance: it ? insuranceOf(it) : insuranceTag(name) };
+    return {
+      warbond: it ? it.warbond : /\bwarbond\b/i.test(name),
+      insurance: it ? insuranceOf(it) : insuranceTag(name),
+      // RSI's ribbons, from the listing while the store still has it
+      limited: !!it && isLimitedTime(it),
+      new: !!it && isNewListing(it),
+      bestvalue: !!it && isBestValue(it),
+      lowstock: !!it && isLowStock(it),
+    };
   };
   const linkOf = (e: StoreEntry) => e.link ?? known.get(e.key)?.link;
   const thumbOf = (e: StoreEntry) => e.thumb ?? known.get(e.key)?.thumb ?? null;
@@ -244,6 +252,10 @@
                           {#if e.price > 0}<span class="text-foreground tabular-nums font-medium">{usd(e.price)}</span>{/if}
                           {#if tags.warbond}<Tag kind="warbond" size="xs" />{/if}
                           {#if tags.insurance}<Tag kind="insurance" value={tags.insurance} size="xs" />{/if}
+                          {#if tags.limited}<Tag kind="limited" size="xs" />{/if}
+                          {#if tags.new}<Tag kind="new" size="xs" />{/if}
+                          {#if tags.bestvalue}<Tag kind="bestvalue" size="xs" />{/if}
+                          {#if tags.lowstock}<Tag kind="lowstock" size="xs" />{/if}
                           {#if inside.length >= 2}
                             <Tooltip.Root delayDuration={150}>
                               <Tooltip.Trigger>
