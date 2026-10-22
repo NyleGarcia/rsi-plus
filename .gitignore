@@ -16,5 +16,5 @@ public/undo/
 .DS_Store
 coverage/
 
-# Web Store credentials for a local `wxt submit --dry-run` (docs/release.md)
+# 1Password Environment `rsi-plus` mount (Web Store credentials, docs/release.md)
 .env.submit

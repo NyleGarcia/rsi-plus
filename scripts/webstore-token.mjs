@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Get a Chrome Web Store refresh token for CI and store it — with the client id / secret and the extension id — as
- * GitHub Actions secrets, without the values ever being printed (docs/release.md).
+ * GitHub Actions secrets, without the values ever being printed (docs/release.md). The refresh token is also put on the
+ * clipboard so it can be added to the 1Password Environment `rsi-plus` (mounted at .env.submit) for local use.
  *
  *   node scripts/webstore-token.mjs --extension-id <id> [--repo owner/name] [--env chrome-web-store]
  *
@@ -29,8 +30,8 @@ if (!/^[a-p]{32}$/.test(extensionId)) {
 }
 const SCOPE = 'https://www.googleapis.com/auth/chromewebstore';
 
-// Client id / secret: from the environment, else a git-ignored `.env.submit` (CHROME_CLIENT_ID=… / CHROME_CLIENT_SECRET=…,
-// the file `wxt submit` reads too), else asked for — the file keeps the secret out of any terminal log.
+// Client id / secret: from the environment, else `.env.submit` — the 1Password Environment `rsi-plus` mounted there (a
+// live FIFO fed by 1Password, nothing on disk; the file `wxt submit` reads too), else asked for.
 const dotenv = Object.fromEntries(
   (await readFile('.env.submit', 'utf8').catch(() => ''))
     .split('\n')
@@ -96,4 +97,15 @@ setSecret('CHROME_EXTENSION_ID', extensionId);
 setSecret('CHROME_CLIENT_ID', clientId);
 setSecret('CHROME_CLIENT_SECRET', clientSecret);
 setSecret('CHROME_REFRESH_TOKEN', token.refresh_token);
-console.log(`\nStored CHROME_EXTENSION_ID, CHROME_CLIENT_ID, CHROME_CLIENT_SECRET, CHROME_REFRESH_TOKEN in the "${envName}" environment. The next release will submit itself.`);
+console.log(`\nStored CHROME_EXTENSION_ID, CHROME_CLIENT_ID, CHROME_CLIENT_SECRET, CHROME_REFRESH_TOKEN in the "${envName}" GitHub environment. The next release will submit itself.`);
+
+// For local `wxt submit --dry-run`: hand the token to the clipboard for the 1Password Environment, never to the terminal.
+const copied = ['wl-copy', 'xclip -selection clipboard', 'pbcopy'].some((cmd) => {
+  try {
+    execFileSync(cmd.split(' ')[0], cmd.split(' ').slice(1), { input: token.refresh_token, stdio: ['pipe', 'ignore', 'ignore'] });
+    return true;
+  } catch {
+    return false;
+  }
+});
+console.log(copied ? 'Refresh token copied to the clipboard: add it to the 1Password Environment "rsi-plus" as CHROME_REFRESH_TOKEN (concealed).' : 'No clipboard tool found (wl-copy / xclip / pbcopy): rerun this script later if you want the token in 1Password too.');
