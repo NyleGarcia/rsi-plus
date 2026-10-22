@@ -14,6 +14,7 @@
   import SortTh from './SortTh.svelte';
   import Thumb from './Thumb.svelte';
   import Tag from './Tag.svelte';
+  import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
@@ -218,7 +219,7 @@
           <SortTh key="name" bind:sort>Ship</SortTh>
           <SortTh key="msrp" bind:sort>MSRP</SortTh>
           <SortTh key="offer" bind:sort>On sale</SortTh>
-          <SortTh key="saving" bind:sort firstDir="desc">Discount</SortTh>
+          <SortTh key="saving" bind:sort firstDir="desc">Under MSRP</SortTh>
         </Table.Row>
       </Table.Header>
       <Table.Body>
@@ -271,7 +272,10 @@
               </div>
             </Table.Cell>
             <Table.Cell>
-              {#if saving(s) > 0}<div class="text-success text-[11px]">−{usd(saving(s))}</div>{/if}
+              {#if saving(s) > 0}
+                {@const o = lowestOffer(s)!}
+                <div><HintBadge variant="success-soft" hint={`${usd(s.msrp)} MSRP, cheapest offer now ${o.title} at ${usd(o.price)}`}>−{usd(saving(s))}</HintBadge></div>
+              {/if}
               <Button variant="outline" size="xs" href={`#ccu?to=${s.id}${onSale(s) ? '' : '&ahead=1'}`}>Plan CCU</Button>
             </Table.Cell>
           </Table.Row>
