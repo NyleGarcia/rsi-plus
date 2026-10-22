@@ -2,9 +2,10 @@
   import { fetchCredits } from '@/lib/account';
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
-  import { buybackItem, catalogItem, fundingItem, hangarItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
+  import { captureBilling, fetchOrders, orderTotals, type Order } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
-  import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
+  import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
   import { AreaChart, BarChart, PieChart } from 'layerchart';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Wallet from '@lucide/svelte/icons/wallet';
@@ -39,6 +40,38 @@
   let hangar = $state<Saved | null>(null);
   let buybacks = $state(0);
   let buybackList = $state<BuybackItem[]>([]);
+  // ---- where the money went: hangar ledger + imported order history ----
+  const ledger = $derived(spendLedger(all, buybackList));
+  let orders = $state<{ at: number; orders: Order[]; pages: number } | null>(null);
+  let ordersBusy = $state(false);
+  let ordersMsg = $state('');
+  $effect(() => {
+    ordersItem.getValue().then((o) => (orders = o));
+  });
+  const orderSums = $derived(orders ? orderTotals(orders.orders) : null);
+  async function importOrders() {
+    ordersBusy = true;
+    ordersMsg = '';
+    try {
+      const r = await fetchOrders();
+      if (r.orders.length) {
+        orders = { at: Date.now(), orders: r.orders, pages: r.pages };
+        await ordersItem.setValue($state.snapshot(orders));
+        ordersMsg = `${r.orders.length} orders from ${r.pages} page${r.pages === 1 ? '' : 's'}${r.debug ? ` · ${r.debug}` : ''}`;
+      } else ordersMsg = `No orders recognised${r.debug ? ` — ${r.debug}` : ''}. Copy the billing markup and send it over so the reader can learn RSI's layout.`;
+    } catch (e) {
+      ordersMsg = `Could not read /account/billing: ${(e as Error).message}`;
+    } finally {
+      ordersBusy = false;
+    }
+  }
+  async function copyBilling() {
+    try {
+      ordersMsg = await captureBilling();
+    } catch (e) {
+      ordersMsg = `could not copy: ${(e as Error).message}`;
+    }
+  }
   let ships = $state<CatalogShip[]>([]);
   let error = $state('');
 
@@ -568,6 +601,50 @@
         </WidgetGrid>
       </Card.Content>
     {/if}
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Where the money went</Card.Title>
+      <Card.Description>
+        What your hangar can tell: warbond pledges took new money; standard pledges took cash <em>or</em> store credit (RSI's hangar does not say which); melted pledges put credit back that may have paid for later ones. The exact cash figure needs your order history — import it below.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-4">
+      <StatGrid layout="divided">
+        <Stat value={money(ledger.newMoney)} label="New money for sure" sub={`${ledger.newMoneyCount} warbond pledge${ledger.newMoneyCount === 1 ? '' : 's'}`} hint="Warbond prices can't be paid with store credit" valueTone="ok" />
+        <Stat value={money(ledger.either)} label="Cash or store credit" sub={`${ledger.eitherCount} standard pledge${ledger.eitherCount === 1 ? '' : 's'}`} hint="Standard pledges accept both; the hangar keeps no record of which you used" />
+        <Stat value={money(ledger.melted)} label="Melted into credit" sub={`${ledger.meltedCount} in buyback${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="Buyback entries whose price was read (Buyback → Load contents & prices). Credit you got back, possibly spent again." />
+        <Stat value={`${ledger.gifted}`} label="Gifted / free" sub={`${ledger.gifted} gifts · ${ledger.free} flair`} hint="Pledges with no melt value: received as gifts, referral rewards, event flair" />
+        {#if ledger.custom}<Stat value={money(ledger.custom)} label="Paid customization" hint="RSI's configuration value on top of the pledge — cash" />{/if}
+        <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (estimate)" context="Lower bound assumes every melted dollar bought a standard pledge; upper bound assumes none did" hint="New money + customization + standard pledges, less what melted credit could have covered" tone="accent" />
+      </StatGrid>
+      <div class="flex flex-wrap items-center gap-2">
+        <TipButton variant={orders ? 'outline' : 'default'} size="sm" disabled={ordersBusy} onclick={importOrders} tip="Reads your order history pages from robertsspaceindustries.com/account/billing in this browser — nothing is sent anywhere">{ordersBusy ? 'Reading…' : orders ? 'Re-import order history' : 'Import order history (beta)'}</TipButton>
+        <TipButton variant="ghost" size="sm" onclick={copyBilling} tip="Copies the billing page's markup to the clipboard, for teaching the reader RSI's layout when it finds no orders">Copy billing markup</TipButton>
+        {#if orders}<span class="text-muted-foreground text-xs">{orders.orders.length} orders · read {new Date(orders.at).toLocaleString()}</span>{/if}
+        {#if ordersMsg}<span class="text-muted-foreground text-xs">{ordersMsg}</span>{/if}
+      </div>
+      {#if orderSums}
+        <StatGrid>
+          <Stat value={money(orderSums.cash)} label="Paid with cash" valueTone="ok" hint="Orders RSI lists with a card, PayPal or bank payment" />
+          <Stat value={money(orderSums.credit)} label="Paid with store credit" hint="Orders RSI lists as store credit" />
+          <Stat value={money(orderSums.gift)} label="Received as gifts" />
+          <Stat value={money(orderSums.refund)} label="Refunded" valueTone={orderSums.refund ? 'warn' : null} />
+          {#if orderSums.unknown}<Stat value={money(orderSums.unknown)} label="Payment not recognised" hint="Orders whose payment words the reader does not know yet — copy the billing markup" valueTone="warn" />{/if}
+        </StatGrid>
+        {#if orderSums.byYear.length}
+          <Table.Root>
+            <Table.Header><Table.Row><Table.Head>Year</Table.Head><Table.Head class="text-right">Cash</Table.Head><Table.Head class="text-right">Store credit</Table.Head><Table.Head class="text-right">All orders</Table.Head></Table.Row></Table.Header>
+            <Table.Body>
+              {#each orderSums.byYear as y (y.year)}
+                <Table.Row><Table.Cell>{y.year}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.cash)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.credit)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.total)}</Table.Cell></Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
+        {/if}
+      {/if}
+    </Card.Content>
   </Card.Root>
 
   {#if all.length && ships.length}

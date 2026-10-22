@@ -18,7 +18,7 @@
   import X from '@lucide/svelte/icons/x';
   import Check from '@lucide/svelte/icons/check';
   import { cn } from '@/lib/utils';
-  import { clearFacets, facetCounts, isActive, toggleFacet, type Facet, type FacetValues, type RangeFacet, type RangeValue } from '@/lib/facets';
+  import { indexFor, clearFacets, facetCounts, isActive, toggleFacet, type Facet, type FacetValues, type RangeFacet, type RangeValue } from '@/lib/facets';
 
   let {
     facets,
@@ -53,7 +53,9 @@
     children?: Snippet;
   } = $props();
 
-  const counts = $derived(facetCounts(rows, facets, values, ranges));
+  /** Predicates run once per rows / facets change; every click after that is bit tests. */
+  const index = $derived(indexFor(rows, facets, ranges));
+  const counts = $derived(facetCounts(rows, facets, values, ranges, index));
   const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const deviates = (id: string) => !same(values[id], defaults[id]) && (isActive(values[id]) || isActive(defaults[id]));
   const active = $derived([...new Set([...Object.keys(values), ...Object.keys(defaults)])].filter(deviates).length);

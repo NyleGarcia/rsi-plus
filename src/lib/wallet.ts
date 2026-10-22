@@ -293,3 +293,53 @@ export function fundingStats(f: Funding, now = new Date()): FundingStats {
   const best = done.reduce<FundingPoint | null>((b, p) => (!b || p.usd > b.usd ? p : b), null);
   return { average, best, projected: current ? r2(current.usd / periodElapsed(f.range, now)) : 0 };
 }
+
+// ---- Where the money went: what the hangar can and cannot tell ----
+
+export interface SpendLedger {
+  /** Warbond pledges: paid with new money for sure (cents-free USD like the rest of the hangar). */
+  newMoney: number;
+  newMoneyCount: number;
+  /** Standard pledges: cash or store credit — RSI's hangar does not say which. */
+  either: number;
+  eitherCount: number;
+  /** Paid customization on top of pledges (`configValue`) — cash. */
+  custom: number;
+  /** Pledges with no melt value that are not flair: received as gifts (or free). */
+  gifted: number;
+  /** $0 flair / hangar / subscriber items. */
+  free: number;
+  /** Melt value sitting in buyback whose price was read — store credit you got back and may have spent again. */
+  melted: number;
+  meltedCount: number;
+  /** Buyback entries without a price yet. */
+  meltedUnknown: number;
+  /** Cash you paid at least (standard pledges could all have been bought with melted credit) and at most. */
+  cashMin: number;
+  cashMax: number;
+}
+
+export function spendLedger(pledges: Pledge[], buyback: { price?: number; type: PledgeType }[] = []): SpendLedger {
+  const isGift = (p: Pledge) => p.value === 0 && p.type !== 'other' && p.type !== 'hangar' && p.type !== 'subscriber';
+  const wb = pledges.filter((p) => p.value > 0 && p.warbond);
+  const std = pledges.filter((p) => p.value > 0 && !p.warbond);
+  const newMoney = r2(wb.reduce((s, p) => s + p.value, 0));
+  const either = r2(std.reduce((s, p) => s + p.value, 0));
+  const custom = r2(pledges.reduce((s, p) => s + (p.configValue ?? 0), 0));
+  const priced = buyback.filter((b) => b.price != null);
+  const melted = r2(priced.reduce((s, b) => s + (b.price ?? 0) / 100, 0));
+  return {
+    newMoney,
+    newMoneyCount: wb.length,
+    either,
+    eitherCount: std.length,
+    custom,
+    gifted: pledges.filter(isGift).length,
+    free: pledges.filter((p) => p.value === 0 && !isGift(p)).length,
+    melted,
+    meltedCount: priced.length,
+    meltedUnknown: buyback.length - priced.length,
+    cashMin: r2(newMoney + custom + Math.max(0, either - melted)),
+    cashMax: r2(newMoney + custom + either),
+  };
+}
