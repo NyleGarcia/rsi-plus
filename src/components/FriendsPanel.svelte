@@ -16,6 +16,12 @@
   import { bg, type BulkResult } from '@/lib/messages';
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
+  import SwitchRow from './SwitchRow.svelte';
+  import TipButton from './TipButton.svelte';
+  import HintBadge from './HintBadge.svelte';
+  import Segmented from './Segmented.svelte';
+  import Empty from './Empty.svelte';
+  import { PARTY_REMIND, clampSetting, toggleOf } from '@/lib/settings-ui';
   import { groupByOrg, mainOrgFromBadges, ORG_TTL, type Org, type OrgCache } from '@/lib/orgs';
   import { friendNotesItem, getSettings, getWatches, orgCacheItem, partyLogItem, partyModeItem, patchSettings, patchWatches, watchesItem } from '@/lib/settings';
   import { partyActive, type PartyLogEntry, type PartyMode } from '@/lib/friends';
@@ -28,14 +34,12 @@
   import * as Collapsible from '@/components/ui/collapsible';
   import * as Select from '@/components/ui/select';
   import * as Table from '@/components/ui/table';
-  import * as ToggleGroup from '@/components/ui/toggle-group';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
-  import { Switch } from '@/components/ui/switch';
   import Bell from '@lucide/svelte/icons/bell';
   import BellOff from '@lucide/svelte/icons/bell-off';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -56,6 +60,11 @@
   type Col = 'name' | 'status' | 'added' | 'orgs' | 'tags';
   let sort = $state<SortState<Col>>({ key: 'status', dir: 'asc' });
   let view = $state<'list' | 'orgs'>('list');
+  const VIEWS: { id: 'list' | 'orgs'; label: string }[] = [
+    { id: 'list', label: 'List' },
+    { id: 'orgs', label: 'Group by org' },
+  ];
+  const notifyAllToggle = toggleOf('notifyAllFriends');
   /** Added-since filter: '' any, hours as string, or 'party'. */
   let added = $state('');
   let partyHours = $state(12);
@@ -322,28 +331,28 @@
       </div>
     </Table.Cell>
     <Table.Cell>
-      <span class={cn('mr-1.5 inline-block size-2 rounded-full bg-[#5b6270]', STATUS_DOT[st])}></span>{STATUS_LABEL[st] ?? st}
+      <span class={cn('mr-1.5 inline-block size-2 rounded-full bg-muted-foreground', STATUS_DOT[st])} aria-hidden="true"></span>{STATUS_LABEL[st] ?? st}
       {#if m.presence?.info}<div class="text-muted-foreground text-[11px]">{m.presence.info}</div>{/if}
       {#if lastSeen(m)}<div class="text-muted-foreground text-[11px]">seen {lastSeen(m)}</div>{/if}
     </Table.Cell>
     <Table.Cell class="text-[11px]">
       <span class={cn(!!n?.firstSeen && Date.now() - n.firstSeen < 86_400_000 && 'text-primary font-semibold')}>{addedLabel(m)}</span>
-      {#if n?.party}<Badge variant="outline" class="text-warning ml-1" title="Party friend">party</Badge>{/if}
+      {#if n?.party}<HintBadge variant="warning" class="ml-1" hint="Party friend">party</HintBadge>{/if}
     </Table.Cell>
     <Table.Cell class="max-w-56 whitespace-normal">
       <div class="flex flex-wrap gap-1">
         {#each orgsOf(m) as o, i (`${i}:${o.sid}`)}
           {#if o.redacted}
-            <Badge variant="outline" class="text-muted-foreground" title="Hidden by the member">Redacted</Badge>
+            <HintBadge variant="muted" hint="Hidden by the member">Redacted</HintBadge>
           {:else}
-            <Badge
-              variant="outline"
-              class={cn('no-underline', o.main && 'border-primary text-primary')}
-              href={`https://robertsspaceindustries.com/orgs/${o.sid}`}
-              target="_blank"
-              rel="noopener"
-              title={`${o.name}${o.rank ? ` · ${o.rank}` : ''}${o.main ? ' · main org' : ''}`}>{o.sid}</Badge
-            >
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <Badge {...props} variant={o.main ? 'info' : 'outline'} class="no-underline" href={`https://robertsspaceindustries.com/orgs/${o.sid}`} target="_blank" rel="noopener">{o.sid}</Badge>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>{o.name}{o.rank ? ` · ${o.rank}` : ''}{o.main ? ' · main org' : ''}</Tooltip.Content>
+            </Tooltip.Root>
           {/if}
         {:else}
           <span class="text-muted-foreground text-[11px]">—</span>
@@ -358,26 +367,26 @@
           <Button type="submit" variant="outline" size="xs" class="justify-self-start">Done</Button>
         </form>
       {:else}
-        <button type="button" class="flex flex-wrap items-center gap-1 text-left" onclick={() => (editing = m.id)} title="Edit tags and note">
+        <TipButton variant="ghost" size="sm" class="h-auto flex-wrap justify-start gap-1 px-1 py-0.5 text-left font-normal whitespace-normal" onclick={() => (editing = m.id)} tip="Edit tags and note">
           {#each n?.tags ?? [] as t (t)}<Badge variant="secondary">{t}</Badge>{/each}
           {#if n?.note}<span class="text-muted-foreground text-[11px]">{n.note}</span>{/if}
           {#if !n?.tags.length && !n?.note}<span class="text-muted-foreground text-[11px]">+ tag / note</span>{/if}
-        </button>
+        </TipButton>
       {/if}
     </Table.Cell>
     <Table.Cell>
-      <Button
+      <TipButton
         variant="ghost"
         size="icon-sm"
         class={cn(bellOn ? 'text-primary' : 'text-muted-foreground opacity-60')}
         disabled={notifyAll}
-        title="Notify when online"
+        tip="Notify when online"
         aria-label="Notify when online"
         aria-pressed={bellOn}
         onclick={() => toggleBell(m.id)}
       >
         {#if bellOn}<Bell />{:else}<BellOff />{/if}
-      </Button>
+      </TipButton>
     </Table.Cell>
   </Table.Row>
 {/snippet}
@@ -400,9 +409,9 @@
   </div>
 {/snippet}
   <div class="grid gap-4">
-    <Card.Root class={cn(partyOn && 'ring-warning/50 shadow-[inset_0_0_0_1px_rgb(255_209_102/0.25)]')}>
+    <Card.Root class={cn(partyOn && 'ring-warning/50 inset-ring inset-ring-warning/25')}>
       <Card.Header>
-        <Card.Title class="flex items-center gap-2">Party mode {#if partyOn}<Badge variant="outline" class="text-warning border-warning/50">ON</Badge>{/if}</Card.Title>
+        <Card.Title class="flex items-center gap-2">Party mode {#if partyOn}<Badge variant="warning">ON</Badge>{/if}</Card.Title>
         <Card.Description>
           {#if partyOn}
             Auto-accepting friend requests every minute{party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ' until you turn it off'} · accepted people are flagged
@@ -440,8 +449,8 @@
                 <span class="text-muted-foreground text-[11px]">{new Date(l.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                 {#if l.nickname}<a class={cn(link, 'font-semibold')} href={memberUrl(l.nickname)} target="_blank" rel="noopener">{l.displayname}</a>
                   <span class="text-muted-foreground text-[11px]">@{l.nickname}</span>{:else}{l.displayname}{/if}
-                {#if l.ok}<Badge variant="outline" class="text-success">accepted</Badge>{:else}<Badge variant="outline" class="text-destructive max-w-full" title={l.error}
-                    >failed{l.error ? `: ${l.error}` : ''}</Badge
+                {#if l.ok}<Badge variant="success">accepted</Badge>{:else}<HintBadge variant="destructive" class="max-w-full" hint={l.error}
+                    >failed{l.error ? `: ${l.error}` : ''}</HintBadge
                   >{/if}
               </li>
             {/each}
@@ -461,7 +470,7 @@
     {#if data}
       <Card.Root>
         <Card.Header>
-          <Card.Title>Friend requests <span class="text-muted-foreground font-normal">({requests.incoming.length} incoming · {requests.outgoing.length} sent)</span></Card.Title>
+          <Card.Title class="flex flex-wrap items-center gap-2">Friend requests <Badge variant="secondary">{requests.incoming.length} incoming · {requests.outgoing.length} sent</Badge></Card.Title>
           <Card.Action><Button variant="outline" size="xs" onclick={load} disabled={loading || !!busyReq}>Refresh</Button></Card.Action>
         </Card.Header>
         <Card.Content class="grid gap-3">
@@ -470,12 +479,12 @@
               <strong>Incoming</strong>
               <div class="flex flex-wrap items-center gap-2">
                 <Button size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id))}>Accept all</Button>
-                <Button
+                <TipButton
                   variant="outline"
                   size="xs"
                   disabled={!!busyReq}
                   onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id), true)}
-                  title="Accept and flag as party friends for later cleanup">Accept all as party</Button
+                  tip="Accept and flag as party friends for later cleanup">Accept all as party</TipButton
                 >
                 <Button
                   variant="destructive"
@@ -502,8 +511,8 @@
                     <Table.Cell>
                       <div class="flex items-center justify-end gap-2">
                         <Button size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id])}>{busyReq === req.id ? '…' : 'Accept'}</Button>
-                        <Button variant="outline" size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id], true)} title="Accept and flag as party friend"
-                          >Accept as party</Button
+                        <TipButton variant="outline" size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', [req.id], true)} tip="Accept and flag as party friend"
+                          >Accept as party</TipButton
                         >
                         <Button variant="outline" size="xs" disabled={!!busyReq} onclick={() => requestAction('decline', [req.id])}>Decline</Button>
                       </div>
@@ -513,7 +522,7 @@
               </Table.Body>
             </Table.Root>
           {:else}
-            <span class="text-muted-foreground">No incoming requests.</span>
+            <Empty class="py-2 text-left">No incoming requests.</Empty>
           {/if}
           {#if requests.outgoing.length}
             <strong>Sent</strong>
@@ -558,9 +567,9 @@
           </span>
         </Card.Description>
         <Card.Action class="flex flex-wrap items-center gap-2">
-          <Button variant="outline" disabled={!!orgProgress || !friends.length} onclick={() => loadOrgs(false)} title="Reads each friend's public RSI citizen page (~1/s), cached 24 h">
+          <TipButton variant="outline" disabled={!!orgProgress || !friends.length} onclick={() => loadOrgs(false)} tip="Reads each friend's public RSI citizen page (~1/s), cached 24 h">
             {orgProgress ? `Orgs ${orgProgress.done}/${orgProgress.total}…` : stale.length ? `Load all orgs (${stale.length})` : 'Orgs up to date'}
-          </Button>
+          </TipButton>
           <Button variant="outline" onclick={exportCsv} disabled={!shown.length}>Export CSV</Button>
           <Button variant="outline" onclick={load} disabled={loading}>Refresh</Button>
         </Card.Action>
@@ -597,32 +606,22 @@
               {#each Object.entries(ADDED) as [v, l] (v)}<Select.Item value={v}>{l}</Select.Item>{/each}
             </Select.Content>
           </Select.Root>
-          <ToggleGroup.Root
-            type="single"
-            variant="outline"
-            aria-label="View"
-            value={view}
-            onValueChange={(v) => {
-              if (v === 'list' || v === 'orgs') view = v;
-            }}
-          >
-            <ToggleGroup.Item value="list">List</ToggleGroup.Item>
-            <ToggleGroup.Item value="orgs">Group by org</ToggleGroup.Item>
-          </ToggleGroup.Root>
-          <Label class="text-muted-foreground font-normal" title="Feed + notification reminder to remove party friends (0 = off)">
-            Party reminder after
+          <Segmented options={VIEWS} bind:value={view} ariaLabel="View" />
+        </div>
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <SwitchRow id="friends-notifyAll" label={notifyAllToggle.label} hint={notifyAllToggle.hint} checked={notifyAll} onchange={(v) => ((notifyAll = v), patchSettings({ notifyAllFriends: v }))} />
+          <Label class="text-muted-foreground gap-1.5 font-normal">
+            {PARTY_REMIND.label}
             <Input
               type="number"
-              min="0"
-              max="720"
+              min={PARTY_REMIND.min}
+              max={PARTY_REMIND.max}
+              step="1"
               class="w-16"
               bind:value={partyHours}
-              onchange={() => patchSettings({ partyRemindHours: Math.max(0, Number(partyHours) || 0) })}
-            /> h
-          </Label>
-          <Label class="text-muted-foreground font-normal">
-            <Switch bind:checked={notifyAll} onCheckedChange={(v) => patchSettings({ notifyAllFriends: v })} />
-            Notify for every friend online
+              onchange={() => patchSettings({ partyRemindHours: clampSetting(PARTY_REMIND, partyHours) })}
+            />
+            {PARTY_REMIND.unit}
           </Label>
         </div>
 
@@ -640,7 +639,7 @@
         {#if msg}<span class="text-muted-foreground">{msg}</span>{/if}
 
         {#if !shown.length}
-          <p class="text-muted-foreground py-6 text-center">{loading ? 'Loading…' : friends.length ? 'No friends match.' : 'No friends loaded.'}</p>
+          <Empty>{loading ? 'Loading…' : friends.length ? 'No friends match.' : 'No friends loaded.'}</Empty>
         {:else}
           <Table.Root>
             <Table.Header>

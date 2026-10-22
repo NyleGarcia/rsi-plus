@@ -4,7 +4,9 @@
   import { INCOGNITO, profilesItem } from '@/lib/settings';
   import * as Popover from '@/components/ui/popover';
   import * as Collapsible from '@/components/ui/collapsible';
+  import * as Tooltip from '@/components/ui/tooltip';
   import { Button } from '@/components/ui/button';
+  import TipButton from './TipButton.svelte';
   import { cn } from '@/lib/utils';
   import { own } from '@/lib/privacy.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -76,17 +78,20 @@
 </script>
 
 {#snippet trigger(props: Record<string, unknown>)}
-  <Button
-    {...props}
-    variant="outline"
-    size={compact ? 'xs' : 'sm'}
-    class={cn('rounded-full font-semibold', drift || active?.stale ? 'border-warning/60 dark:border-warning/60' : '')}
-    title={drift ? `Logged in as ${own(me?.handle ?? '')}, but profile ${own(active?.handle ?? '')} is active — Save to update it` : 'Accounts'}
-  >
-    <span class={cn('size-2 rounded-full bg-muted-foreground', me && 'bg-success', me === null && 'bg-destructive')}></span>
-    <span class="sens">{label}</span>{#if ps.list.length}<span class="text-muted-foreground font-medium">{ps.list.length}</span>{/if}
-    <ChevronDown class="text-muted-foreground" aria-hidden="true" />
-  </Button>
+  <!-- Popover/Collapsible trigger props go through the Tooltip trigger, which merges its own into the Button. -->
+  <Tooltip.Root>
+    <Tooltip.Trigger {...props}>
+      {#snippet child({ props: tip })}
+        <Button {...tip} variant="outline" size={compact ? 'xs' : 'sm'} class={cn('rounded-full font-semibold', drift || active?.stale ? 'border-warning/60 dark:border-warning/60' : '')}>
+          <span class={cn('size-2 rounded-full bg-muted-foreground', me && 'bg-success', me === null && 'bg-destructive')} aria-hidden="true"></span>
+          {#if me}<span class="sr-only">Logged in as</span>{:else if me === undefined}<span class="sr-only">Checking login</span>{/if}
+          <span class="sens">{label}</span>{#if ps.list.length}<span class="text-muted-foreground font-medium"><span class="sr-only">, saved logins:</span>{ps.list.length}</span>{/if}
+          <ChevronDown class="text-muted-foreground" aria-hidden="true" />
+        </Button>
+      {/snippet}
+    </Tooltip.Trigger>
+    <Tooltip.Content side="bottom" class="max-w-80">{drift ? `Logged in as ${own(me?.handle ?? '')}, but profile ${own(active?.handle ?? '')} is active — Save to update it` : 'Accounts'}</Tooltip.Content>
+  </Tooltip.Root>
 {/snippet}
 
 {#snippet menu()}
@@ -95,22 +100,22 @@
       <ul class="m-0 grid list-none gap-0.5 p-0">
         {#each ps.list as p (p.id)}
           <li class="flex items-center gap-1">
-            <Button
+            <TipButton
               variant="ghost"
               size="sm"
-              class={cn('h-auto flex-1 justify-start gap-1.5 px-2 py-1.5 text-left font-normal disabled:opacity-100', p.id === ps.active && 'bg-white/5')}
+              class={cn('h-auto flex-1 justify-start gap-1.5 px-2 py-1.5 text-left font-normal disabled:opacity-100', p.id === ps.active && 'bg-muted/40')}
               disabled={!!busy || (p.id === ps.active && !drift)}
               onclick={() => go(p.id)}
-              title={`saved ${new Date(p.savedAt).toLocaleString()}`}
+              tip={`saved ${new Date(p.savedAt).toLocaleString()}`}
             >
               <span class="sens">{p.displayname}<span class="text-muted-foreground">@{p.handle}</span></span>
               {#if p.id === ps.active}<em class="text-primary ml-auto text-[10px] not-italic">active</em>{/if}
               {#if p.stale}<em class={cn('text-warning text-[10px] not-italic', p.id !== ps.active && 'ml-auto')}>stale</em>{/if}
-            </Button>
+            </TipButton>
             {#if confirmForget === p.id}
               <Button variant="destructive" size="xs" disabled={!!busy} onclick={() => forget(p.id)}>sure?</Button>
             {:else}
-              <Button variant="ghost" size="icon-xs" class="text-muted-foreground" disabled={!!busy} onclick={() => (confirmForget = p.id)} title="Forget this profile (cookies + parked data)" aria-label="Forget this profile"><X /></Button>
+              <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground" disabled={!!busy} onclick={() => (confirmForget = p.id)} tip="Forget this profile (cookies + parked data)" aria-label="Forget this profile"><X /></TipButton>
             {/if}
           </li>
         {/each}
@@ -120,7 +125,7 @@
     {/if}
     <div class="flex flex-wrap gap-1.5">
       <Button variant="outline" size="xs" disabled={!!busy || me === null} onclick={save}>{busy === 'save' ? '…' : drift || !active ? 'Save current login' : 'Re-save current login'}</Button>
-      <Button variant="outline" size="xs" disabled={!!busy || me === null} onclick={logout} title="Remove RSI cookies from this browser (profiles stay)">Log out here</Button>
+      <TipButton variant="outline" size="xs" disabled={!!busy || me === null} onclick={logout} tip="Remove RSI cookies from this browser (profiles stay)">Log out here</TipButton>
     </div>
     {#if msg}<div class={cn('text-[11px]', /doesn't|not |no |fail/i.test(msg) && 'text-destructive')}>{msg}</div>{/if}
     {#if spanning}<div class="text-destructive text-[11px]">This is the dev build (<code>incognito: spanning</code>): incognito shares the normal window's cookies and data, so switching here changes the normal window's login. Load the built extension (<code>.output/chrome-mv3</code>, "Allow in Incognito") for a separate incognito jar.</div>{/if}

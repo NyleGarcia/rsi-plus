@@ -45,3 +45,6 @@ export const own = (s: string | number) => (privacy.on ? MASK : String(s));
 export const ownMoney = (s: string) => (privacy.on ? `$${MASK}` : s);
 /** `usd(cents)` for amounts that are yours (melt credit, what you paid). */
 export const ownUsd = (cents: number) => ownMoney(usd(cents));
+/** Whole dollars (not cents) that are yours: `$1,234` / `$12.50`; `$•••` in screenshare mode. */
+export const ownDollars = (n: number) =>
+  ownMoney(`$${n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`);

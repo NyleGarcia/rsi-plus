@@ -9,6 +9,8 @@
   import { usd } from '@/lib/store';
   import { own } from '@/lib/privacy.svelte';
   import Stat from './Stat.svelte';
+  import StatGrid from './StatGrid.svelte';
+  import * as Alert from '@/components/ui/alert';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { Progress } from '@/components/ui/progress';
@@ -55,13 +57,13 @@
         </span>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="outline" size="sm" disabled={busy} onclick={refresh}>{busy ? '…' : 'Refresh'}</Button>
-        <Button variant="outline" size="sm" href="https://robertsspaceindustries.com/account/concierge" target="_blank" rel="noopener">Concierge <ExternalLink /></Button>
+        <Button variant="outline" disabled={busy} onclick={refresh}>{busy ? '…' : 'Refresh'}</Button>
+        <Button variant="outline" href="https://robertsspaceindustries.com/account/concierge" target="_blank" rel="noopener">Concierge <ExternalLink /></Button>
       </div>
     </div>
-    {#if error}<span class="text-destructive text-xs">{error}</span>{/if}
+    {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
     {#if c}
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
+      <StatGrid>
         <Stat value={own(c.level)} label={c.since ? `since ${c.since}` : 'current level'} tone="accent" />
         {#if c.next}
           <Stat value={c.pct != null ? `${own(c.pct)}%` : '—'} label={`of the way to ${c.next}`} class="col-span-2">
@@ -72,11 +74,11 @@
           <Stat value="Top level" label="nothing above this one" />
         {/if}
         {#if c.store.length}<Stat value={c.store.length} label="Concierge-only specials in the store"><a class="text-primary text-[11.5px]" href="#browse?who=concierge">See them in Store →</a></Stat>{/if}
-      </div>
+      </StatGrid>
       {#if c.earned.length > 1}
         <div class="flex flex-wrap items-center gap-1 text-xs">
           <span class="text-muted-foreground">Earned:</span>
-          {#each c.earned as lvl (lvl)}<Badge variant="outline" class={lvl === c.level ? 'border-primary/50 text-primary' : ''}>{lvl}</Badge>{/each}
+          {#each c.earned as lvl (lvl)}<Badge variant={lvl === c.level ? 'info' : 'outline'}>{lvl}</Badge>{/each}
         </div>
       {/if}
     {/if}

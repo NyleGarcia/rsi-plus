@@ -7,19 +7,26 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Minus from '@lucide/svelte/icons/minus';
   import { catalogItem, gameShipsItem, hangarItem, storeItemsItem, storeLogItem, storeSnapshotItem } from '@/lib/settings';
-  import { inventory, ownedShipsWithPaints, type GameShip } from '@/lib/items';
+  import type { GameShip } from '@/lib/items';
+  import { ownedHulls as ownedHullMap, ownedTitleCounts } from '@/lib/owned-counts';
   import { paintKey, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
   import { cleanLog, dismiss, mergeChanges, skuName, tally, type EntryKind, type MergedChange, type StoreChange, type StoreEntry, type StoreSnapshot } from '@/lib/storelog';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import X from '@lucide/svelte/icons/x';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
-  import Check from '@lucide/svelte/icons/check';
   import Route from '@lucide/svelte/icons/route';
-  import { addStandalone, CART_URL, CartError } from '@/lib/cart';
+  import { addStandalone } from '@/lib/cart';
+  import { createCartLedger } from '@/lib/cart-ui.svelte';
+  import { cn } from '@/lib/utils';
   import { insuranceOf, insuranceTag, isInsurance } from '@/lib/bundle';
   import * as Tooltip from '@/components/ui/tooltip';
   import Segmented from './Segmented.svelte';
   import Thumb from './Thumb.svelte';
+  import Tag from './Tag.svelte';
+  import TipButton from './TipButton.svelte';
+  import CartButton from './CartButton.svelte';
+  import OpenCartButton from './OpenCartButton.svelte';
+  import Empty from './Empty.svelte';
   import * as Card from '@/components/ui/card';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
@@ -69,45 +76,27 @@
     return m;
   });
   /** Hull copies in the hangar (pledged + in-game) by catalog id — as the Ship catalog counts them. */
-  const ownedHulls = $derived.by(() => {
-    const ships = cat?.ships ?? [];
-    if (!hangar || !ships.length) return new Map<number, number>();
-    return new Map(ownedShipsWithPaints(inventory(hangar.pledges, ships), game, ships).map((o) => [o.ship.id, o.count]));
-  });
+  const ownedHulls = $derived(ownedHullMap(hangar?.pledges, game, cat?.ships ?? []));
   /** Copies of an item in the hangar by normalized title (pledge names and every item inside them) — as Browse counts them. */
-  const ownedKeys = $derived.by(() => {
-    const m = new Map<string, number>();
-    for (const p of hangar?.pledges ?? []) for (const t of new Set([p.name, ...p.items.map((i) => i.title)].map(paintKey))) m.set(t, (m.get(t) ?? 0) + 1);
-    return m;
-  });
+  const ownedKeys = $derived(ownedTitleCounts(hangar?.pledges));
   /** "owned ×n" for an item / a standalone hull, "hull owned" for a CCU to a hull you have; null when not in the hangar. */
   const ownedLabel = (e: StoreEntry): string | null => {
     if (!hangar) return null;
     if (isHull(e)) {
       const id = e.ship ?? known.get(e.key)?.ship;
-      const n = id ? (ownedHulls.get(id) ?? 0) : 0;
+      const n = id ? (ownedHulls.get(id)?.count ?? 0) : 0;
       return n ? (e.kind === 'ccu' ? `hull owned${n > 1 ? ` ×${n}` : ''}` : `owned ×${n}`) : null;
     }
     const n = ownedKeys.get(paintKey(nameOf(e))) ?? 0;
     return n ? `owned ×${n}` : null;
   };
   // ---- cart: an item's listing id and a standalone's SKU id are what the cart takes; a CCU needs a source hull → planner ----
-  type CartState = { st: 'adding' } | { st: 'added' } | { st: 'error'; msg: string };
-  let cart = $state<Record<string, CartState>>({});
+  const cart = createCartLedger();
   const skuOf = (e: StoreEntry): number | null => (e.kind === 'ccu' ? null : Number(e.key.split(':')[1]) || null);
-  async function addOne(e: StoreEntry) {
+  function addOne(e: StoreEntry) {
     const sku = skuOf(e);
-    if (sku == null || cart[e.key]?.st === 'adding') return;
-    cart = { ...cart, [e.key]: { st: 'adding' } };
-    try {
-      await addStandalone(sku, 1);
-      cart = { ...cart, [e.key]: { st: 'added' } };
-    } catch (err) {
-      const ce = err instanceof CartError ? err : new CartError('refused', (err as Error).message);
-      cart = { ...cart, [e.key]: { st: 'error', msg: ce.code === 'signed-out' ? 'Sign in to RSI' : ce.code === 'conflict' ? 'Cart busy' : ce.code === 'network' ? 'No answer — check your cart' : ce.message } };
-    }
+    if (sku != null) void cart.add(e.key, () => addStandalone(sku, 1));
   }
-  const inCart = $derived(Object.values(cart).filter((c) => c.st === 'added').length);
   /** The listing behind an item entry (contents, warbond flag) while the store still has it. */
   const itemsById = $derived(new Map((listing?.items ?? []).map((i) => [i.id, i])));
   const itemOf = (e: StoreEntry) => (isHull(e) ? undefined : itemsById.get(Number(e.key.split(':')[1])));
@@ -182,14 +171,14 @@
 
 <Card.Root>
   <Card.Header>
-    <Card.Title class="text-lg font-semibold">Store changes</Card.Title>
+    <Card.Title>Store changes</Card.Title>
     <Card.Description>
       What the pledge store added and removed: CCUs and standalone ships, paints, packs, gear, game packages, add-ons.
-      {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly) and when you refresh Browse. Click a name to see it in RSI+, ↗ for the RSI page, 🛒 adds it to your RSI cart (CCUs open the planner); ✕ dismisses.
+      {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly) and when you refresh Browse. Click a name to see it in RSI+, <ExternalLink class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">open on RSI</span> for the RSI page, <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">cart</span> adds it to your RSI cart (CCUs open the planner); <X class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">dismiss</span> dismisses.
     </Card.Description>
     {#if log.length}
       <Card.Action class="flex flex-wrap items-center gap-2">
-        {#if inCart}<Button variant="outline" size="sm" href={CART_URL} target="_blank" rel="noopener">Open RSI cart ({inCart}) <ExternalLink /></Button>{/if}
+        <OpenCartButton count={cart.added} />
         <Button variant="outline" size="sm" onclick={dropAll}>{show === 'all' ? 'Dismiss all' : `Dismiss ${show === 'add' ? 'added' : 'removed'}`}</Button>
         <Segmented
           size="sm"
@@ -206,9 +195,9 @@
   </Card.Header>
   <Card.Content>
     {#if !log.length}
-      <p class="text-muted-foreground m-0 text-sm">
+      <Empty>
         {Number.isFinite(since) ? 'No changes yet: the store looks the same as at the first check.' : 'Nothing recorded yet: the first check sets the baseline, changes after it show up here.'}
-      </p>
+      </Empty>
     {:else}
       <ol class="m-0 grid list-none gap-2 p-0">
         {#each shown.slice(0, limit) as c (groupId(c))}
@@ -216,12 +205,12 @@
           {@const add = c.action === 'add'}
           <li class="rounded-lg border px-3 py-2.5">
             <div class="flex flex-wrap items-center gap-2">
-              <span class={['inline-flex size-5 items-center justify-center rounded-full', add ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive']} aria-hidden="true">
+              <span class={cn('inline-flex size-5 items-center justify-center rounded-full', add ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive')} aria-hidden="true">
                 {#if add}<Plus class="size-3.5" />{:else}<Minus class="size-3.5" />{/if}
               </span>
               <strong class="text-sm"><span class={add ? 'text-success' : 'text-destructive'}>{add ? '+' : '−'}{c.entries.length}</span> {c.entries.length === 1 ? nameOf(c.entries[0]!) : add ? 'added' : 'removed'}</strong>
               <span class="text-muted-foreground ml-auto text-xs">{when(c.at)}</span>
-              <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-6" onclick={() => drop(c)} title="Dismiss this group" aria-label="Dismiss this group"><X class="size-3.5" /></Button>
+              <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" onclick={() => drop(c)} tip="Dismiss this group" aria-label="Dismiss this group"><X class="size-3.5" /></TipButton>
             </div>
             {#each byKind(c.entries) as [kind, list] (kind)}
               {@const sid = `${id}:${kind}`}
@@ -229,8 +218,8 @@
               <section class="mt-2">
                 {#if c.entries.length > 1}
                   <h4 class="text-muted-foreground m-0 mb-1 flex items-center gap-1 pl-7 text-[11px] font-semibold tracking-wide uppercase">
-                    {kindPlural(kind)} <span class={add ? 'text-success' : 'text-destructive'}>{add ? '+' : '−'}{list.length}</span>
-                    <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-5" onclick={() => dropKind(c, kind)} title={`Dismiss these ${list.length} ${kindPlural(kind).toLowerCase()}`} aria-label={`Dismiss ${kindPlural(kind)}`}><X class="size-3" /></Button>
+                    {kindPlural(kind)} <span class={cn(add ? 'text-success' : 'text-destructive')}>{add ? '+' : '−'}{list.length}</span>
+                    <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-5" onclick={() => dropKind(c, kind)} tip={`Dismiss these ${list.length} ${kindPlural(kind).toLowerCase()}`} aria-label={`Dismiss ${kindPlural(kind)}`}><X class="size-3" /></TipButton>
                   </h4>
                 {/if}
                 <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-1.5 p-0 pl-7 text-[13px]">
@@ -241,24 +230,26 @@
                     {@const owned = ownedLabel(e)}
                     {@const tags = tagsOf(e)}
                     {@const inside = contentsOf(e)}
-                    <li class={['group/entry flex min-w-0 items-center gap-2.5 rounded-md border p-1.5', owned ? 'border-success/30 bg-success/5' : 'border-border/40 bg-background/40']}>
-                      {#if pic}<Thumb src={pic} name={nameOf(e)} width={80} height={45} />{:else}<span class="bg-muted/40 h-[45px] w-20 shrink-0 rounded-md" aria-hidden="true"></span>{/if}
+                    <li class={cn('group/entry flex min-w-0 items-center gap-2.5 rounded-md border p-1.5', owned ? 'border-success/30 bg-success/5' : 'border-border/40 bg-background/40')}>
+                      <Thumb src={pic} name={nameOf(e)} width={80} height={45} placeholder="block" />
                       <div class="grid min-w-0 flex-1 gap-0.5">
                         <div class="flex min-w-0 items-start gap-1">
                           {#if app}
-                            <a class={['line-clamp-2 no-underline hover:underline', add ? 'text-foreground' : 'text-muted-foreground']} href={app} title={`${nameOf(e)} — ${isHull(e) ? 'show on the Ship catalog' : 'show on Browse'}`}>{nameOf(e)}</a>
+                            <a class={cn('line-clamp-2 no-underline hover:underline', add ? 'text-foreground' : 'text-muted-foreground')} href={app} title={`${nameOf(e)} — ${isHull(e) ? 'show on the Ship catalog' : 'show on Browse'}`}>{nameOf(e)}</a>
                           {:else}
-                            <span class={['line-clamp-2', add ? '' : 'text-muted-foreground']} title={nameOf(e)}>{nameOf(e)}</span>
+                            <span class={cn('line-clamp-2', !add && 'text-muted-foreground')}>{nameOf(e)}</span>
                           {/if}
                         </div>
                         <div class="text-muted-foreground flex flex-wrap items-center gap-1.5 text-[11px] leading-4">
                           {#if e.price > 0}<span class="text-foreground tabular-nums font-medium">{usd(e.price)}</span>{/if}
-                          {#if tags.warbond}<Badge variant="outline" class="border-warning/40 text-warning h-4 px-1 text-[10px]" title="Warbond: new money only, no store credit">Warbond</Badge>{/if}
-                          {#if tags.insurance}<Badge variant="outline" class={['h-4 px-1 text-[10px]', tags.insurance === 'LTI' ? 'border-warning/40 text-warning' : 'text-muted-foreground']} title={tags.insurance === 'LTI' ? 'Lifetime insurance on the hull(s)' : `${tags.insurance.replace(' mo', ' months')} of insurance on the hull(s)`}>{tags.insurance === 'LTI' ? 'LTI' : `${tags.insurance} insurance`}</Badge>{/if}
+                          {#if tags.warbond}<Tag kind="warbond" size="xs" />{/if}
+                          {#if tags.insurance}<Tag kind="insurance" value={tags.insurance} size="xs" />{/if}
                           {#if inside.length >= 2}
                             <Tooltip.Root delayDuration={150}>
-                              <Tooltip.Trigger class="cursor-default">
-                                <Badge variant="outline" class="h-4 px-1 text-[10px]">{inside.length} items</Badge>
+                              <Tooltip.Trigger>
+                                {#snippet child({ props })}
+                                  <Badge {...props} variant="outline" tabindex={0} class="h-4 cursor-default px-1 text-[10px]">{inside.length} items</Badge>
+                                {/snippet}
                               </Tooltip.Trigger>
                               <Tooltip.Content side="bottom" align="start" class="max-w-80">
                                 <ul class="m-0 grid list-none gap-0.5 p-0 text-xs">
@@ -269,27 +260,19 @@
                               </Tooltip.Content>
                             </Tooltip.Root>
                           {/if}
-                          {#if owned}<Badge variant="outline" class="text-success h-4 px-1 text-[10px]" title={e.kind === 'ccu' ? 'The hull this upgrades to is already in your hangar' : 'Already in your hangar'}>{owned}</Badge>{/if}
+                          {#if owned}<Tag kind="owned" size="xs" label={owned} hint={e.kind === 'ccu' ? 'The hull this upgrades to is already in your hangar' : 'Already in your hangar'} />{/if}
                           {#if rsi}
-                            <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-5 shrink-0" href={rsi} target="_blank" rel="noopener" title="Open on the RSI store" aria-label="Open on the RSI store"><ExternalLink class="size-3" /></Button>
+                            <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-5 shrink-0" href={rsi} target="_blank" rel="noopener" tip="Open on the RSI store" aria-label="Open on the RSI store"><ExternalLink class="size-3" /></TipButton>
                           {/if}
                           {#if e.kind === 'ccu'}
                             {@const to = e.ship ?? known.get(e.key)?.ship}
-                            {#if to}<Button variant="ghost" size="icon-xs" class="text-primary size-5 shrink-0" href={`#ccu?to=${to}`} title="Plan a CCU chain to this hull (a CCU needs a ship to start from)" aria-label="Plan CCU"><Route class="size-3" /></Button>{/if}
+                            {#if to}<TipButton variant="ghost" size="icon-xs" class="text-primary size-5 shrink-0" href={`#ccu?to=${to}`} tip="Plan a CCU chain to this hull (a CCU needs a ship to start from)" aria-label="Plan CCU"><Route class="size-3" /></TipButton>{/if}
                           {:else if add && skuOf(e) != null}
-                            {@const c = cart[e.key]}
-                            {#if c?.st === 'added'}
-                              <span class="text-success inline-flex items-center gap-0.5"><Check class="size-3" /> in cart</span>
-                            {:else if c?.st === 'adding'}
-                              <span>adding…</span>
-                            {:else}
-                              <Button variant="ghost" size="icon-xs" class="text-primary size-5 shrink-0" onclick={() => addOne(e)} title="Add to your RSI cart (nothing is paid)" aria-label={`Add ${nameOf(e)} to cart`}><ShoppingCart class="size-3" /></Button>
-                              {#if c?.st === 'error'}<span class="text-destructive">{c.msg}</span>{/if}
-                            {/if}
+                            <CartButton state={cart.of(e.key)} onadd={() => addOne(e)} name={nameOf(e)} />
                           {/if}
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-6 shrink-0 self-start opacity-0 group-hover/entry:opacity-100 focus-visible:opacity-100" onclick={() => drop(c, e.key)} title="Dismiss" aria-label={`Dismiss ${nameOf(e)}`}><X class="size-3.5" /></Button>
+                      <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6 shrink-0 self-start opacity-0 group-hover/entry:opacity-100 focus-visible:opacity-100" onclick={() => drop(c, e.key)} tip="Dismiss" aria-label={`Dismiss ${nameOf(e)}`}><X class="size-3.5" /></TipButton>
                     </li>
                   {/each}
                 </ul>

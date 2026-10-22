@@ -13,11 +13,12 @@
   import { catalogItem, conciergeItem, hangarItem, storeItemsItem } from '@/lib/settings';
   import { fetchStoreItems, matchShip, paintKey, STORE_CATEGORIES, usd, type CatalogShip, type StoreItem, type StoreListing } from '@/lib/store';
   import { activeFilters, DEFAULT_FILTER, discountPct, filterItems, forWho, isAudience, isBundle, isCat, matchesFilter, parseUsd, type Audience, type BrowseFilter, type Cat, type Edition, type HangarMatch, type Owned } from '@/lib/browse';
-  import { addStandalone, CART_URL, CartError } from '@/lib/cart';
-  import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+  import { addStandalone } from '@/lib/cart';
+  import { createCartLedger } from '@/lib/cart-ui.svelte';
+  import { hashParam, useDeepLink } from '@/lib/deep-link.svelte';
+  import { ownedTitleCounts } from '@/lib/owned-counts';
   import Check from '@lucide/svelte/icons/check';
   import ExternalLink from '@lucide/svelte/icons/external-link';
-  import ImageOff from '@lucide/svelte/icons/image-off';
   import { bundleValue, contentKey, hasContents, insuranceOf, isExtra, priceIndex, type BundleValue } from '@/lib/bundle';
   import { PAINT_TIERS, paintDiscount } from '@/lib/paints';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -31,6 +32,13 @@
   import FanNotice from './FanNotice.svelte';
   import Thumb from './Thumb.svelte';
   import Segmented from './Segmented.svelte';
+  import Tag from './Tag.svelte';
+  import TipButton from './TipButton.svelte';
+  import CartButton from './CartButton.svelte';
+  import OpenCartButton from './OpenCartButton.svelte';
+  import Empty from './Empty.svelte';
+  import * as Alert from '@/components/ui/alert';
+  import * as Tooltip from '@/components/ui/tooltip';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
   import * as Select from '@/components/ui/select';
@@ -39,7 +47,6 @@
   import { Input } from '@/components/ui/input';
   import { Toggle } from '@/components/ui/toggle';
 
-  const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
   const WHO: { id: Audience; label: string; hint: string }[] = [
     { id: 'all', label: 'Everyone', hint: 'Every listing the store shows your session' },
     { id: 'concierge', label: 'Concierge', hint: "Listings RSI flags Concierge-only (ships and items) plus the specials on your Chairman's Club page" },
@@ -61,29 +68,13 @@
   const whoParam = hashParam('who');
   const catParam = hashParam('cat');
   let f = $state<BrowseFilter>({ ...DEFAULT_FILTER, who: isAudience(whoParam) ? whoParam : 'all', cat: isCat(catParam) ? catParam : 'all' });
-  /** Listing to flash after a deep link (`#browse?item=<id>&q=<name>` from Store changes). */
-  let flash = $state<number | null>(null);
-  let flashTimer: ReturnType<typeof setTimeout> | undefined;
-  /** `#browse?item=<id>&q=<name>`: show that listing — every filter off (out of stock included), the search set to it. */
-  function fromHash() {
-    const id = Number(hashParam('item')) || null;
-    const query = hashParam('q');
-    if (!id && query == null) return;
-    f = { ...DEFAULT_FILTER, inStock: false, q: query ?? '' };
-    flash = id;
-    clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => (flash = null), 3000);
-    history.replaceState(null, '', '#browse');
-  }
-  $effect(() => {
-    if (flash == null) return;
-    void shown;
-    document.getElementById(`listing-${flash}`)?.scrollIntoView({ block: 'center' });
-  });
-  $effect(() => {
-    fromHash();
-    window.addEventListener('hashchange', fromHash);
-    return () => window.removeEventListener('hashchange', fromHash);
+  /** `#browse?item=<id>&q=<name>` (from Store changes): show that listing — every filter off (out of stock included), the search set to it — and flash it. */
+  const deepLink = useDeepLink({
+    hash: '#browse',
+    idParam: 'item',
+    elId: (id) => `listing-${id}`,
+    apply: (query) => (f = { ...DEFAULT_FILTER, inStock: false, q: query ?? '' }),
+    rendered: () => shown,
   });
   /** Price bounds as typed (dollars); parsed into `f.min` / `f.max` on change. */
   let minText = $state('');
@@ -136,11 +127,7 @@
     }
   }
   /** Normalized title → copies in the hangar (pledge names and every item inside them). */
-  const ownedKeys = $derived.by(() => {
-    const m = new Map<string, number>();
-    for (const p of hangar?.pledges ?? []) for (const t of new Set([p.name, ...p.items.map((i) => i.title)].map(paintKey))) m.set(t, (m.get(t) ?? 0) + 1);
-    return m;
-  });
+  const ownedKeys = $derived(ownedTitleCounts(hangar?.pledges));
   const ownedCount = (it: StoreItem) => ownedKeys.get(paintKey(it.name)) ?? 0;
   const ownedPiece = (name: string) => ownedKeys.get(paintKey(name)) ?? 0;
   /** Listing + the Concierge page's *Exclusive Store* specials that the search didn't return (same SKU id). */
@@ -297,58 +284,49 @@
     minText = maxText = '';
   }
   // ---- add a listing to the RSI cart (same call as Buyback / the paint planner; never retried, nothing paid) ----
-  type CartState = { st: 'adding' } | { st: 'added' } | { st: 'error'; msg: string };
-  let cart = $state<Record<number, CartState>>({});
-  async function addOne(sku: number) {
-    if (cart[sku]?.st === 'adding') return;
-    cart = { ...cart, [sku]: { st: 'adding' } };
-    try {
-      await addStandalone(sku, 1);
-      cart = { ...cart, [sku]: { st: 'added' } };
-    } catch (e) {
-      const ce = e instanceof CartError ? e : new CartError('refused', (e as Error).message);
-      cart = { ...cart, [sku]: { st: 'error', msg: ce.code === 'signed-out' ? 'Sign in to RSI' : ce.code === 'conflict' ? 'Cart busy' : ce.code === 'network' ? 'No answer — check your cart' : ce.message } };
-    }
-  }
-  const inCart = $derived(Object.values(cart).filter((c) => c.st === 'added').length);
+  const cart = createCartLedger();
+  const addOne = (sku: number) => cart.add(sku, () => addStandalone(sku, 1));
   /** Subscriber badge on this session: true / false / null (not logged in or not checked yet). */
   const subscriber = $derived(items?.subscriber ?? null);
 </script>
 
+{#snippet tipToggle(tip: string, pressed: boolean, set: (v: boolean) => void, label: string, text: string)}
+  <Tooltip.Root>
+    <Tooltip.Trigger>
+      {#snippet child({ props })}
+        <Toggle {...props} variant="outline" size="sm" {pressed} onPressedChange={set} aria-label={label}>{text}</Toggle>
+      {/snippet}
+    </Tooltip.Trigger>
+    <Tooltip.Content class="max-w-80">{tip}</Tooltip.Content>
+  </Tooltip.Root>
+{/snippet}
+
 {#snippet tile(name: string, pic: string | null, owned: number, sub: string, opts: { ship?: boolean; extra?: boolean; count?: number; small?: boolean; buy?: Sold | null } = {})}
   {@const buy = opts.buy ?? null}
-  {@const c = buy?.sku != null ? cart[buy.sku] : undefined}
-  <li class={cn('flex min-w-0 items-center gap-2 rounded-md border px-1.5 py-1', owned ? 'border-success/30 bg-success/5' : 'border-border/40 bg-background/40', opts.extra && 'opacity-70')} title={name}>
-    {#if pic}
-      <Thumb src={pic} {name} width={opts.small ? 44 : 56} height={opts.small ? 25 : 32} />
-    {:else}
-      <span class={cn('bg-muted/40 text-muted-foreground flex shrink-0 items-center justify-center rounded-md', opts.small ? 'h-[25px] w-11' : 'h-8 w-14')} aria-hidden="true" title={opts.extra ? '' : 'No picture: the store never sells this on its own'}><ImageOff class="size-3.5 opacity-50" /></span>
-    {/if}
+  <li class={cn('flex min-w-0 items-center gap-2 rounded-md border px-1.5 py-1', owned ? 'border-success/30 bg-success/5' : 'border-border/40 bg-background/40', opts.extra && 'opacity-70')}>
+    <Thumb src={pic} {name} width={opts.small ? 44 : 56} height={opts.small ? 25 : 32} placeholder="icon" placeholderHint={opts.extra ? 'No picture' : undefined} />
     <div class="grid min-w-0 gap-0">
       <div class="flex min-w-0 items-center gap-1 text-[12px] leading-4">
-        {#if owned}<Check class="text-success size-3 shrink-0" aria-label="in your hangar" />{/if}
+        {#if owned}<Check class="text-success size-3 shrink-0" aria-hidden="true" /><span class="sr-only">in your hangar:</span>{/if}
         {#if buy}
           <a class="text-foreground truncate no-underline hover:underline" href={buy.url} target="_blank" rel="noopener" title={`${name} — open on the RSI store`}>{name}</a>
         {:else}
-          <span class="truncate">{name}</span>
+          <Tooltip.Root>
+            <Tooltip.Trigger class="cursor-default truncate text-left">{name}</Tooltip.Trigger>
+            <Tooltip.Content class="max-w-80">{name}</Tooltip.Content>
+          </Tooltip.Root>
         {/if}
         {#if opts.count && opts.count > 1}<span class="text-muted-foreground shrink-0">×{opts.count}</span>{/if}
-        {#if opts.ship}<Badge variant="outline" class="h-4 shrink-0 px-1 text-[10px]">ship</Badge>{/if}
+        {#if opts.ship}<Tag kind="ship" size="xs" class="shrink-0" />{/if}
       </div>
       {#if sub || owned > 1}<div class="text-muted-foreground text-[11px] leading-4 tabular-nums">{sub}{#if sub && owned > 1}{' · '}{/if}{#if owned > 1}owned ×{owned}{/if}</div>{/if}
     </div>
     {#if buy}
       <div class="ml-auto flex shrink-0 items-center gap-0.5">
-        <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-6" href={buy.url} target="_blank" rel="noopener" title="Open on the RSI store" aria-label={`Open ${name} on the RSI store`}><ExternalLink class="size-3" /></Button>
+        <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" href={buy.url} target="_blank" rel="noopener" tip="Open on the RSI store" aria-label={`Open ${name} on the RSI store`}><ExternalLink class="size-3" /></TipButton>
         {#if buy.sku != null}
-          {#if c?.st === 'added'}
-            <span class="text-success inline-flex items-center gap-0.5 text-[11px]"><Check class="size-3" /> in cart</span>
-          {:else if c?.st === 'adding'}
-            <span class="text-muted-foreground text-[11px]">adding…</span>
-          {:else}
-            <Button variant="ghost" size="icon-xs" class="text-primary size-6" disabled={!buy.available} onclick={() => addOne(buy.sku!)} title={buy.available ? `Add ${name} to your RSI cart on its own (nothing is paid)` : 'Out of stock'} aria-label={`Add ${name} to cart`}><ShoppingCart class="size-3.5" /></Button>
-            {#if c?.st === 'error'}<span class="text-destructive text-[11px]">{c.msg}</span>{/if}
-          {/if}
+          {@const sku = buy.sku}
+          <CartButton state={cart.of(sku)} onadd={() => addOne(sku)} {name} available={buy.available} hint={buy.available ? `Add ${name} to your RSI cart on its own (nothing is paid)` : null} />
         {/if}
       </div>
     {/if}
@@ -358,49 +336,50 @@
 <div class="grid gap-4">
   <Card.Root>
     <Card.Header>
-      <Card.Title class="text-lg font-semibold">Browse</Card.Title>
+      <Card.Title>Browse</Card.Title>
       <Card.Description>
         {#if items}{all.length} listings · prices from {new Date(items.at).toLocaleString()}{#if concierge?.store.length} · {concierge.store.length} Concierge specials from your Chairman's Club page{/if}{:else if loading}Loading the store (one request per 100 listings per category)…{:else}Paints, packs, gear, game packages, add-ons, standalone ships, the Subscribers Store — and what the store only shows Concierge members.{/if}
       </Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
-        <Button variant="outline" href="#paint-rebuy" title="Melt paints you own and buy them back together with RSI's multi-paint discount">Paint rebuy value →</Button>
+        <TipButton variant="outline" href="#paint-rebuy" tip="Melt paints you own and buy them back together with RSI's multi-paint discount">Paint rebuy value →</TipButton>
         <Button variant="outline" disabled={loading} onclick={refresh}>{loading ? 'Loading…' : 'Refresh'}</Button>
-        {#if inCart}<Button variant="outline" href={CART_URL} target="_blank" rel="noopener">Open RSI cart ({inCart}) <ExternalLink /></Button>{/if}
+        <OpenCartButton count={cart.added} size="default" />
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-3">
       <FanNotice variant="store" />
-      {#if error}<span class="text-destructive">{error}</span>{/if}
+      {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
       <Segmented options={TABS} bind:value={f.cat} ariaLabel="Category" />
       <div class="flex flex-wrap items-center gap-2">
         <Segmented size="sm" options={WHO.map((w) => ({ id: w.id, label: `${w.label} · ${whoCount(w.id)}`, hint: w.hint }))} bind:value={f.who} ariaLabel="Audience" />
         <Segmented size="sm" options={EDITION} bind:value={f.edition} ariaLabel="Edition" />
-        <Toggle variant="outline" size="sm" pressed={f.sale} onPressedChange={(v) => (f.sale = v)} title="Discounted below list price" aria-label="On sale">On sale</Toggle>
-        <Toggle variant="outline" size="sm" pressed={f.bundles} onPressedChange={(v) => (f.bundles = v)} title="Packs, kits and collections — two or more pieces; open one to see what each would cost apart" aria-label="Bundles">{f.bundles || !bundleCount ? 'Bundles' : `Bundles · ${bundleCount}`}</Toggle>
-        <Toggle variant="outline" size="sm" pressed={!f.inStock} onPressedChange={(v) => (f.inStock = !v)} title="Also list what the store reports out of stock" aria-label="Include out of stock">{f.inStock && outOfStock ? `Out of stock · ${outOfStock}` : 'Out of stock'}</Toggle>
+        {@render tipToggle('Discounted below list price', f.sale, (v) => (f.sale = v), 'On sale', 'On sale')}
+        {@render tipToggle('Packs, kits and collections — two or more pieces; open one to see what each would cost apart', f.bundles, (v) => (f.bundles = v), 'Bundles', f.bundles || !bundleCount ? 'Bundles' : `Bundles · ${bundleCount}`)}
+        {@render tipToggle('Also list what the store reports out of stock', !f.inStock, (v) => (f.inStock = !v), 'Include out of stock', f.inStock && outOfStock ? `Out of stock · ${outOfStock}` : 'Out of stock')}
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Select.Root type="single" value={f.owned} onValueChange={(v) => (f.owned = v as Owned)}>
-          <Select.Trigger aria-label="Hangar" size="sm" class="min-w-36" title="In / not in my hangar: the listing itself. Pieces: what you hold of a pack's parts — all (every paint of a collection already yours), some (two of nine ships), none">{OWNED.find((o) => o.value === f.owned)?.label}</Select.Trigger>
+          <Select.Trigger aria-label="Hangar" class="min-w-36">{OWNED.find((o) => o.value === f.owned)?.label}</Select.Trigger>
           <Select.Content>
+            <Select.Label class="max-w-72">In / not in my hangar: the listing itself. Pieces: what you hold of a pack's parts — all (every paint of a collection already yours), some (two of nine ships), none</Select.Label>
             {#each OWNED as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
           </Select.Content>
         </Select.Root>
         <div class="flex items-center gap-1 text-xs text-muted-foreground">
-          <Input class="h-8 w-20 text-xs" inputmode="decimal" placeholder="$ min" aria-label="Minimum price" bind:value={minText} oninput={() => (f.min = parseUsd(minText))} />
+          <Input class="w-20 text-xs" inputmode="decimal" placeholder="$ min" aria-label="Minimum price" bind:value={minText} oninput={() => (f.min = parseUsd(minText))} />
           –
-          <Input class="h-8 w-20 text-xs" inputmode="decimal" placeholder="$ max" aria-label="Maximum price" bind:value={maxText} oninput={() => (f.max = parseUsd(maxText))} />
+          <Input class="w-20 text-xs" inputmode="decimal" placeholder="$ max" aria-label="Maximum price" bind:value={maxText} oninput={() => (f.max = parseUsd(maxText))} />
         </div>
-        <Input class="h-8 w-52" placeholder="Search listings" bind:value={f.q} aria-label="Search listings" />
-        {#if active}<Button variant="ghost" size="sm" onclick={reset}>Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
+        <Input class="w-52" placeholder="Search listings" bind:value={f.q} aria-label="Search listings" />
+        {#if active}<Button variant="ghost" onclick={reset}>Reset{active > 1 ? ` (${active})` : ''}</Button>{/if}
       </div>
 
       {#if f.who === 'concierge'}
         {#if !concierge && !whoCount('concierge')}<p class="text-muted-foreground m-0 text-xs">RSI only returns Concierge-only listings to a Chairman's Club session — your level is on <a class="text-primary hover:underline" href="#wallet">Wallet</a>; non-members see nothing here, by design.</p>{/if}
       {:else if f.who === 'subscribers'}
         <div class="flex flex-wrap items-center gap-2 text-xs">
-          {#if subscriber === true}<Badge variant="outline" class="text-success">Subscriber</Badge><span class="text-muted-foreground">Your session has RSI's subscriber badge — the Subscribers Store lists for you.</span>
-          {:else if subscriber === false}<Badge variant="outline" class="text-muted-foreground">Not a subscriber</Badge><span class="text-muted-foreground">RSI hides the Subscribers Store until you subscribe; the count above is what your session gets (usually nothing).</span>
+          {#if subscriber === true}<Badge variant="success">Subscriber</Badge><span class="text-muted-foreground">Your session has RSI's subscriber badge — the Subscribers Store lists for you.</span>
+          {:else if subscriber === false}<Badge variant="muted">Not a subscriber</Badge><span class="text-muted-foreground">RSI hides the Subscribers Store until you subscribe; the count above is what your session gets (usually nothing).</span>
           {:else}<span class="text-muted-foreground">Log in to RSI and refresh — the Subscribers Store only lists for sessions with the subscriber badge.</span>{/if}
           <a class="text-primary hover:underline" href="https://robertsspaceindustries.com/en/pledge/browse/extras/subscribers-store" target="_blank" rel="noopener">Open on RSI →</a>
         </div>
@@ -425,13 +404,13 @@
             {@const isOpen = !!v && open.has(it.id)}
             {@const ins = insuranceOf(it)}
             {@const own = bundle && hangar ? ownedOf(v) : null}
-            <Table.Row id={`listing-${it.id}`} class={cn(flash === it.id && 'bg-primary/10')}>
+            <Table.Row id={`listing-${it.id}`} class={cn(deepLink.flash === it.id && 'bg-primary/10')}>
               <Table.Cell class="w-[46%] min-w-[380px] whitespace-normal">
                 <div class="flex items-center gap-2">
                   {#if v}
-                    <button type="button" class="text-muted-foreground hover:text-foreground inline-flex size-6 shrink-0 items-center justify-center rounded border-0 bg-transparent p-0" onclick={() => toggle(it.id)} aria-expanded={isOpen} aria-controls={`bundle-${it.id}`} aria-label={isOpen ? 'Hide contents' : 'Show contents'}>
+                    <Button variant="ghost" size="icon-xs" class="text-muted-foreground size-6 shrink-0" onclick={() => toggle(it.id)} aria-expanded={isOpen} aria-controls={`bundle-${it.id}`} aria-label={isOpen ? 'Hide contents' : 'Show contents'}>
                       {#if isOpen}<ChevronDown class="size-4" aria-hidden="true" />{:else}<ChevronRight class="size-4" aria-hidden="true" />{/if}
-                    </button>
+                    </Button>
                   {:else}
                     <span class="size-6 shrink-0" aria-hidden="true"></span>
                   {/if}
@@ -440,52 +419,53 @@
                     <a class="text-foreground no-underline hover:underline" href={it.url} target="_blank" rel="noopener"><strong>{it.name}</strong></a>
                     <div class="flex flex-wrap items-center gap-1">
                       <span class="text-muted-foreground mr-1 text-[11px]">{it.subtitle || catLabel(it.category)}</span>
-                      {#if it.vip}<Badge variant="outline" class="border-warning/40 text-warning">Concierge</Badge>{/if}
-                      {#if it.category === 'subscribers'}<Badge variant="outline" class="border-primary/40 text-primary">Subscribers</Badge>{/if}
-                      {#if it.warbond}<Badge variant="outline" class="border-warning/40 text-warning" title="Warbond: new money only, no store credit">Warbond</Badge>{:else}<Badge variant="outline" class="text-muted-foreground" title="Standard: store credit welcome">Standard</Badge>{/if}
-                      {#if ins}<Badge variant="outline" class={ins === 'LTI' ? 'border-warning/40 text-warning' : 'text-muted-foreground'} title={ins === 'LTI' ? 'Lifetime insurance on the hull(s)' : `${ins.replace(' mo', ' months')} of insurance on the hull(s)`}>{ins === 'LTI' ? 'LTI' : `${ins} insurance`}</Badge>{/if}
-                      {#if !it.available}<Badge variant="outline" class="text-muted-foreground">out of stock</Badge>{/if}
-                      {#if n}<Badge variant="outline" class="text-success">owned ×{n}</Badge>{/if}
+                      {#if it.vip}<Tag kind="concierge" />{/if}
+                      {#if it.category === 'subscribers'}<Tag kind="subscribers" />{/if}
+                      <Tag kind={it.warbond ? 'warbond' : 'standard'} />
+                      {#if ins}<Tag kind="insurance" value={ins} />{/if}
+                      {#if !it.available}<Tag kind="oos" />{/if}
+                      {#if n}<Tag kind="owned" count={n} label={`owned ×${n}`} />{/if}
                     </div>
                   </div>
                 </div>
               </Table.Cell>
               <Table.Cell class="align-top whitespace-nowrap">
                 {#if v}
-                  <button type="button" class="text-foreground inline-flex items-center gap-1 rounded border-0 bg-transparent p-0 text-left text-[12.5px] hover:underline" onclick={() => toggle(it.id)} aria-expanded={isOpen} tabindex="-1">
+                  <Button variant="link" size="xs" class="text-foreground h-auto px-0 text-[12.5px]" onclick={() => toggle(it.id)} aria-expanded={isOpen} tabindex={-1}>
                     {v.total} items
-                  </button>
+                  </Button>
                   {#if own}
-                    <div class={cn('inline-flex items-center gap-1 text-[11px] leading-4', own.have ? 'text-success' : 'text-muted-foreground')} title={`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside); ${own.have} of those are already in your hangar`}>
-                      {#if own.have}<Check class="size-3 shrink-0" aria-hidden="true" />{/if}
-                      {own.have === own.of ? `all ${own.of} in your hangar` : `${own.have} of ${own.of} in your hangar`}
-                    </div>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger class={cn('flex cursor-default items-center gap-1 text-left text-[11px] leading-4', own.have ? 'text-success' : 'text-muted-foreground')}>
+                        {#if own.have}<Check class="size-3 shrink-0" aria-hidden="true" />{/if}
+                        {own.have === own.of ? `all ${own.of} in your hangar` : `${own.have} of ${own.of} in your hangar`}
+                      </Tooltip.Trigger>
+                      <Tooltip.Content class="max-w-80">{`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside); ${own.have} of those are already in your hangar`}</Tooltip.Content>
+                    </Tooltip.Root>
                   {/if}
                   {#if !bundle}
                     <div class="text-muted-foreground text-[11px]">{v.parts.filter((p) => p.extra).map((p) => p.name).join(' · ')}</div>
                   {:else if v.priced}
                     {@const line = valueLine(v)}
-                    <div class={cn('text-[11px] leading-4', v.savings > 0 ? 'text-success' : v.savings < 0 ? 'text-warning' : 'text-muted-foreground')} title={`${usd(v.separate)} bought apart (${v.priced} of ${v.priceable} pieces the store sells)`}>{line}</div>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger class={cn('block cursor-default text-left text-[11px] leading-4', v.savings > 0 ? 'text-success' : v.savings < 0 ? 'text-warning' : 'text-muted-foreground')}>{line}</Tooltip.Trigger>
+                      <Tooltip.Content class="max-w-80">{`${usd(v.separate)} bought apart (${v.priced} of ${v.priceable} pieces the store sells)`}</Tooltip.Content>
+                    </Tooltip.Root>
                     <div class="text-muted-foreground text-[11px] leading-4">{usd(v.separate)} apart{#if v.priced < v.priceable}{` · ${v.priced}/${v.priceable} priced`}{/if}</div>
                   {:else}
                     <div class="text-muted-foreground text-[11px]">not sold apart</div>
                   {/if}
                 {:else if it.contents?.length === 1 && paintKey(it.contents[0]!.name) !== paintKey(it.name)}
-                  <span class="text-muted-foreground text-[11px]" title="What the listing grants">{it.contents[0]!.name}</span>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger class="text-muted-foreground cursor-default text-left text-[11px]">{it.contents[0]!.name}</Tooltip.Trigger>
+                    <Tooltip.Content>What the listing grants</Tooltip.Content>
+                  </Tooltip.Root>
                 {/if}
               </Table.Cell>
               <Table.Cell class="tabular-nums align-top">{usd(it.discounted)}{#if off}<div class="text-muted-foreground text-[11px] leading-4">list {usd(it.price)}</div>{/if}</Table.Cell>
               <Table.Cell class="align-top">{#if off}<span class="text-success">−{off}%</span><div class="text-muted-foreground text-[11px] leading-4">{usd(it.price - it.discounted)} off</div>{:else}<span class="text-muted-foreground">—</span>{/if}</Table.Cell>
               <Table.Cell class="w-full align-top">
-                {@const c = cart[it.id]}
-                {#if c?.st === 'added'}
-                  <span class="text-success inline-flex items-center gap-0.5 text-[11px]"><Check class="size-3" /> in cart</span>
-                {:else if c?.st === 'adding'}
-                  <span class="text-muted-foreground text-[11px]">adding…</span>
-                {:else}
-                  <Button variant="ghost" size="icon-xs" class="text-primary size-6" disabled={!it.available} onclick={() => addOne(it.id)} title={it.available ? 'Add to your RSI cart (nothing is paid)' : 'Out of stock'} aria-label="Add to cart"><ShoppingCart /></Button>
-                  {#if c?.st === 'error'}<div class="text-destructive text-[11px]">{c.msg}</div>{/if}
-                {/if}
+                <CartButton state={cart.of(it.id)} onadd={() => addOne(it.id)} name={it.name} available={it.available} hint={it.available ? 'Add to your RSI cart (nothing is paid)' : null} />
               </Table.Cell>
             </Table.Row>
             {#if v && isOpen}
@@ -493,7 +473,7 @@
               {@const sets = v.parts.filter((p) => p.pieces)}
               <Table.Row id={`bundle-${it.id}`} class="hover:bg-transparent">
                 <Table.Cell colspan={5} class="py-2 pr-3 pl-10">
-                  <div class="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2">
+                  <div class="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
                     {#if bundle}
                       <div class="mb-2 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs">
                         <span class="text-muted-foreground">Bought apart <strong class="text-foreground tabular-nums text-sm">{usd(v.separate)}</strong></span>
@@ -505,7 +485,10 @@
                         {#if it.category === 'paints' && !sets.length && v.priced === v.priceable && v.priceable >= 2}
                           {@const tiers = paintTiers(v.separate, v.priceable)}
                           <div class="basis-full">
-                            <div class="text-muted-foreground mb-0.5" title="RSI takes 15 % off every paint line at 2 paints in the cart, 20 % at 3, 25 % at 5, 30 % at 7, 35 % at 10 — singles only; whether a pack line is discounted too, or counts toward the tier, is unverified">As singles with the multi-paint discount</div>
+                            <Tooltip.Root>
+                              <Tooltip.Trigger class="text-muted-foreground mb-0.5 block cursor-default text-left">As singles with the multi-paint discount</Tooltip.Trigger>
+                              <Tooltip.Content class="max-w-80">RSI takes 15 % off every paint line at 2 paints in the cart, 20 % at 3, 25 % at 5, 30 % at 7, 35 % at 10 — singles only; whether a pack line is discounted too, or counts toward the tier, is unverified</Tooltip.Content>
+                            </Tooltip.Root>
                             <div class="grid w-fit grid-cols-[auto_auto_auto_auto] gap-x-3 gap-y-0.5 text-[11px] leading-4">
                               {#each tiers as t, i (i)}
                                 {@const d = it.discounted - t.cost}
@@ -518,9 +501,15 @@
                           </div>
                         {/if}
                         {#if own}
-                          <span class={cn(own.have === own.of ? 'text-success' : 'text-muted-foreground')} title={`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside)`}>In your hangar <strong class={cn('tabular-nums text-sm', own.have === own.of ? 'text-success' : 'text-foreground')}>{own.have} of {own.of}</strong></span>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger class={cn('cursor-default text-left', own.have === own.of ? 'text-success' : 'text-muted-foreground')}>In your hangar <strong class={cn('tabular-nums text-sm', own.have === own.of ? 'text-success' : 'text-foreground')}>{own.have} of {own.of}</strong></Tooltip.Trigger>
+                            <Tooltip.Content class="max-w-80">{`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside)`}</Tooltip.Content>
+                          </Tooltip.Root>
                           {#if own.have && own.have < own.of}
-                            <span class="text-muted-foreground" title="What the pieces you don't have would cost bought one by one">Missing apart <strong class="text-foreground tabular-nums text-sm">{usd(own.cost)}</strong>{#if own.unpriced}{` + ${own.unpriced} not sold apart`}{/if}</span>
+                            <Tooltip.Root>
+                              <Tooltip.Trigger class="text-muted-foreground cursor-default text-left">Missing apart <strong class="text-foreground tabular-nums text-sm">{usd(own.cost)}</strong>{#if own.unpriced}{` + ${own.unpriced} not sold apart`}{/if}</Tooltip.Trigger>
+                              <Tooltip.Content>What the pieces you don't have would cost bought one by one</Tooltip.Content>
+                            </Tooltip.Root>
                           {/if}
                         {/if}
                       </div>
@@ -540,8 +529,8 @@
                         <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
                           {#if pic}<Thumb src={pic} name={part.name} width={44} height={25} />{/if}
                           <strong class="font-semibold">{part.name}</strong>
-                          <Badge variant="outline" class="text-muted-foreground h-4 px-1 text-[10px]">{pieces.length} pieces</Badge>
-                          {#if have}<Badge variant="outline" class="text-success h-4 px-1 text-[10px]">{have === pieces.length ? 'all owned' : `${have}/${pieces.length} owned`}</Badge>{/if}
+                          <Badge variant="muted" class="h-4 px-1 text-[10px]">{pieces.length} pieces</Badge>
+                          {#if have}<Badge variant="success" class="h-4 px-1 text-[10px]">{have === pieces.length ? 'all owned' : `${have}/${pieces.length} owned`}</Badge>{/if}
                           <span class="text-muted-foreground ml-auto tabular-nums text-xs">{part.price != null ? `${usd(part.price)} as a set` : 'not sold apart'}</span>
                         </div>
                         <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-1 p-0">
@@ -559,14 +548,12 @@
           {#if budget < shown.length}
             <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
           {:else if !shown.length}
-            <Table.Row>
-              <Table.Cell colspan={5} class="text-muted-foreground">
-                {#if loading}Loading…
-                {:else if f.who === 'subscribers' && subscriber !== true}Nothing listed for this session.
-                {:else if f.inStock && outOfStock}Nothing in stock matches — {outOfStock} out-of-stock {outOfStock === 1 ? 'listing does' : 'listings do'}; switch on <em>Out of stock</em> to see {outOfStock === 1 ? 'it' : 'them'}.
-                {:else}Nothing matches.{/if}
-              </Table.Cell>
-            </Table.Row>
+            <Empty colspan={5}>
+              {#if loading}Loading…
+              {:else if f.who === 'subscribers' && subscriber !== true}Nothing listed for this session.
+              {:else if f.inStock && outOfStock}Nothing in stock matches — {outOfStock} out-of-stock {outOfStock === 1 ? 'listing does' : 'listings do'}; switch on <em>Out of stock</em> to see {outOfStock === 1 ? 'it' : 'them'}.
+              {:else}Nothing matches.{/if}
+            </Empty>
           {/if}
         </Table.Body>
       </Table.Root>

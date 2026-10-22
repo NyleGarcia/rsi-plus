@@ -66,7 +66,7 @@
         <Button variant="ghost" size="icon-xs" onclick={copy} aria-label={copied ? 'Referral code copied' : 'Copy referral code'}>
           {#if copied}<Check class="text-success" />{:else}<Copy />{/if}
         </Button>
-        <Button variant="secondary" size="xs" href={enlistUrl(lead.id)} target="_blank" rel="noopener" class="text-primary bg-primary/15 hover:bg-primary/25">Enlist <ExternalLink /></Button>
+        <Button variant="outline" size="xs" href={enlistUrl(lead.id)} target="_blank" rel="noopener">Enlist <ExternalLink /></Button>
       </div>
       <span class="text-muted-foreground text-[10px]">Courtesy of {lead.name}</span>
     </div>

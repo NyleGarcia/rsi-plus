@@ -33,6 +33,7 @@
   import { Button } from '@/components/ui/button';
   import { Progress } from '@/components/ui/progress';
   import { Switch } from '@/components/ui/switch';
+  import { Label } from '@/components/ui/label';
   import { cn } from '@/lib/utils';
   import Check from '@lucide/svelte/icons/check';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -92,7 +93,10 @@
       {#if on && !finished}<span class="text-muted-foreground font-normal">step {current + 1} of {steps.length}</span>{/if}
     </Card.Title>
     <span class="flex-1"></span>
-    <label class="text-muted-foreground flex items-center gap-2 text-xs"><Switch bind:checked={on} aria-label="Guide me" /> Guide me</label>
+    <div class="flex items-center gap-2">
+      <Switch id={`wizard-guide-${storageKey}`} bind:checked={on} />
+      <Label for={`wizard-guide-${storageKey}`} class="text-muted-foreground cursor-pointer text-xs font-normal">Guide me</Label>
+    </div>
   </Card.Header>
   {#if on}
     <Card.Content class="grid gap-3">

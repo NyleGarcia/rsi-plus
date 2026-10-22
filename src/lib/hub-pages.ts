@@ -30,6 +30,8 @@ export interface HubPage {
   icon: Component;
   /** Shown in the popup's shortcut grid. */
   popup?: boolean;
+  /** Shorter label for the popup grid (a third of 300 px); `label` when absent. */
+  short?: string;
 }
 export interface HubGroup {
   label: string;
@@ -50,7 +52,7 @@ export const HUB_GROUPS: HubGroup[] = [
     label: 'Hangar',
     items: [
       { tab: 'hangar', label: 'Pledges', sub: 'Every pledge in your hangar', icon: Warehouse, popup: true },
-      { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
+      { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator, popup: true, short: 'Melt' },
       { tab: 'fleet', label: 'My ships', sub: 'Hulls, in-game ships, insurance, compare', icon: Ship, popup: true },
       { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
       { tab: 'items', label: 'My items', sub: 'Everything else in your pledges', icon: Package },
@@ -61,10 +63,10 @@ export const HUB_GROUPS: HubGroup[] = [
   {
     label: 'Store',
     items: [
-      { tab: 'notifications', label: 'Notifications', sub: 'Store changes: what was added and removed', icon: BellRing, popup: true },
-      { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store, popup: true },
+      { tab: 'notifications', label: 'Notifications', sub: 'Store changes: what was added and removed', icon: BellRing, popup: true, short: 'Notices' },
+      { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store, popup: true, short: 'Catalog' },
       { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · Concierge · Subscribers', icon: LayoutGrid },
-      { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true },
+      { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true, short: 'CCU' },
       { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
     ],
   },

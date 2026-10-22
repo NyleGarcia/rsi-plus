@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { Component } from 'svelte';
   import FeedPanel from '@/components/FeedPanel.svelte';
   import WatchingPanel from '@/components/WatchingPanel.svelte';
   import FriendsPanel from '@/components/FriendsPanel.svelte';
@@ -22,85 +21,30 @@
   import * as Sidebar from '@/components/ui/sidebar';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Separator } from '@/components/ui/separator';
-  import { Badge } from '@/components/ui/badge';
-  import Rss from '@lucide/svelte/icons/rss';
-  import Eye from '@lucide/svelte/icons/eye';
-  import Users from '@lucide/svelte/icons/users';
-  import VolumeX from '@lucide/svelte/icons/volume-x';
-  import Warehouse from '@lucide/svelte/icons/warehouse';
-  import Ship from '@lucide/svelte/icons/ship';
-  import Package from '@lucide/svelte/icons/package';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
-  import Wallet from '@lucide/svelte/icons/wallet';
-  import Store from '@lucide/svelte/icons/store';
-  import BellRing from '@lucide/svelte/icons/bell-ring';
-  import Route from '@lucide/svelte/icons/route';
-  import Paintbrush from '@lucide/svelte/icons/paintbrush';
-  import Calculator from '@lucide/svelte/icons/calculator';
-  import Palette from '@lucide/svelte/icons/palette';
-  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import HintBadge from '@/components/HintBadge.svelte';
   import Settings from '@lucide/svelte/icons/settings';
   import EyeOff from '@lucide/svelte/icons/eye-off';
   import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
+  import { HUB_GROUPS, HUB_PAGES, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
   import { INCOGNITO, storeLogItem } from '@/lib/settings';
   import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
 
   type Tab = HubTab;
-  /** A sidebar entry = one hub page (`#<tab>`). No second-level tab bars: every view people switch between is its own entry. */
-  interface Item {
-    tab: Tab;
-    label: string;
-    sub: string;
-    icon: Component;
-  }
-  const GROUPS: { label: string; items: Item[] }[] = [
-    {
-      label: 'Spectrum',
-      items: [
-        { tab: 'feed', label: 'Feed', sub: 'What your watches found', icon: Rss },
-        { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
-        { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users },
-        { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
-      ],
-    },
-    {
-      label: 'Hangar',
-      items: [
-        { tab: 'hangar', label: 'Pledges', sub: 'Every pledge in your hangar', icon: Warehouse },
-        { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
-        { tab: 'fleet', label: 'My ships', sub: 'Hulls, in-game ships, insurance, compare', icon: Ship },
-        { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
-        { tab: 'items', label: 'My items', sub: 'Everything else in your pledges', icon: Package },
-        { tab: 'buyback', label: 'Buyback', sub: 'What you melted', icon: Undo2 },
-        { tab: 'wallet', label: 'Wallet', sub: "Credits, spend, Chairman's Club, funding", icon: Wallet },
-      ],
-    },
-    {
-      label: 'Store',
-      items: [
-        { tab: 'notifications', label: 'Notifications', sub: 'Store changes: what was added and removed', icon: BellRing },
-        { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store },
-        { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · Concierge · Subscribers', icon: LayoutGrid },
-        { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route },
-        { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
-      ],
-    },
-  ];
-  /** Settings sits in the header (gear) rather than the nav: 15 page entries + footer already fill an 800px window. */
-  const SETTINGS: Item = { tab: 'settings', label: 'Settings', sub: 'Theme, Spectrum, notifications', icon: Settings };
-  const ITEMS = [...GROUPS.flatMap((g) => g.items), SETTINGS];
-  const TABS = new Set<string>(ITEMS.map((i) => i.tab));
+  /** A sidebar entry = one hub page (`#<tab>`). No second-level tab bars: every view people switch between is its own entry.
+   *  Settings sits in the header (gear) rather than the nav: 15 page entries + footer already fill an 800px window. */
+  type Item = HubPage;
+  const ITEMS = HUB_PAGES;
 
   /** `#tab` or `#tab?key=value` (e.g. `#ccu?to=42` from Store / the RSI page button, `#browse?who=concierge`). */
   function fromHash(): Tab {
     const l = legacyHash(location.hash);
     if (l) history.replaceState(null, '', l);
     const h = location.hash.slice(1).split('?')[0] ?? '';
-    return TABS.has(h) ? (h as Tab) : 'feed';
+    return isHubTab(h) ? pageOf(h).tab : 'feed'; // pageOf folds the legacy `ships` alias
   }
   const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
 
@@ -120,7 +64,7 @@
     return () => window.removeEventListener('hashchange', onHash);
   });
 
-  const current = $derived(ITEMS.find((i) => i.tab === tab)!);
+  const current = $derived(pageOf(tab));
 
   function select(it: Item) {
     const hash = `#${it.tab}`;
@@ -173,14 +117,14 @@
             RSI<span class="text-primary">+</span>
           </h1>
           {#if INCOGNITO}
-            <Badge variant="outline" class="text-muted-foreground h-[18px] rounded-md px-1.5 text-[11px] font-semibold group-data-[collapsible=icon]:hidden" title="Incognito: separate login, friends, hangar, reads and party mode">incognito</Badge>
+            <HintBadge variant="muted" class="h-[18px] rounded-md px-1.5 text-[11px] font-semibold group-data-[collapsible=icon]:hidden" hint="Incognito: separate login, friends, hangar, reads and party mode">incognito</HintBadge>
           {/if}
         </div>
       </Sidebar.Header>
       <Sidebar.Content>
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <nav aria-label="Sections" onkeydown={onKey}>
-          {#each GROUPS as g (g.label)}
+          {#each HUB_GROUPS as g (g.label)}
             <Sidebar.Group class="py-1">
               <Sidebar.GroupLabel>{g.label}</Sidebar.GroupLabel>
               <Sidebar.GroupContent>
@@ -222,12 +166,12 @@
         <Tooltip.Root>
           <Tooltip.Trigger>
             {#snippet child({ props })}
-              <Button {...props} id="nav-settings" variant="ghost" size="icon-sm" class={cn(tab === 'settings' && 'bg-accent text-primary')} aria-pressed={tab === 'settings'} aria-controls="panel" onclick={() => select(SETTINGS)}>
+              <Button {...props} id="nav-settings" variant="ghost" size="icon-sm" class={cn(tab === 'settings' && 'bg-accent text-primary')} aria-pressed={tab === 'settings'} aria-controls="panel" onclick={() => select(SETTINGS_PAGE)}>
                 <Settings aria-hidden="true" />
               </Button>
             {/snippet}
           </Tooltip.Trigger>
-          <Tooltip.Content>Settings — theme, Spectrum, notifications</Tooltip.Content>
+          <Tooltip.Content>{SETTINGS_PAGE.label} — {SETTINGS_PAGE.sub.toLowerCase()}</Tooltip.Content>
         </Tooltip.Root>
         <AccountSwitch />
       </header>

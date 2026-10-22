@@ -9,6 +9,7 @@
   import GripVertical from '@lucide/svelte/icons/grip-vertical';
   import Scaling from '@lucide/svelte/icons/scaling';
   import { cn } from '@/lib/utils';
+  import TipButton from './TipButton.svelte';
   import { placeWidgets, SIZES, SIZE_LABELS, type Placement, type WidgetItem, type WidgetSize } from '@/lib/widgets';
 
   let {
@@ -153,15 +154,16 @@
       {#if editable}
         <div class="ring-primary/50 pointer-events-none absolute inset-0 rounded-xl ring-2 ring-dashed ring-inset"></div>
         <div class="absolute -top-3.5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1">
-          <button
-            type="button"
-            class="bg-background/90 text-muted-foreground hover:text-foreground border-border inline-flex h-7 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium shadow-sm"
-            title="Change size"
+          <TipButton
+            variant="outline"
+            size="xs"
+            class="bg-background/90 text-muted-foreground hover:text-foreground text-[11px] shadow-sm"
+            tip="Change size"
             aria-label={`Size: ${SIZE_LABELS[it.size]}. Change size of ${labels[it.id] ?? it.id}`}
             onclick={() => resize(it.id)}
           >
             <Scaling class="size-3.5" />{SIZE_LABELS[it.size]}
-          </button>
+          </TipButton>
           <span class="bg-background/90 text-muted-foreground border-border inline-flex size-7 items-center justify-center rounded-md border shadow-sm" aria-hidden="true"><GripVertical class="size-4" /></span>
         </div>
       {/if}

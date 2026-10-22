@@ -8,6 +8,7 @@
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
+  import Empty from './Empty.svelte';
 
   let feed = $state<FeedEvent[]>([]);
   let lastPoll = $state<{ at: number; error: string | null } | null>(null);
@@ -24,7 +25,7 @@
   });
 
   const LABEL: Record<EventKind, string> = { replies: 'Replies', thread: 'New thread', dev: 'Dev', author: 'Author', keyword: 'Keyword', friend: 'Friend', store: 'Store' };
-  const KIND_TONE: Partial<Record<EventKind, string>> = { dev: 'text-[#ffb547]', store: 'text-warning', friend: 'text-success', replies: 'text-primary', keyword: 'text-[#c084fc]' };
+  const KIND_TONE: Partial<Record<EventKind, string>> = { dev: 'text-accent-2', store: 'text-warning', friend: 'text-success', replies: 'text-primary', keyword: 'text-info' };
   const FILTER_LABEL: Record<string, string> = { unseen: 'Unseen', all: 'All', ...LABEL };
   const shown = $derived(feed.filter((e) => (filter === 'all' ? true : filter === 'unseen' ? !e.seen : e.kind === filter)));
   const unseen = $derived(feed.filter((e) => !e.seen).length);
@@ -45,14 +46,18 @@
 
 <Card.Root>
   <Card.Header>
-    <Card.Title>Feed</Card.Title>
     <Card.Description>
-      {unseen} unseen · last check {lastPoll ? ago(lastPoll.at) : 'never'}{#if !pollAuto} · <span title="Automatic checks are off (Watching / Settings) — nothing runs in the background">passive, Check now only</span>{/if}
+      {unseen} unseen · last check {lastPoll ? ago(lastPoll.at) : 'never'}{#if !pollAuto}
+        <Tooltip.Root>
+          <Tooltip.Trigger> · passive, Check now only</Tooltip.Trigger>
+          <Tooltip.Content>Automatic checks are off (Watching / Settings) — nothing runs in the background</Tooltip.Content>
+        </Tooltip.Root>
+      {/if}
       {#if lastPoll?.error}
-          <Tooltip.Root>
-            <Tooltip.Trigger class="text-destructive"> · some checks failed</Tooltip.Trigger>
-            <Tooltip.Content class="whitespace-pre-line">{lastPoll.error}</Tooltip.Content>
-          </Tooltip.Root>
+        <Tooltip.Root>
+          <Tooltip.Trigger class="text-destructive"> · some checks failed</Tooltip.Trigger>
+          <Tooltip.Content class="whitespace-pre-line">{lastPoll.error}</Tooltip.Content>
+        </Tooltip.Root>
       {/if}
     </Card.Description>
     <Card.Action class="flex flex-wrap items-center gap-2">
@@ -71,9 +76,7 @@
 
   <Card.Content>
     {#if !shown.length}
-      <p class="text-muted-foreground py-6 text-center">
-        {feed.length ? 'Nothing here.' : 'No events yet. Watch threads (☆ on Spectrum rows), channels, authors or friends — they show up here.'}
-      </p>
+      <Empty>{feed.length ? 'Nothing here.' : 'No events yet. Watch threads (☆ on Spectrum rows), channels, authors or friends — they show up here.'}</Empty>
     {:else}
       <ul class="grid">
         {#each shown as e (e.key)}

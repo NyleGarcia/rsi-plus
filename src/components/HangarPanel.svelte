@@ -12,20 +12,30 @@
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import Stat from './Stat.svelte';
-  import { ownMoney } from '@/lib/privacy.svelte';
+  import StatGrid from './StatGrid.svelte';
+  import LoadStatus from './LoadStatus.svelte';
+  import LoadActions from './LoadActions.svelte';
+  import TipButton from './TipButton.svelte';
+  import HintBadge from './HintBadge.svelte';
+  import Tag from './Tag.svelte';
+  import FilterChips from './FilterChips.svelte';
+  import Segmented from './Segmented.svelte';
+  import Empty from './Empty.svelte';
+  import { ownDollars } from '@/lib/privacy.svelte';
+  import { dateStamp, downloadFile } from '@/lib/download';
+  import * as Alert from '@/components/ui/alert';
+  import { cn } from '@/lib/utils';
   import Thumb from './Thumb.svelte';
   import * as Card from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
   import * as Table from '@/components/ui/table';
-  import * as ToggleGroup from '@/components/ui/toggle-group';
   import * as Tooltip from '@/components/ui/tooltip';
   import * as Select from '@/components/ui/select';
   import * as Collapsible from '@/components/ui/collapsible';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
   import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
-  import { Progress } from '@/components/ui/progress';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
@@ -185,17 +195,16 @@
   ];
   /** Pledges RSI marks as never returning to buyback, among the ones picked to melt. */
   const noBuybackPicked = $derived(all.filter((p) => picked.has(p.id) && p.noBuyback));
-  /** Filter-chip look for toggle-group items (old `.chip` / `.chip.on`). */
-  const chipItem = 'h-6 rounded-full px-2.5 text-xs data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary';
-  const ltiBadge = 'text-warning border-warning/40';
-  const money = (n: number) => ownMoney(`$${n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`);
-
-  function download(name: string, body: string, type: string) {
-    const url = URL.createObjectURL(new Blob([body], { type }));
-    Object.assign(document.createElement('a'), { href: url, download: name }).click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-  const stamp = () => new Date().toISOString().slice(0, 10);
+  const money = ownDollars;
+  /** Pledge-type chips (count · value) for the list filter and the planner's "May pick". */
+  const byType = $derived(totals(all).byType);
+  const typeOptions = $derived(TYPES.filter((t) => byType[t]).map((t) => ({ id: t, label: `${t} · ${byType[t].count} · ${money(byType[t].value)}` })));
+  const dedupeOptions = $derived(
+    TYPES.filter((t) => t !== 'upgrade' && byType[t]).map((t) => {
+      const d = dupesByType.get(t);
+      return { id: t, label: d?.count ? `${t} · ${d.count} · ${money(d.value)}` : t };
+    }),
+  );
 
   // ---- panes: Pledges (the list) / Melt calculator (same list with the tick + "Would lose" columns) ----
   type Pane = 'pledges' | 'melt';
@@ -365,50 +374,42 @@
 {#snippet ext()}<ExternalLink class="inline size-3 align-[-1px]" aria-hidden="true" />{/snippet}
   <Card.Root>
     <Card.Header>
-      <Card.Title><h2 class="m-0 text-lg font-semibold">{pane === 'melt' ? 'Melt calculator' : 'Pledges'}</h2></Card.Title>
-      <div class="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-        {#if loading}<span>Loading page {loading.page}{totalPages ? ` / ${totalPages}` : ''}… {loading.count} {data?.complete ? 'read' : 'pledges'}</span>{#if totalPages}<Progress value={Math.min(100, Math.round((100 * loading.page) / totalPages))} class="h-1.5 w-[140px]" aria-hidden="true" />{/if}
-        {:else if data}{all.length} pledges · {data.complete === false ? `partial (stopped after page ${data.page})` : 'loaded'} {new Date(data.at).toLocaleString()}
-        {:else}Not loaded yet — reads every page of your RSI hangar (stays in this browser).{/if}
-      </div>
+      <Card.Title>{pane === 'melt' ? 'Melt calculator' : 'Pledges'}</Card.Title>
+      <LoadStatus
+        loading={loading ? { ...loading, pages: totalPages } : null}
+        {data}
+        count={all.length}
+        noun={loading && data?.complete ? 'read' : 'pledges'}
+        empty="Not loaded yet — reads every page of your RSI hangar (stays in this browser)."
+      />
       <Card.Action class="flex flex-wrap items-center gap-2">
-        {#if loading}
-          <Button variant="outline" onclick={() => ctrl?.abort()}>Stop</Button>
-        {:else}
-          {#if data && data.complete === false}
-            <Button onclick={() => load(true)}>Resume from page {(data.page ?? 0) + 1}</Button>
-          {/if}
-          {#if data?.complete && data.pledges.length}
-            <Button onclick={update} title="Reads from the newest pledge down and stops at the first page that matches what's saved. Changes further down (an old pledge melted or upgraded) need Reload all.">Update</Button>
-          {/if}
-          <Button variant={data ? 'outline' : 'default'} onclick={() => load(false)}>{data ? 'Reload all' : 'Load hangar'}</Button>
-        {/if}
-        <Button variant="outline" disabled={!shown.length} onclick={() => download(`rsi-hangar-${stamp()}.csv`, hangarCsv(shown), 'text/csv')}>CSV</Button>
-        <Button variant="outline" disabled={!shown.length} onclick={() => download(`rsi-hangar-${stamp()}.json`, JSON.stringify(shown, null, 2), 'application/json')}>JSON</Button>
-        <Button variant="outline" disabled={!shown.length} title="Ships in the pledges shown, HangarXPLOR format — import into FleetYards, myfleet.gg, Starjump" onclick={() => download(`hangarxplor-shiplist-${stamp()}.json`, JSON.stringify(xplorRows(shown, cat?.ships ?? []), null, 2), 'application/json')}>Fleet JSON (HangarXPLOR)</Button>
+        <LoadActions
+          {loading}
+          {data}
+          noun="hangar"
+          onstop={() => ctrl?.abort()}
+          onload={load}
+          onupdate={update}
+          canUpdate={!!data?.pledges.length}
+          updateHint="Reads from the newest pledge down and stops at the first page that matches what's saved. Changes further down (an old pledge melted or upgraded) need Reload all."
+        >
+          <Button variant="outline" disabled={!shown.length} onclick={() => downloadFile(`rsi-hangar-${dateStamp()}.csv`, hangarCsv(shown), 'text/csv')}>CSV</Button>
+          <Button variant="outline" disabled={!shown.length} onclick={() => downloadFile(`rsi-hangar-${dateStamp()}.json`, JSON.stringify(shown, null, 2), 'application/json')}>JSON</Button>
+          <TipButton variant="outline" disabled={!shown.length} tip="Ships in the pledges shown, HangarXPLOR format — import into FleetYards, myfleet.gg, Starjump" onclick={() => downloadFile(`hangarxplor-shiplist-${dateStamp()}.json`, JSON.stringify(xplorRows(shown, cat?.ships ?? []), null, 2), 'application/json')}>Fleet JSON (HangarXPLOR)</TipButton>
+        </LoadActions>
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-4">
-      {#if error}<span class="text-destructive">{error}</span>{:else if updated}<span class="text-muted-foreground">{updated}</span>{/if}
+      {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{:else if updated}<span class="text-muted-foreground">{updated}</span>{/if}
 
       {#if all.length}
         {#if pane === 'pledges'}
           <div class="grid gap-4">
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+            <StatGrid>
               {#if data?.credits}
-                {@const c = data.credits}
-                <Tooltip.Root>
-                  <Tooltip.Trigger>
-                    {#snippet child({ props })}
-                      <div {...props} class="grid">
-                        <Stat value={money(c.usd)} label="store credit" tone="credit">
-                          <a class="text-primary text-[11.5px]" href="#wallet">Wallet</a>
-                        </Stat>
-                      </div>
-                    {/snippet}
-                  </Tooltip.Trigger>
-                  {#if data.creditsAt}<Tooltip.Content>as of {new Date(data.creditsAt).toLocaleString()}</Tooltip.Content>{/if}
-                </Tooltip.Root>
+                <Stat value={money(data.credits.usd)} label="store credit" tone="credit" hint={data.creditsAt ? `as of ${new Date(data.creditsAt).toLocaleString()}` : null}>
+                  <a class="text-primary text-[11.5px]" href="#wallet">Wallet</a>
+                </Stat>
               {/if}
               <Stat value={money(sum.value)} label="melt value" />
               <Stat value={sum.pledges} label="pledges" />
@@ -416,7 +417,7 @@
               <Stat value={sum.upgrades} label="CCUs" />
               <Stat value={sum.lti} label="LTI" />
               <Stat value={sum.giftable} label="giftable" />
-            </div>
+            </StatGrid>
             {@render filters()}
             {@render list()}
           </div>
@@ -424,22 +425,13 @@
           <div class="grid gap-4">
             <p class="text-muted-foreground m-0 text-xs">Melting is per pledge: you get its value as store credit and <strong>every item in it</strong> is gone — it can't be undone (buyback costs the same credit + a token). Duplicates and losses are worked out pledge by pledge: a pledge only counts as a duplicate when each item inside it has another copy in a pledge you keep.</p>
             <div class="flex flex-wrap items-center gap-2">
-              <Tooltip.Root>
-                <Tooltip.Trigger>
-                  {#snippet child({ props })}
-                    <span {...props} class="inline-flex">
-                      <Button variant="outline" size="sm" disabled={!dupes.length} onclick={() => ((picked = new Set(dupes.map((p) => p.id))), (pickView = 'picked'))}>
-                        Pick duplicates{dupes.length ? ` · ${dupes.length} · ${money(dupeCredit)}` : ' · none'}
-                      </Button>
-                    </span>
-                  {/snippet}
-                </Tooltip.Trigger>
-                {#if dupes.length}<Tooltip.Content class="whitespace-pre-line">{dupes.map((p) => `${p.name} · ${money(p.value)}`).join('\n')}</Tooltip.Content>{/if}
-              </Tooltip.Root>
+              <TipButton variant="outline" size="sm" disabled={!dupes.length} tip={dupes.map((p) => `${p.name} · ${money(p.value)}`).join('\n')} onclick={() => ((picked = new Set(dupes.map((p) => p.id))), (pickView = 'picked'))}>
+                Pick duplicates{dupes.length ? ` · ${dupes.length} · ${money(dupeCredit)}` : ' · none'}
+              </TipButton>
               {#if meltLabelled.length}
-                <Button variant="outline" size="sm" title={meltLabelled.map((p) => `${p.name} · ${money(p.value)}`).join('\n')} onclick={() => ((picked = new Set([...picked, ...meltLabelled.map((p) => p.id)])), (pickView = 'picked'))}>
+                <TipButton variant="outline" size="sm" tip={meltLabelled.map((p) => `${p.name} · ${money(p.value)}`).join('\n')} onclick={() => ((picked = new Set([...picked, ...meltLabelled.map((p) => p.id)])), (pickView = 'picked'))}>
                   Pick labelled “Melt” · {meltLabelled.length} · {money(meltLabelled.reduce((n, p) => n + p.value, 0))}
-                </Button>
+                </TipButton>
               {/if}
               <Tooltip.Root>
                 <Tooltip.Trigger>
@@ -464,33 +456,18 @@
             </div>
             <div class="flex flex-wrap items-center gap-2 text-xs">
               <span class="text-muted-foreground">May pick:</span>
-              <ToggleGroup.Root
-                type="multiple"
-                variant="outline"
-                size="sm"
-                spacing={1}
-                class="flex-wrap"
-                aria-label="Pledge types the planner may pick"
-                bind:value={() => [...dedupe], (v) => (dedupe = new Set(v as PledgeType[]))}
-              >
-                {#each TYPES.filter((t) => t !== 'upgrade' && totals(all).byType[t]) as t (t)}
-                  {@const d = dupesByType.get(t)}
-                  <ToggleGroup.Item value={t} class={chipItem} title={dedupe.has(t) ? `Click to leave ${t} pledges alone` : `Click to allow ${t} pledges`}>
-                    {t}{#if d?.count} · {d.count} · {money(d.value)}{/if}
-                  </ToggleGroup.Item>
-                {/each}
-              </ToggleGroup.Root>
+              <FilterChips options={dedupeOptions} bind:value={dedupe} multiple ariaLabel="Pledge types the planner may pick" />
               <label class="text-muted-foreground flex items-center gap-1.5"><Checkbox bind:checked={keepLti} /> never LTI</label>
             </div>
             {#if planNote}<div class="text-xs">{planNote}</div>{/if}
             {#if picked.size}
-              <div class="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
+              <StatGrid>
                 <Stat value={money(melt.credit)} label="credit from melting" />
                 {#if data?.credits}<Stat value={money(data.credits.usd + melt.credit)} label={`store credit after (${money(data.credits.usd)} now)`} />{/if}
                 <Stat value={melt.pledges} label="pledges melted" />
                 <Stat value={melt.lost.length} label="items lost for good" valueTone={melt.lost.length ? 'err' : null} />
                 <Stat value={melt.stillOwned.length} label="items still owned (other copy)" />
-              </div>
+              </StatGrid>
               {#if melt.lost.length}
                 <div class="text-xs"><span class="text-destructive">Lost:</span> {melt.lost.join(' · ')}</div>
               {:else}
@@ -515,10 +492,15 @@
               </Collapsible.Root>
               <div class="flex flex-wrap items-center gap-2 text-xs">
                 <span class="text-muted-foreground">Show:</span>
-                <ToggleGroup.Root type="single" variant="outline" size="sm" spacing={1} aria-label="Show" bind:value={() => pickView, (v) => v && (pickView = v as typeof pickView)}>
-                  <ToggleGroup.Item value="all" class={chipItem}>everything</ToggleGroup.Item>
-                  <ToggleGroup.Item value="picked" class={chipItem}>picked only · {picked.size}</ToggleGroup.Item>
-                </ToggleGroup.Root>
+                <Segmented
+                  options={[
+                    { id: 'all', label: 'everything' },
+                    { id: 'picked', label: `picked only · ${picked.size}` },
+                  ]}
+                  bind:value={pickView}
+                  ariaLabel="Show"
+                  size="sm"
+                />
               </div>
             {:else}
               <span class="text-muted-foreground text-xs">
@@ -543,10 +525,11 @@
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">{groups.length} ships{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
       <span class="grow"></span>
-      <Button variant="outline" size="xs" onclick={() => (closed = new Set())}>Expand all</Button>
-      <Button variant="outline" size="xs" onclick={() => (closed = new Set(groups.map((g) => g.key)))}>Collapse all</Button>
+      <Button variant="outline" size="sm" onclick={() => (closed = new Set())}>Expand all</Button>
+      <Button variant="outline" size="sm" onclick={() => (closed = new Set(groups.map((g) => g.key)))}>Collapse all</Button>
     </div>
     <div class="grid gap-2">
+      {#if !groups.length}<Empty>Nothing matches.</Empty>{/if}
       {#each groups.slice(0, budget) as g (g.key)}
         {@const open = !closed.has(g.key)}
         <Collapsible.Root {open} onOpenChange={() => toggleGroup(g.key)} class="rounded-lg border px-2 pt-0.5 pb-1.5">
@@ -555,7 +538,7 @@
             {#if g.ship?.thumb}<Thumb src={g.ship.thumb} name={g.label} width={40} height={22} />{/if}
             <strong class={g.ship && !g.owned ? 'text-muted-foreground' : ''}>{g.label}</strong>
             {#if g.ship}
-              {#if g.owned}<Badge variant="secondary" class="text-success"><Check /> {g.hulls > 1 ? `${g.hulls} hulls` : 'hull'}</Badge>{:else}<Badge variant="outline" class="border-warning/40 text-warning">no hull</Badge>{/if}
+              {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `${g.hulls} hulls` : 'hull'}</Badge>{:else}<Badge variant="warning">no hull</Badge>{/if}
             {/if}
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
           </Collapsible.Trigger>
@@ -569,24 +552,19 @@
 {/snippet}
 
 {#snippet filters()}
-          <ToggleGroup.Root
-            type="single"
-            variant="outline"
-            size="sm"
-            spacing={1}
-            class="flex-wrap"
-            aria-label="Pledge type"
-            bind:value={() => (type === 'all' ? '' : type), (v) => (type = v ? (v as PledgeType) : 'all')}
-          >
-            {#each TYPES.filter((t) => totals(all).byType[t]) as t (t)}
-              {@const b = totals(all).byType[t]}
-              <ToggleGroup.Item value={t} class={chipItem}>{t} · {b.count} · {money(b.value)}</ToggleGroup.Item>
-            {/each}
-          </ToggleGroup.Root>
+          <FilterChips options={typeOptions} bind:value={() => (type === 'all' ? null : type), (v) => (type = (v as PledgeType | null) ?? 'all')} ariaLabel="Pledge type" />
           <div class="flex flex-wrap items-center gap-2">
             <Input class="w-64" placeholder="Search name, items, ship nickname" bind:value={q} aria-label="Search" />
             <label class="text-muted-foreground flex items-center gap-1.5 text-xs"><Checkbox bind:checked={stacked} /> Stack identical pledges</label>
-          <label class="text-muted-foreground flex items-center gap-1.5 text-xs" title="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row"><Checkbox bind:checked={byShip} /> Group by ship</label>
+            <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props })}<Checkbox {...props} id="hangar-by-ship" bind:checked={byShip} />{/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content>Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row</Tooltip.Content>
+              </Tooltip.Root>
+              <label for="hangar-by-ship">Group by ship</label>
+            </span>
             <label class="text-muted-foreground flex items-center gap-1.5 text-xs"><Checkbox bind:checked={allItems} /> Show all items in every pledge</label>
             <Select.Root type="single" bind:value={() => flag || 'any', (v) => (flag = v === 'any' ? '' : (v as typeof flag))}>
               <Select.Trigger aria-label="Flag">{FLAGS.find((f) => f.value === flag)?.label}</Select.Trigger>
@@ -607,7 +585,7 @@
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   {#snippet child({ props })}
-                    <Button {...props} variant="outline" size="sm" title="Hide event rewards, subscriber flair and other item sets (pledges holding only those)"><EyeOff class="size-3.5" /> Hide sets{hiddenSets.length ? ` · ${hiddenBySet.size} hidden` : ''}</Button>
+                    <Button {...props} variant="outline" size="sm"><EyeOff class="size-3.5" /> Hide sets{hiddenSets.length ? ` · ${hiddenBySet.size} hidden` : ''}</Button>
                   {/snippet}
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content align="start" class="max-h-[60vh] w-72 overflow-y-auto">
@@ -639,7 +617,12 @@
                 <SortTh key="value" bind:sort firstDir="desc">Value</SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
-                <Table.Head title="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners">Labels</Table.Head>
+                <Table.Head>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger class="cursor-help">Labels</Tooltip.Trigger>
+                    <Tooltip.Content>Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners</Tooltip.Content>
+                  </Tooltip.Root>
+                </Table.Head>
                 {#if melting}
                   <Table.Head>
                     <Tooltip.Root>
@@ -661,14 +644,21 @@
                 <Table.Row class="align-top" data-state={melting && nPicked > 0 ? 'selected' : undefined}>
                   {#if melting}
                     <Table.Cell>
-                      <Checkbox
-                        checked={nMelt > 0 && nPicked === nMelt}
-                        indeterminate={nPicked > 0 && nPicked < nMelt}
-                        disabled={!nMelt}
-                        title={nMelt ? (n > 1 ? `Pick all ${nMelt} meltable copies` : 'Pick to melt') : p.meltable ? 'No melt value ($0)' : 'Not meltable'}
-                        onCheckedChange={() => toggleStack(s)}
-                        aria-label={`Pick ${p.name}`}
-                      />
+                      <Tooltip.Root>
+                        <Tooltip.Trigger>
+                          {#snippet child({ props })}
+                            <Checkbox
+                              {...props}
+                              checked={nMelt > 0 && nPicked === nMelt}
+                              indeterminate={nPicked > 0 && nPicked < nMelt}
+                              disabled={!nMelt}
+                              onCheckedChange={() => toggleStack(s)}
+                              aria-label={`Pick ${p.name}`}
+                            />
+                          {/snippet}
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>{nMelt ? (n > 1 ? `Pick all ${nMelt} meltable copies` : 'Pick to melt') : p.meltable ? 'No melt value ($0)' : 'Not meltable'}</Tooltip.Content>
+                      </Tooltip.Root>
                     </Table.Cell>
                   {/if}
                   <Table.Cell class="min-w-[200px] whitespace-normal">
@@ -677,8 +667,12 @@
                     {#if p.upgraded}
                       {@const up = upgradedFrom(p, cat?.ships ?? [])}
                       {#if up}
-                        <div class="text-xs" title="A CCU was applied: the pledge keeps its original name, the hull inside is the new one">
-                          <ArrowUpRight class="text-primary inline size-3 align-[-2px]" aria-hidden="true" /> <span class="text-muted-foreground">{up.from} →</span> <strong>{up.to}</strong> <span class="text-muted-foreground">(upgraded)</span>
+                        <div class="text-xs">
+                          <ArrowUpRight class="text-primary inline size-3 align-[-2px]" aria-hidden="true" /> <span class="text-muted-foreground">{up.from} →</span> <strong>{up.to}</strong>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger class="text-muted-foreground cursor-help">(upgraded)</Tooltip.Trigger>
+                            <Tooltip.Content>A CCU was applied: the pledge keeps its original name, the hull inside is the new one</Tooltip.Content>
+                          </Tooltip.Root>
                         </div>
                       {/if}
                     {/if}
@@ -702,16 +696,16 @@
                   <Table.Cell class="text-muted-foreground text-xs">{n > 1 ? `${s.entries[n - 1]!.date} – ${p.date}` : p.date}</Table.Cell>
                   <Table.Cell class="whitespace-normal">
                     <div class="flex flex-wrap gap-0.5">
-                      {#if p.insurance}<Badge variant={p.insurance === 'LTI' ? 'outline' : 'secondary'} class={p.insurance === 'LTI' ? ltiBadge : ''}>{p.insurance}</Badge>{:else if p.lti}<Badge variant="outline" class={ltiBadge}>LTI</Badge>{/if}
+                      {#if p.insurance}<Tag kind="insurance" value={p.insurance} />{:else if p.lti}<Tag kind="insurance" value="LTI" />{/if}
                       {#if p.warbond}<Badge variant="secondary">WB</Badge>{/if}
                       {#if s.entries.some((e) => e.giftable)}<Badge variant="secondary">gift{n > 1 ? ` ${s.entries.filter((e) => e.giftable).length}/${n}` : ''}</Badge>{/if}
-                      {#if p.upgraded}<Badge variant="secondary" title="A CCU was applied to this pledge">upgraded</Badge>{/if}
+                      {#if p.upgraded}<HintBadge variant="secondary" hint="A CCU was applied to this pledge">upgraded</HintBadge>{/if}
                       {#if p.hasGame}<Badge variant="secondary">game</Badge>{/if}
-                      {#if !p.meltable}<Badge variant="outline" class="text-muted-foreground">no melt</Badge>{/if}
-                      {#if p.noBuyback}<Badge variant="outline" class="border-warning/40 text-warning" title="RSI marks this pledge as not buy-backable: melting it is final">no buyback</Badge>{/if}
-                      {#if p.configValue}<Badge variant="outline" class="text-muted-foreground" title="Paid customization on top of the pledge">+{money(p.configValue)} config</Badge>{/if}
-                      {#if p.availability}<Badge variant="outline" class="border-warning/40 text-warning" title="RSI's availability state for this pledge">{p.availability}</Badge>{/if}
-                      {#if p.reservedNames?.length}<Badge variant="secondary" title="Ship name reserved on RSI">name: {p.reservedNames.join(', ')}</Badge>{:else if p.nameable?.length}<Badge variant="outline" class="text-muted-foreground" title="RSI lets you name this ship">nameable</Badge>{/if}
+                      {#if !p.meltable}<Badge variant="muted">no melt</Badge>{/if}
+                      {#if p.noBuyback}<HintBadge variant="warning" hint="RSI marks this pledge as not buy-backable: melting it is final">no buyback</HintBadge>{/if}
+                      {#if p.configValue}<HintBadge variant="muted" hint="Paid customization on top of the pledge">+{money(p.configValue)} config</HintBadge>{/if}
+                      {#if p.availability}<HintBadge variant="warning" hint="RSI's availability state for this pledge">{p.availability}</HintBadge>{/if}
+                      {#if p.reservedNames?.length}<HintBadge variant="secondary" hint="Ship name reserved on RSI">name: {p.reservedNames.join(', ')}</HintBadge>{:else if p.nameable?.length}<HintBadge variant="muted" hint="RSI lets you name this ship">nameable</HintBadge>{/if}
                     </div>
                   </Table.Cell>
                   <Table.Cell class="min-w-[90px] whitespace-normal"><LabelEdit ids={s.entries.map((e) => e.id)} {labels} onchange={saveLabels} /></Table.Cell>
@@ -722,14 +716,9 @@
                       {:else}
                         {@const loss = lossWith(kept, next, opts)}
                         {#if loss.length}
-                          <Tooltip.Root>
-                            <Tooltip.Trigger>
-                              {#snippet child({ props })}<Badge {...props} variant="outline" class="text-warning border-warning/40 cursor-help">−{loss.length}</Badge>{/snippet}
-                            </Tooltip.Trigger>
-                            <Tooltip.Content class="whitespace-pre-line">{loss.join('\n')}</Tooltip.Content>
-                          </Tooltip.Root>
+                          <HintBadge variant="warning" class="cursor-help" hint={loss.join('\n')}>−{loss.length}</HintBadge>
                           <span class="text-muted-foreground">{loss.slice(0, 2).join(', ')}{loss.length > 2 ? '…' : ''}</span>
-                        {:else}<Badge variant="secondary" class="text-success">duplicate</Badge>{/if}
+                        {:else}<Badge variant="success">duplicate</Badge>{/if}
                       {/if}
                     </Table.Cell>
                   {/if}
@@ -738,11 +727,16 @@
                       {@const on = melting && picked.has(e.id)}
                       <div class="flex items-center gap-1.5 py-px whitespace-nowrap">
                         {#if melting && n > 1}
-                          <Checkbox checked={on} disabled={!canMelt(e)} title={canMelt(e) ? 'Pick this copy' : e.meltable ? 'No melt value ($0)' : 'Not meltable'} onCheckedChange={() => togglePick(e.id)} aria-label={`Pick ${e.name} #${e.id}`} />
+                          <Tooltip.Root>
+                            <Tooltip.Trigger>
+                              {#snippet child({ props })}<Checkbox {...props} checked={on} disabled={!canMelt(e)} onCheckedChange={() => togglePick(e.id)} aria-label={`Pick ${e.name} #${e.id}`} />{/snippet}
+                            </Tooltip.Trigger>
+                            <Tooltip.Content>{canMelt(e) ? 'Pick this copy' : e.meltable ? 'No melt value ($0)' : 'Not meltable'}</Tooltip.Content>
+                          </Tooltip.Root>
                         {/if}
-                        <a class={['text-primary no-underline hover:underline', on && 'font-bold']} href={hangarUrl(all, e.id)} target="_blank" rel="noopener" title="Open the hangar page scrolled to this pledge">#{e.id} {@render ext()}</a>
-                        {#if canMelt(e)}<Button variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'melt')} target="_blank" rel="noopener" title="Open RSI's melt dialog for this pledge (you confirm with your password there)">melt</Button>{/if}
-                        {#if e.giftable}<Button variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'gift')} target="_blank" rel="noopener" title="Open RSI's gift dialog for this pledge">gift</Button>{/if}
+                        <a class={cn('text-primary no-underline hover:underline', on && 'font-bold')} href={hangarUrl(all, e.id)} target="_blank" rel="noopener" title="Open the hangar page scrolled to this pledge">#{e.id} {@render ext()}</a>
+                        {#if canMelt(e)}<TipButton variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'melt')} target="_blank" rel="noopener" tip="Open RSI's melt dialog for this pledge (you confirm with your password there)">melt</TipButton>{/if}
+                        {#if e.giftable}<TipButton variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'gift')} target="_blank" rel="noopener" tip="Open RSI's gift dialog for this pledge">gift</TipButton>{/if}
                         {#if n > 1}<span class="text-muted-foreground">{e.date}</span>{/if}
                         {#if e.nickname}<span class="text-muted-foreground">“{e.nickname}”</span>{/if}
                         {#if n > 1 && e.giftable}<Badge variant="secondary">gift</Badge>{/if}
@@ -769,6 +763,7 @@
                   </Table.Cell>
                 </Table.Row>
               {/each}
+              {#if !rows.length}<Empty colspan={melting ? 10 : 8}>Nothing matches.</Empty>{/if}
             </Table.Body>
           </Table.Root>
 {/snippet}

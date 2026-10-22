@@ -67,7 +67,7 @@
       {#if open}<ChevronDown class="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />{:else}<ChevronRight class="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />{/if}
       <strong class={cn(done && 'text-muted-foreground')}>{title}</strong>
       {#if summary}<span class="text-muted-foreground text-xs">{summary}</span>{/if}
-      {#if done}<Badge variant="secondary" class="text-success"><Check /> {doneText}</Badge>{/if}
+      {#if done}<Badge variant="success-soft"><Check /> {doneText}</Badge>{/if}
     </Collapsible.Trigger>
     {#if actions}
       <span class="flex-1"></span>
