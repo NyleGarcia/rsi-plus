@@ -92,7 +92,7 @@
           <TipButton variant="ghost" size="icon-xs" onclick={copy} tip={copied ? 'Copied' : 'Copy the code'} aria-label={copied ? 'Referral code copied' : 'Copy referral code'}>{#if copied}<Check class="text-success" />{:else}<Copy />{/if}</TipButton>
           <Button variant="outline" size="xs" href={enlistUrl(lead.id)} target="_blank" rel="noopener">Enlist <ExternalLink /></Button>
         </div>
-        <span class="text-[10px]">Courtesy of {lead.name}</span>
+        <span class="max-w-72 text-[10px] leading-snug">Use a referral code to earn 50,000 UEC in-game after buying a game package, and support your friend or favourite content creator. Courtesy of {lead.name}.</span>
       </div>
     </Collapsible.Content>
   </Collapsible.Root>
