@@ -45,7 +45,8 @@
   let ordersBusy = $state(false);
   let ordersMsg = $state('');
   $effect(() => {
-    ordersItem.getValue().then((o) => (orders = o));
+    // Orders saved by the first beta reader (no line items) are dropped: the shape changed with RSI's real markup.
+    ordersItem.getValue().then((o) => (orders = o && o.orders.every((x) => Array.isArray(x.lines)) ? o : null));
   });
   const orderSums = $derived(orders ? orderTotals(orders.orders) : null);
   async function importOrders() {
@@ -57,7 +58,7 @@
         orders = { at: Date.now(), orders: r.orders, pages: r.pages };
         await ordersItem.setValue($state.snapshot(orders));
         ordersMsg = `${r.orders.length} orders from ${r.pages} page${r.pages === 1 ? '' : 's'}${r.debug ? ` · ${r.debug}` : ''}`;
-      } else ordersMsg = `No orders recognised${r.debug ? ` — ${r.debug}` : ''}. Copy the billing markup and send it over so the reader can learn RSI's layout.`;
+      } else ordersMsg = `No orders found${r.debug ? ` — ${r.debug}` : ''}. If Billing shows orders, RSI changed the page: copy the markup and send it over.`;
     } catch (e) {
       ordersMsg = `Could not read /account/billing: ${(e as Error).message}`;
     } finally {
@@ -617,28 +618,34 @@
         <Stat value={money(ledger.melted)} label="Melted into credit" sub={`${ledger.meltedCount} in buyback${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="Buyback entries whose price was read (Buyback → Load contents & prices). Credit you got back, possibly spent again." />
         <Stat value={`${ledger.gifted}`} label="Gifted / free" sub={`${ledger.gifted} gifts · ${ledger.free} flair`} hint="Pledges with no melt value: received as gifts, referral rewards, event flair" />
         {#if ledger.custom}<Stat value={money(ledger.custom)} label="Paid customization" hint="RSI's configuration value on top of the pledge — cash" />{/if}
-        <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (estimate)" context="Lower bound assumes every melted dollar bought a standard pledge; upper bound assumes none did" hint="New money + customization + standard pledges, less what melted credit could have covered" tone="accent" />
+        {#if orderSums}
+          <Stat value={money(orderSums.cash)} label="Cash paid" context={`${orderSums.count} orders · ${money(orderSums.credits)} paid with store credit`} hint="RSI's order history: the Total of every order is what was charged to you; Credits used is store credit" tone="accent" />
+        {:else}
+          <Stat value={ledger.cashMin === ledger.cashMax ? money(ledger.cashMax) : `${money0(ledger.cashMin)} – ${money0(ledger.cashMax)}`} label="Cash spent (estimate)" context="Lower bound assumes every melted dollar bought a standard pledge; upper bound assumes none did" hint="New money + customization + standard pledges, less what melted credit could have covered. Import the order history for the real figure." tone="accent" />
+        {/if}
       </StatGrid>
       <div class="flex flex-wrap items-center gap-2">
-        <TipButton variant={orders ? 'outline' : 'default'} size="sm" disabled={ordersBusy} onclick={importOrders} tip="Reads your order history pages from robertsspaceindustries.com/account/billing in this browser — nothing is sent anywhere">{ordersBusy ? 'Reading…' : orders ? 'Re-import order history' : 'Import order history (beta)'}</TipButton>
-        <TipButton variant="ghost" size="sm" onclick={copyBilling} tip="Copies the billing page's markup to the clipboard, for teaching the reader RSI's layout when it finds no orders">Copy billing markup</TipButton>
+        <TipButton variant={orders ? 'outline' : 'default'} size="sm" disabled={ordersBusy} onclick={importOrders} tip="Reads your order history pages from robertsspaceindustries.com/account/billing in this browser — nothing is sent anywhere">{ordersBusy ? 'Reading…' : orders ? 'Re-import order history' : 'Import order history'}</TipButton>
+        {#if ordersMsg.startsWith('No orders') || ordersMsg.startsWith('Could not')}<TipButton variant="ghost" size="sm" onclick={copyBilling} tip="Copies the billing page's markup (bill-to removed) to the clipboard, for fixing the reader when RSI changes the page">Copy billing markup</TipButton>{/if}
         {#if orders}<span class="text-muted-foreground text-xs">{orders.orders.length} orders · read {new Date(orders.at).toLocaleString()}</span>{/if}
         {#if ordersMsg}<span class="text-muted-foreground text-xs">{ordersMsg}</span>{/if}
       </div>
       {#if orderSums}
         <StatGrid>
-          <Stat value={money(orderSums.cash)} label="Paid with cash" valueTone="ok" hint="Orders RSI lists with a card, PayPal or bank payment" />
-          <Stat value={money(orderSums.credit)} label="Paid with store credit" hint="Orders RSI lists as store credit" />
-          <Stat value={money(orderSums.gift)} label="Received as gifts" />
-          <Stat value={money(orderSums.refund)} label="Refunded" valueTone={orderSums.refund ? 'warn' : null} />
-          {#if orderSums.unknown}<Stat value={money(orderSums.unknown)} label="Payment not recognised" hint="Orders whose payment words the reader does not know yet — copy the billing markup" valueTone="warn" />{/if}
+          <Stat value={money(orderSums.cash)} label="Cash paid" valueTone="ok" hint="Sum of every order's Total — what RSI charged your card / PayPal" />
+          <Stat value={money(orderSums.credits)} label="Store credit used" hint="Sum of Credits used — melt value spent again" />
+          <Stat value={money(orderSums.items)} label="Goods at the price paid" hint="Sum of the line totals (after RSI's sale and multi-paint discounts); cash + credit should match it" />
+          <Stat value={money(orderSums.discounts)} label="Discounts taken" hint="Line discounts (multi-paint tiers, sales) plus any additional discount" />
+          {#if orderSums.free}<Stat value={orderSums.free} label="Free orders" hint="Nothing charged and nothing priced: gifts received, giveaways, referral rewards" />{/if}
+          {#if orderSums.refunds}<Stat value={money(orderSums.refunds)} label="Refunded" valueTone="warn" />{/if}
+          {#if orderSums.cancelled}<Stat value={orderSums.cancelled} label="Cancelled" hint="Left out of every total" />{/if}
         </StatGrid>
         {#if orderSums.byYear.length}
           <Table.Root>
-            <Table.Header><Table.Row><Table.Head>Year</Table.Head><Table.Head class="text-right">Cash</Table.Head><Table.Head class="text-right">Store credit</Table.Head><Table.Head class="text-right">All orders</Table.Head></Table.Row></Table.Header>
+            <Table.Header><Table.Row><Table.Head>Year</Table.Head><Table.Head class="text-right">Cash</Table.Head><Table.Head class="text-right">Store credit</Table.Head><Table.Head class="text-right">Goods</Table.Head><Table.Head class="text-right">Orders</Table.Head></Table.Row></Table.Header>
             <Table.Body>
               {#each orderSums.byYear as y (y.year)}
-                <Table.Row><Table.Cell>{y.year}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.cash)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.credit)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.total)}</Table.Cell></Table.Row>
+                <Table.Row><Table.Cell>{y.year}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.cash)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.credits)}</Table.Cell><Table.Cell class="text-right tabular-nums">{money(y.items)}</Table.Cell><Table.Cell class="text-right tabular-nums">{y.orders}</Table.Cell></Table.Row>
               {/each}
             </Table.Body>
           </Table.Root>
