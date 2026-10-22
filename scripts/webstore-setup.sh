@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# One-time Google Cloud setup for publishing RSI+ to the Chrome Web Store from CI (docs/release.md).
-# What gcloud can do: the project and the API. What it cannot: the OAuth consent screen and the Desktop OAuth client —
-# Google only exposes those in the console, so this prints the two links to click. Then run scripts/webstore-token.mjs.
+# One-time Google Cloud setup for publishing RSI+ to the Chrome Web Store from CI (docs/release.md). Idempotent.
+# Web Store API v2 authenticates as a Google Cloud *service account* that the developer dashboard trusts, so this makes:
+#   - project PROJECT with the Chrome Web Store, IAM, IAM Credentials and STS APIs
+#   - service account webstore-publisher
+#   - Workload Identity Federation pool "github" + OIDC provider for this repo, bound to the service account
+#     (GitHub Actions trades its OIDC token for a short-lived Google access token: no key file anywhere)
+#   - impersonation rights for the logged-in user (local `wxt submit --dry-run`)
+# and prints the service account email to add in the dashboard, plus the GitHub variables to set.
 #
-#   bash scripts/webstore-setup.sh [PROJECT_ID]
-#
-# Log gcloud in as the Google account that owns the Web Store listing first: gcloud auth login
+#   bash scripts/webstore-setup.sh [PROJECT_ID] [OWNER/REPO]
 set -euo pipefail
 PROJECT="${1:-rsi-plus-publish}"
+REPO="${2:-NyleGarcia/rsi-plus}"
+SA_NAME=webstore-publisher
 GCLOUD="${GCLOUD:-$(command -v gcloud || echo "$HOME/google-cloud-sdk/bin/gcloud")}"
 
 acct=$("$GCLOUD" config get-value account 2>/dev/null || true)
@@ -28,17 +33,35 @@ if ! "$GCLOUD" projects describe "$PROJECT" >/dev/null 2>&1; then
   rm -f "$err"
 fi
 "$GCLOUD" config set project "$PROJECT" >/dev/null
-"$GCLOUD" services enable chromewebstore.googleapis.com --project "$PROJECT"
-echo "Chrome Web Store API enabled on $PROJECT"
+"$GCLOUD" services enable chromewebstore.googleapis.com iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com --project "$PROJECT"
+NUM=$("$GCLOUD" projects describe "$PROJECT" --format='value(projectNumber)')
+SA="$SA_NAME@$PROJECT.iam.gserviceaccount.com"
+
+"$GCLOUD" iam service-accounts describe "$SA" --project "$PROJECT" >/dev/null 2>&1 \
+  || "$GCLOUD" iam service-accounts create "$SA_NAME" --display-name="Chrome Web Store publisher (GitHub Actions)" --project "$PROJECT"
+"$GCLOUD" iam workload-identity-pools describe github --location=global --project "$PROJECT" >/dev/null 2>&1 \
+  || "$GCLOUD" iam workload-identity-pools create github --location=global --display-name="GitHub Actions" --project "$PROJECT"
+"$GCLOUD" iam workload-identity-pools providers describe rsi-plus --workload-identity-pool=github --location=global --project "$PROJECT" >/dev/null 2>&1 \
+  || "$GCLOUD" iam workload-identity-pools providers create-oidc rsi-plus --workload-identity-pool=github --location=global --project "$PROJECT" \
+       --display-name="rsi-plus repo" --issuer-uri="https://token.actions.githubusercontent.com" \
+       --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+       --attribute-condition="assertion.repository == '$REPO'"
+"$GCLOUD" iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/github/attribute.repository/$REPO" --quiet >/dev/null
+"$GCLOUD" iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --role=roles/iam.serviceAccountTokenCreator --member="user:$acct" --quiet >/dev/null
+PROVIDER=$("$GCLOUD" iam workload-identity-pools providers describe rsi-plus --workload-identity-pool=github --location=global --project "$PROJECT" --format='value(name)')
 
 cat <<MSG
 
-Two console steps gcloud cannot do (one-time):
- 1. OAuth consent screen — https://console.cloud.google.com/auth/overview?project=$PROJECT
-    App name "RSI+ publisher", your email, audience External, publish it (In production): a Testing app's refresh
-    tokens expire after 7 days. No scopes to add here; the token script asks for chromewebstore.
- 2. OAuth client — https://console.cloud.google.com/apis/credentials/oauthclient?project=$PROJECT
-    Type "Desktop app", name "GitHub Actions". Copy the client ID and secret into the next step:
-
-   node scripts/webstore-token.mjs --extension-id <WEB_STORE_ITEM_ID>
+Done. Now:
+ 1. Chrome Web Store developer dashboard → Account → "Service accounts" (API v2 access): add
+      $SA
+    (the dashboard must list it before the API answers for this publisher).
+ 2. GitHub variables (not secrets; already set for this repo if you ran this before):
+      gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$PROVIDER"
+      gh variable set GCP_SERVICE_ACCOUNT --body "$SA"
+    and the chrome-web-store environment secrets CHROME_EXTENSION_ID / CHROME_PUBLISHER_ID.
+ 3. Local check (impersonates the service account, nothing stored):
+      CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN=\$($GCLOUD auth print-access-token --impersonate-service-account=$SA --scopes=https://www.googleapis.com/auth/chromewebstore) \\
+        npx wxt submit --dry-run --chrome-api-version v2 --chrome-zip .output/rsi-plus-*-chrome.zip
 MSG

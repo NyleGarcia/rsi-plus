@@ -1,5 +1,6 @@
 # Release: release-please opens the release PR; on merge, attach the Chrome, Edge, Brave and Firefox zips (+ Firefox sources zip),
-# then submit the Chrome zip to the Chrome Web Store (skipped until the CHROME_* secrets exist — docs/release.md).
+# then submit the Chrome zip to the Chrome Web Store as the publisher service account (API v2, Workload Identity
+# Federation; skipped until the GCP_* variables / CHROME_* secrets exist — docs/release.md).
 name: Release
 on:
   push:
@@ -50,6 +51,9 @@ jobs:
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     environment: chrome-web-store
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation: GitHub's OIDC token → short-lived Google access token, no key
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -58,17 +62,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx wxt zip -b chrome
-      - name: Submit to the Chrome Web Store
+      - name: Google access token for the publisher service account
+        id: gcp
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+      - name: Submit to the Chrome Web Store (API v2)
         env:
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
-          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
-          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
-          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
           CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN: ${{ steps.gcp.outputs.access_token }}
         run: |
-          if [ -z "$CHROME_REFRESH_TOKEN" ] || [ -z "$CHROME_PUBLISHER_ID" ]; then
-            echo "::warning::CHROME_* secrets not set — zip attached to the release, nothing submitted to the Web Store (see docs/release.md)"
+          if [ -z "$CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN" ] || [ -z "$CHROME_PUBLISHER_ID" ]; then
+            echo "::warning::Web Store publishing not configured (GCP_* variables / CHROME_* secrets) — zip attached to the release, nothing submitted (docs/release.md)"
             exit 0
           fi
-          # API v1.1 was switched off 2026-10-15; v2 needs the publisher id.
           npx wxt submit --chrome-api-version v2 --chrome-zip .output/*-chrome.zip
