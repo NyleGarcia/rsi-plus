@@ -16,6 +16,7 @@ Three workflows on every push to `main` / `dev` and every PR; release flow in [r
 | Security | `dependency-review` (PRs) | a PR adding a dependency with a high+ advisory or a denied license |
 | Security | `secrets` | gitleaks finds a credential anywhere in history |
 | Security | `extension` | built manifest off the allowlist (`scripts/manifest-check.mjs`), `eval` / `new Function` in the bundle, `web-ext lint` errors |
+| Scorecard (`scorecard.yml`) | `scorecard` | never fails; publishes the OpenSSF score (README badge) and its findings to Code scanning. Runs on `dev` (the default branch — the score is taken there), `main` and weekly |
 
 Security also runs weekly (Monday 06:17 UTC) so new advisories get caught against unchanged code, and on *Actions → Security → Run workflow*.
 
@@ -23,6 +24,11 @@ Security also runs weekly (Monday 06:17 UTC) so new advisories get caught agains
 `scripts/manifest-check.mjs` reads the built manifests (`npx wxt build`, `npx wxt build -b firefox`) and fails on: a permission outside `storage, unlimitedStorage, alarms, notifications, cookies, offscreen`; a host or content-script match other than `https://robertsspaceindustries.com/*`; any optional permissions; `externally_connectable`; a CSP with `unsafe-eval` or remote script sources; any `http://` or third-party URL in the manifest. Adding a permission is deliberate: extend the allowlist in the script in the same commit and say why in `wxt.config.ts`.
 
 `web-ext lint` (Mozilla's add-on linter, the AMO review tool) fails the job on errors. Its warnings are reported, not fatal: the `innerHTML` warnings come from Svelte's runtime cloning static templates (app code never assigns `innerHTML`), and the manifest-key warnings are the AMO data-collection key against the Firefox minimum version.
+
+## Supply chain
+Every `uses:` in the workflows is pinned to a commit SHA with the version in a comment (`actions/checkout@fbc6…  # v5.1.0`); Dependabot's `github-actions` updates move the SHA and the comment together. A moving tag (`@v5`) can be re-pointed by whoever controls the action's repo; a SHA cannot.
+
+Release zips carry SLSA build provenance (`actions/attest-build-provenance` in the `assets` job, verifiable with `gh attestation verify <zip> -R NyleGarcia/rsi-plus`) and the release gets a `SHA256SUMS` (`checksums` job). The build is reproducible: `scripts/verify-release.sh <version>` downloads the release, checks both, clones the tag, runs `npm ci && npx wxt zip -b chrome` and diffs the unpacked zips — checked for 0.6.0 (CI on Node 22 vs a local Node 24 build: identical). `SECURITY.md` holds the reporting policy.
 
 ## Dependabot
 `.github/dependabot.yml`: weekly npm and GitHub Actions bumps, minor/patch grouped into one PR each, so CI and Security run once per batch. Repo settings also have secret scanning + push protection and Dependabot security updates on.

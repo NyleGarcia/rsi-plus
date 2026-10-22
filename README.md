@@ -1,6 +1,6 @@
 # RSI+
 
-[![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases)
+[![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Security](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NyleGarcia/rsi-plus/badge)](https://scorecard.dev/viewer/?uri=github.com/NyleGarcia/rsi-plus) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases)
 
 Browser extension (Chrome, Edge, Brave — MV3; Firefox — MV2) for the whole [Roberts Space Industries](https://robertsspaceindustries.com) site — Spectrum, hangar, buyback and the pledge store. Sibling of Crunchy+ (same stack: WXT + Svelte 5 + TS; hub UI on shadcn-svelte + Tailwind v4, charts on LayerChart). Ideas from [Hangar XPLORer](https://github.com/dolkensp/HangarXPLOR) (MIT) and [CCU Game](https://ccugame.app); no data is sent anywhere but RSI.
 
@@ -39,7 +39,16 @@ npm run check        # svelte-check / tsc
 Install from a [release](https://github.com/NyleGarcia/rsi-plus/releases): **Chrome** → `rsi-plus-<v>-chrome.zip`, **Edge** → `-edge.zip`, **Brave** → `-brave.zip` (all three the same MV3 code, named per browser; Brave also runs the Chrome zip), unzip → extensions page (`brave://extensions`, `edge://extensions`) → Developer mode → *Load unpacked*. **Firefox** → `-firefox.zip` via `about:debugging` → *This Firefox* → *Load Temporary Add-on* (unsigned builds last until Firefox restarts; a signed AMO build is pending). Firefox runs the MV2 build: no offscreen page (the background page plays sounds itself) and no incognito split — private windows share the normal login, like Chrome's dev build.
 Log in on robertsspaceindustries.com in the same browser profile — the extension uses your session (`Rsi-Token` cookie). Public reads (threads, channels) also work logged out.
 
-Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRIVACY.md).
+## Security
+Runs only in your browser, talks only to robertsspaceindustries.com, loads no remote code, has no analytics ([PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md)). Don't take that on faith:
+- **Every change** is scanned — CodeQL, `npm audit`, dependency review, gitleaks, and an extension audit that fails the build if a manifest permission, host or content-script match leaves the allowlist or `eval` shows up in the bundle ([docs/ci.md](docs/ci.md)). Actions are pinned by commit SHA; Dependabot bumps weekly; OpenSSF Scorecard grades the repo (badge above).
+- **Every release** zip has a SLSA build-provenance attestation (GitHub Actions built it from the tagged commit) and a `SHA256SUMS`; the Chrome Web Store gets that same CI artifact. Builds are reproducible — verify one yourself:
+  ```sh
+  scripts/verify-release.sh <version>     # checksums + attestation + rebuild from the tag and diff
+  ```
+- Found something? [Report it privately](https://github.com/NyleGarcia/rsi-plus/security/advisories/new) — see [SECURITY.md](SECURITY.md).
+
+Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRIVACY.md) · security: [SECURITY.md](SECURITY.md).
 
 Docs: [docs/README.md](docs/README.md) · [architecture](docs/architecture.md) · [changelog](docs/changelog.md).
 
