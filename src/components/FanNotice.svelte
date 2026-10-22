@@ -5,21 +5,16 @@
    * trademark notice, in a legible font no smaller than 10 pt, in an always-visible navigation area and/or the home
    * page. Plus our own "not affiliated" line. White badge on dark themes, black badge on light themes (both are the
    * kit's own files, only resized — public/fankit/).
-   * - `sidebar`: hub sidebar footer, always visible: badge + one short "unofficial" line (full notice as tooltip);
-   *   collapsed to icons, just the badge. Kept short so the nav above isn't pushed off-screen.
-   * - `footer`: under the Feed home page, and under every page on mobile (there the sidebar is a sheet, not always visible).
-   * - `popup`: bottom of the toolbar popup.
+   * - `popup`: bottom of the toolbar popup. (The hub's always-visible notice is its sticky footer, entrypoints/hub/HubFooter.svelte.)
    * - `store`: top of the Store pages (Ship catalog, Browse): prices are read from the RSI store, RSI+ sells nothing,
    *   plus the "not affiliated" line — next to the prices, not only in the footer.
    */
-  import * as Tooltip from '@/components/ui/tooltip';
-  import { cn } from '@/lib/utils';
+    import { cn } from '@/lib/utils';
 
-  let { variant = 'footer', collapsed = false, class: klass = '' }: { variant?: 'sidebar' | 'footer' | 'popup' | 'store'; collapsed?: boolean; class?: string } = $props();
+  let { variant = 'popup', class: klass = '' }: { variant?: 'popup' | 'store'; class?: string } = $props();
 
   const TRADEMARK = 'Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC.';
   const UNOFFICIAL = 'RSI+ is an unofficial Star Citizen fan tool, not affiliated with or endorsed by the Cloud Imperium group of companies.';
-  const SHORT = 'Unofficial fan tool. Not affiliated with Cloud Imperium.';
   const STORE =
     'Prices, availability and listings are read from the official RSI pledge store and can lag behind it or differ. RSI+ is not a store: it sells nothing and takes no payment — every purchase happens on robertsspaceindustries.com under RSI\'s own terms.';
   const size = 44;
@@ -32,21 +27,13 @@
   </span>
 {/snippet}
 
-{#if variant === 'sidebar'}
-  <Tooltip.Root>
-    <Tooltip.Trigger class={cn('text-muted-foreground flex cursor-default items-center gap-2.5 text-left text-[13.5px] leading-snug', collapsed && 'mx-auto', klass)} aria-label="Made By The Community, unofficial fan tool">
-      {@render badge(collapsed ? 32 : 36)}
-      {#if !collapsed}<span>{SHORT}</span>{/if}
-    </Tooltip.Trigger>
-    <Tooltip.Content side="right" class="max-w-72 text-[13.5px] leading-snug">{UNOFFICIAL} {TRADEMARK}</Tooltip.Content>
-  </Tooltip.Root>
-{:else if variant === 'store'}
+{#if variant === 'store'}
   <aside class={cn('text-muted-foreground text-[13.5px] leading-snug', klass)} aria-label="Store notice">
     <p class="m-0">{STORE} {UNOFFICIAL}</p>
   </aside>
 {:else}
   <!-- 13.5px ≈ 10pt: the guidelines' minimum for the notice. -->
-  <aside class={cn('text-muted-foreground flex items-start gap-2.5 text-[13.5px] leading-snug', variant === 'footer' && 'border-t pt-4', klass)} aria-label="Fan project notice">
+  <aside class={cn('text-muted-foreground flex items-start gap-2.5 text-[13.5px] leading-snug', klass)} aria-label="Fan project notice">
     {@render badge(size)}
     <p class="m-0 grid gap-1">
       <span>{UNOFFICIAL}</span>

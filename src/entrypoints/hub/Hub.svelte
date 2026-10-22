@@ -17,7 +17,6 @@
   import AccountSwitch from '@/components/AccountSwitch.svelte';
   import NavItem from './NavItem.svelte';
   import HubFooter from './HubFooter.svelte';
-  import SidebarFan from './SidebarFan.svelte';
   import * as Sidebar from '@/components/ui/sidebar';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Separator } from '@/components/ui/separator';
@@ -138,9 +137,6 @@
           {/each}
         </nav>
       </Sidebar.Content>
-      <Sidebar.Footer>
-        <SidebarFan />
-      </Sidebar.Footer>
       <Sidebar.Rail />
     </Sidebar.Root>
 

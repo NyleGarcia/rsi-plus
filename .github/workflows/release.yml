@@ -20,6 +20,8 @@ jobs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
       version: ${{ steps.rp.outputs.version }}
+      prs_created: ${{ steps.rp.outputs.prs_created }}
+      pr: ${{ steps.rp.outputs.pr }}
     steps:
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: rp
@@ -27,6 +29,31 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: main
+
+  # The release PR also rolls docs/changelog.md's "Unreleased" into the version section (release-please only writes
+  # CHANGELOG.md from commits). release-please rewrites its branch on every main push; this re-applies the roll each time.
+  changelog:
+    needs: release-please
+    if: needs.release-please.outputs.prs_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+      - name: Roll Unreleased into the version section
+        env:
+          TITLE: ${{ fromJSON(needs.release-please.outputs.pr).title }}
+        run: |
+          version=$(echo "$TITLE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          [ -n "$version" ] || { echo "no version in PR title: $TITLE"; exit 0; }
+          node scripts/roll-changelog.mjs "$version"
+          if git diff --quiet; then echo "changelog already rolled"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "docs(changelog): $version"
+          git push
 
   assets:
     needs: release-please
