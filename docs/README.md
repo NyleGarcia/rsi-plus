@@ -1,5 +1,6 @@
 # RSI+ docs
 - [Architecture](architecture.md)
+- [UI components and page conventions](ui-components.md)
 - [Changelog](changelog.md)
 - [Release and Web Store publishing](release.md)
 - [CI and security checks](ci.md)

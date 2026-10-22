@@ -11,6 +11,14 @@
 				outline: "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
 				ghost: "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
 				link: "text-primary underline-offset-4 hover:underline",
+				// RSI+ tones (outline-tinted): the old `variant="outline" class="border-warning/40 text-warning"` pattern.
+				success: "border-success/40 text-success",
+				warning: "border-warning/40 text-warning",
+				info: "border-primary/40 text-primary",
+				muted: "border-border text-muted-foreground",
+				// Soft fills (Stat deltas, "in cart" chips).
+				"success-soft": "bg-success/15 text-success",
+				"warning-soft": "bg-warning/15 text-warning",
 			},
 		},
 		defaultVariants: {

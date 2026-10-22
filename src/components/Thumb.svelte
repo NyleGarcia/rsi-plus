@@ -6,6 +6,7 @@
    * that reads its context after the card is torn down (Svelte's `derived_inert` warning on every click).
    */
   import * as Tooltip from '@/components/ui/tooltip';
+  import ImageOff from '@lucide/svelte/icons/image-off';
   import { cn } from '@/lib/utils';
 
   let {
@@ -13,6 +14,8 @@
     name,
     width = 48,
     height = 27,
+    placeholder = null,
+    placeholderHint = 'No picture: the store never sells this on its own',
     class: className,
   }: {
     src: string | null | undefined;
@@ -20,6 +23,9 @@
     name: string;
     width?: number;
     height?: number;
+    /** What to show without a `src`: nothing (default), a blank block, or the no-image icon. */
+    placeholder?: 'block' | 'icon' | null;
+    placeholderHint?: string;
     class?: string;
   } = $props();
 
@@ -62,5 +68,9 @@
   {:else}
     <img class={cn('inline-block shrink-0 cursor-zoom-in rounded-md object-cover align-middle', className)} {src} alt="" {width} {height} loading="lazy" onpointerenter={arm} />
   {/if}
+  </span>
+{:else if placeholder}
+  <span class={cn('bg-muted/40 text-muted-foreground inline-flex shrink-0 items-center justify-center rounded-md align-middle', className)} style={`width:${width}px;height:${height}px`} role="img" aria-label={placeholderHint}>
+    {#if placeholder === 'icon'}<ImageOff class="size-3.5 opacity-50" aria-hidden="true" />{/if}
   </span>
 {/if}

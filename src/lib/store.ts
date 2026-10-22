@@ -143,6 +143,8 @@ export const isWarbondSku = (k: Pick<Sku, 'title'>) => /warbond/i.test(k.title);
 const USD_WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const USD_CENTS = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const usd = (cents: number) => `$${(cents % 100 ? USD_CENTS : USD_WHOLE).format(cents / 100)}`;
+/** `$40 (was $50)` when discounted, else the list price. */
+export const priceLabel = (discounted: number, price: number) => (discounted < price ? `${usd(discounted)} (was ${usd(price)})` : usd(price));
 
 const keys = new Map<string, string>();
 /** Normalize a ship name for matching hangar/buyback text against catalog names. Memoized: matching walks the whole catalog per name. */

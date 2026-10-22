@@ -5,6 +5,7 @@ updated: 2026-10-22
 ---
 # RSI+ docs
 - [[architecture]] · [architecture](architecture.md)
+- [[ui-components]] · [UI components and page conventions](ui-components.md)
 - [[changelog]] · [changelog](changelog.md)
 - [[release]] · [release and Web Store publishing](release.md)
 - [[ci]] · [CI and security checks](ci.md)
