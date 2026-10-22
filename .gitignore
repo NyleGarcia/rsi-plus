@@ -15,3 +15,6 @@ public/undo/
 *.pem
 .DS_Store
 coverage/
+
+# 1Password Environment `rsi-plus` mount (Web Store credentials, docs/release.md)
+.env.submit
