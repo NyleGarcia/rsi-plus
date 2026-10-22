@@ -220,6 +220,7 @@
           <SortTh key="msrp" bind:sort>MSRP</SortTh>
           <SortTh key="offer" bind:sort>On sale</SortTh>
           <SortTh key="saving" bind:sort firstDir="desc">Under MSRP</SortTh>
+          <Table.Head><span class="sr-only">Actions</span></Table.Head>
         </Table.Row>
       </Table.Header>
       <Table.Body>
@@ -271,19 +272,21 @@
                 {/if}
               </div>
             </Table.Cell>
-            <Table.Cell>
+            <Table.Cell class="whitespace-nowrap">
               {#if saving(s) > 0}
                 {@const o = lowestOffer(s)!}
-                <div><HintBadge variant="success-soft" hint={`${usd(s.msrp)} MSRP, cheapest offer now ${o.title} at ${usd(o.price)}`}>−{usd(saving(s))}</HintBadge></div>
-              {/if}
+                <HintBadge variant="success-soft" hint={`${usd(s.msrp)} MSRP, cheapest offer now ${o.title} at ${usd(o.price)}`}>−{usd(saving(s))}</HintBadge>
+              {:else}<span class="text-muted-foreground">—</span>{/if}
+            </Table.Cell>
+            <Table.Cell class="text-right">
               <Button variant="outline" size="xs" href={`#ccu?to=${s.id}${onSale(s) ? '' : '&ahead=1'}`}>Plan CCU</Button>
             </Table.Cell>
           </Table.Row>
         {/each}
         {#if budget < shown.length}
-          <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+          <Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
         {:else if !shown.length}
-          <Empty colspan={5}>{loading ? 'Loading…' : cat ? 'Nothing matches.' : 'No catalog yet — Refresh prices reads it.'}</Empty>
+          <Empty colspan={6}>{loading ? 'Loading…' : cat ? 'Nothing matches.' : 'No catalog yet — Refresh prices reads it.'}</Empty>
         {/if}
       </Table.Body>
     </Table.Root>
