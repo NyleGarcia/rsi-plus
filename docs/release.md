@@ -12,7 +12,7 @@ updated: 2026-10-22
 4. The `publish` job then submits the Chrome zip to the Chrome Web Store (`npx wxt submit --chrome-api-version v2` — API v1.1 was switched off on 2026-10-15, v2 addresses the item by publisher id, [publish-browser-extension](https://github.com/aklinker1/publish-browser-extension)) — Google's review still applies; the listing updates when it passes. Without the secrets below the job only warns. **Only mainline releases go to the Web Store** — dev prereleases are GitHub-only.
 
 ## One-time setup (Chrome Web Store API v2)
-API v2 (v1.1 was switched off on 2026-10-15) authenticates as a **Google Cloud service account** that the developer dashboard trusts, and addresses the item by **publisher id** (dashboard → Account) and item id (`jpdcafgdkkhgffohcddpebmippacbide`). Done 2026-10-22 as below; rerun the script to repair.
+API v2 (v1.1 was switched off on 2026-10-15) authenticates as a **Google Cloud service account** that the developer dashboard trusts, and addresses the item by **publisher id** (dashboard → Account) and item id (`jpdcafgdkkhgffohcddpebmippacbide`). Done 2026-10-22 as below (service account listed in the dashboard, `fetchStatus` 200 and `wxt submit --dry-run` green the same day); rerun the script to repair.
 
 1. `gcloud auth login` (local SDK: `~/google-cloud-sdk/bin`; a fresh account must accept the Cloud terms once at https://console.cloud.google.com/ — the CLI says `type: TOS`).
 2. `bash scripts/webstore-setup.sh` — project `rsi-plus-publish` (number 109799804481), APIs, service account `webstore-publisher@rsi-plus-publish.iam.gserviceaccount.com`, Workload Identity Federation pool `github` / provider `rsi-plus` restricted to this repo and bound to the service account, impersonation for the logged-in user.
