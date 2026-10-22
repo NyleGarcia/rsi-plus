@@ -16,8 +16,7 @@
   import SettingsPanel from '@/components/SettingsPanel.svelte';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
   import NavItem from './NavItem.svelte';
-  import SidebarSupport from './SidebarSupport.svelte';
-  import FanNotice from '@/components/FanNotice.svelte';
+  import HubFooter from './HubFooter.svelte';
   import SidebarFan from './SidebarFan.svelte';
   import * as Sidebar from '@/components/ui/sidebar';
   import * as Tooltip from '@/components/ui/tooltip';
@@ -140,7 +139,6 @@
         </nav>
       </Sidebar.Content>
       <Sidebar.Footer>
-        <SidebarSupport />
         <SidebarFan />
       </Sidebar.Footer>
       <Sidebar.Rail />
@@ -210,10 +208,9 @@
         {:else}
           <MutesPanel />
         {/if}
-        <!-- Fankit: the notice goes in an always-visible nav area and/or the home page. The sidebar footer covers every
-             page on desktop; on mobile the sidebar is a sheet, so the footer stays under every page there. -->
-        <FanNotice variant="footer" class={tab === 'feed' ? 'mt-10' : 'mt-10 sm:hidden'} />
       </main>
+      <!-- Fankit: notice in an always-visible nav area (sidebar, short) and/or the home page — the footer carries the full one on every page. -->
+      <HubFooter />
     </Sidebar.Inset>
   </Sidebar.Provider>
 </Tooltip.Provider>
