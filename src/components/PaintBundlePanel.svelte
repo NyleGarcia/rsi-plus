@@ -25,6 +25,7 @@
   import Tag from './Tag.svelte';
   import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
+  import LazyTip from './LazyTip.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
   import Chip from './Chip.svelte';
@@ -814,14 +815,11 @@
                 {@const why = autoDrop.get(c.pledge.id)?.get(l.store.id)}
                 <div class="flex flex-wrap items-center gap-1.5">
                   {#if full.kind === 'single' && isPack}
-                    <Tooltip.Root>
-                      <Tooltip.Trigger>
-                        {#snippet child({ props })}
-                          <Checkbox {...props} checked={want} onCheckedChange={(v) => dropLine(c.pledge.id, l.store.id, v)} aria-label={`Buy back ${l.title}`} />
-                        {/snippet}
-                      </Tooltip.Trigger>
-                      <Tooltip.Content>{why ? `Melted, not bought back: ${REDUNDANT_LABEL[why]}. Tick to buy it back anyway.` : 'Untick to melt this paint without buying it back'}</Tooltip.Content>
-                    </Tooltip.Root>
+                    <LazyTip tip={why ? `Melted, not bought back: ${REDUNDANT_LABEL[why]}. Tick to buy it back anyway.` : 'Untick to melt this paint without buying it back'}>
+                      {#snippet trigger({ props })}
+                        <Checkbox {...props} checked={want} onCheckedChange={(v) => dropLine(c.pledge.id, l.store.id, v)} aria-label={`Buy back ${l.title}`} />
+                      {/snippet}
+                    </LazyTip>
                   {/if}
                   {@render pic(l.store.thumb, l.title)}
                   <strong class={cn(!want && 'text-muted-foreground line-through')}>{l.title}</strong>
@@ -849,22 +847,12 @@
                 {@const pack = c.pack}
                 {@const single = c.single}
                 <ToggleGroup.Root type="single" variant="outline" size="sm" class="mt-1" aria-label="Rebuy as" bind:value={() => o.kind, (v) => v && setOption(c.pledge.id, v as RebuyOption['kind'])}>
-                  <Tooltip.Root>
-                    <Tooltip.Trigger>
-                      {#snippet child({ props })}
-                        <ToggleGroup.Item {...props} value="pack" class="h-6 px-2 text-[11px] font-semibold">pack {usd(pack.cost)}</ToggleGroup.Item>
-                      {/snippet}
-                    </Tooltip.Trigger>
-                    <Tooltip.Content>{pack.tiered ? `One listing, counts as ${pack.count} toward the tier` : "One listing at the pack's own price, outside the tier"}</Tooltip.Content>
-                  </Tooltip.Root>
-                  <Tooltip.Root>
-                    <Tooltip.Trigger>
-                      {#snippet child({ props })}
-                        <ToggleGroup.Item {...props} value="single" class="h-6 px-2 text-[11px] font-semibold">{single.count} singles {usd(single.cost)}</ToggleGroup.Item>
-                      {/snippet}
-                    </Tooltip.Trigger>
-                    <Tooltip.Content>One listing per paint, each counts toward the tier</Tooltip.Content>
-                  </Tooltip.Root>
+                  <LazyTip tip={pack.tiered ? `One listing, counts as ${pack.count} toward the tier` : "One listing at the pack's own price, outside the tier"}>
+                    {#snippet trigger({ props })}<ToggleGroup.Item {...props} value="pack" class="h-6 px-2 text-[11px] font-semibold">pack {usd(pack.cost)}</ToggleGroup.Item>{/snippet}
+                  </LazyTip>
+                  <LazyTip tip="One listing per paint, each counts toward the tier">
+                    {#snippet trigger({ props })}<ToggleGroup.Item {...props} value="single" class="h-6 px-2 text-[11px] font-semibold">{single.count} singles {usd(single.cost)}</ToggleGroup.Item>{/snippet}
+                  </LazyTip>
                 </ToggleGroup.Root>
               {:else if isPack}
                 <Badge variant="secondary">{o.lines.length}{o.lines.length !== full.lines.length ? ` of ${full.lines.length}` : ''} paints back</Badge>
@@ -872,15 +860,13 @@
                           </div>
             </Table.Cell>
             <Table.Cell class="text-muted-foreground max-w-[160px] align-top text-xs whitespace-normal">
-              <Tooltip.Root>
-                <Tooltip.Trigger class="cursor-help text-left">{r.ships.slice(0, 3).join(', ')}{r.ships.length > 3 ? ` +${r.ships.length - 3}` : ''}{#if !r.ships.length}—{/if}</Tooltip.Trigger>
-                <Tooltip.Content class="max-w-80 whitespace-pre-line">{explain(r.ships)}</Tooltip.Content>
-              </Tooltip.Root>
+              <LazyTip tip={explain(r.ships)}>
+                {#snippet trigger({ props })}<button type="button" {...props} class="cursor-help text-left">{r.ships.slice(0, 3).join(', ')}{r.ships.length > 3 ? ` +${r.ships.length - 3}` : ''}{#if !r.ships.length}—{/if}</button>{/snippet}
+              </LazyTip>
               {#if variantsOwned(r.ships).length}
-                <Tooltip.Root>
-                  <Tooltip.Trigger class="block cursor-help text-left">fits your {variantsOwned(r.ships).slice(0, 2).join(', ')}</Tooltip.Trigger>
-                  <Tooltip.Content>Named for another hull of the line — variants share paints</Tooltip.Content>
-                </Tooltip.Root>
+                <LazyTip tip="Named for another hull of the line — variants share paints">
+                  {#snippet trigger({ props })}<button type="button" {...props} class="block cursor-help text-left">fits your {variantsOwned(r.ships).slice(0, 2).join(', ')}</button>{/snippet}
+                </LazyTip>
               {:else if r.ships.length && !r.ships.some((n) => ownedLines.has(paintLine(n)))}<div class="text-destructive">no ship of this line</div>{/if}
             </Table.Cell>
             <Table.Cell class="max-w-[220px] align-top text-xs whitespace-normal">
@@ -957,10 +943,9 @@
               {/each}
             </Table.Cell>
             <Table.Cell class="text-muted-foreground text-xs">
-              <Tooltip.Root>
-                <Tooltip.Trigger class="cursor-help text-left">{MELT_ONLY_LABEL[m.why]}</Tooltip.Trigger>
-                <Tooltip.Content class="max-w-80 whitespace-pre-line">{explain([...new Set(m.titles.flatMap((t) => fitsByKey.get(itemKey(t)) ?? []))])}</Tooltip.Content>
-              </Tooltip.Root>
+              <LazyTip tip={explain([...new Set(m.titles.flatMap((t) => fitsByKey.get(itemKey(t)) ?? []))])}>
+                {#snippet trigger({ props })}<button type="button" {...props} class="cursor-help text-left">{MELT_ONLY_LABEL[m.why]}</button>{/snippet}
+              </LazyTip>
             </Table.Cell>
             <Table.Cell class="text-xs">
               <div class="text-muted-foreground">{m.pledge.name}</div>

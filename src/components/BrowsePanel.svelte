@@ -36,6 +36,7 @@
   import Segmented from './Segmented.svelte';
   import Tag from './Tag.svelte';
   import TipButton from './TipButton.svelte';
+  import LazyTip from './LazyTip.svelte';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
@@ -435,31 +436,30 @@
                     {v.total} items
                   </Button>
                   {#if own}
-                    <Tooltip.Root>
-                      <Tooltip.Trigger class={cn('flex cursor-default items-center gap-1 text-left text-[11px] leading-4', own.have ? 'text-success' : 'text-muted-foreground')}>
-                        {#if own.have}<Check class="size-3 shrink-0" aria-hidden="true" />{/if}
-                        {own.have === own.of ? `all ${own.of} in your hangar` : `${own.have} of ${own.of} in your hangar`}
-                      </Tooltip.Trigger>
-                      <Tooltip.Content class="max-w-80">{`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside); ${own.have} of those are already in your hangar`}</Tooltip.Content>
-                    </Tooltip.Root>
+                    <LazyTip tip={`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside); ${own.have} of those are already in your hangar`}>
+                      {#snippet trigger({ props })}
+                        <button type="button" {...props} class={cn('flex cursor-default items-center gap-1 text-left text-[11px] leading-4', own.have ? 'text-success' : 'text-muted-foreground')}>
+                          {#if own.have}<Check class="size-3 shrink-0" aria-hidden="true" />{/if}
+                          {own.have === own.of ? `all ${own.of} in your hangar` : `${own.have} of ${own.of} in your hangar`}
+                        </button>
+                      {/snippet}
+                    </LazyTip>
                   {/if}
                   {#if !bundle}
                     <div class="text-muted-foreground text-[11px]">{v.parts.filter((p) => p.extra).map((p) => p.name).join(' · ')}</div>
                   {:else if v.priced}
                     {@const line = valueLine(v)}
-                    <Tooltip.Root>
-                      <Tooltip.Trigger class={cn('block cursor-default text-left text-[11px] leading-4', v.savings > 0 ? 'text-success' : v.savings < 0 ? 'text-warning' : 'text-muted-foreground')}>{line}</Tooltip.Trigger>
-                      <Tooltip.Content class="max-w-80">{`${usd(v.separate)} bought apart (${v.priced} of ${v.priceable} pieces the store sells)`}</Tooltip.Content>
-                    </Tooltip.Root>
+                    <LazyTip tip={`${usd(v.separate)} bought apart (${v.priced} of ${v.priceable} pieces the store sells)`}>
+                      {#snippet trigger({ props })}<button type="button" {...props} class={cn('block cursor-default text-left text-[11px] leading-4', v.savings > 0 ? 'text-success' : v.savings < 0 ? 'text-warning' : 'text-muted-foreground')}>{line}</button>{/snippet}
+                    </LazyTip>
                     <div class="text-muted-foreground text-[11px] leading-4">{usd(v.separate)} apart{#if v.priced < v.priceable}{` · ${v.priced}/${v.priceable} priced`}{/if}</div>
                   {:else}
                     <div class="text-muted-foreground text-[11px]">not sold apart</div>
                   {/if}
                 {:else if it.contents?.length === 1 && paintKey(it.contents[0]!.name) !== paintKey(it.name)}
-                  <Tooltip.Root>
-                    <Tooltip.Trigger class="text-muted-foreground cursor-default text-left text-[11px]">{it.contents[0]!.name}</Tooltip.Trigger>
-                    <Tooltip.Content>What the listing grants</Tooltip.Content>
-                  </Tooltip.Root>
+                  <LazyTip tip="What the listing grants">
+                    {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-default text-left text-[11px]">{it.contents?.[0]?.name}</button>{/snippet}
+                  </LazyTip>
                 {/if}
               </Table.Cell>
               <Table.Cell class="tabular-nums align-top">{usd(it.discounted)}{#if off}<div class="text-muted-foreground text-[11px] leading-4">list {usd(it.price)}</div>{/if}</Table.Cell>

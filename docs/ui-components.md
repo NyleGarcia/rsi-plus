@@ -9,7 +9,7 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 
 ## Rules
 - **Buttons**: always `Button` (variants `default | outline | secondary | ghost | destructive | link`, sizes `xs | sm | default | lg | icon-xs | icon-sm | icon`). No raw `<button>`. A link-looking action is `Button variant="link" size="xs" class="h-auto p-0"`. Icon-only buttons carry `aria-label`.
-- **Hints**: anything explanatory, multi-line or on a focusable control is a Tooltip — `TipButton` (Button + tip), `HintBadge` (Badge + tip, focusable), `Tooltip.Root` with the `child` snippet elsewhere. Native `title=` only on plain `<a>` links to say where they go. Never put a `title` on a Badge (it is a span: mouse-only).
+- **Hints**: anything explanatory, multi-line or on a focusable control is a Tooltip — `TipButton` (Button + tip), `HintBadge` (Badge + tip, focusable), `LazyTip` (any trigger: Checkbox, ToggleGroup item, a `<button type="button">` for text) elsewhere. All three mount the bits-ui Tooltip on the first hover / focus only: never put a bare `Tooltip.Root` inside an `{#each}` of rows — one per row cost a second per 500 rows. Native `title=` only on plain `<a>` links to say where they go. Never put a `title` on a Badge (it is a span: mouse-only).
 - **Badges**: tones are variants — `success | warning | info | muted` (outline-tinted) and `success-soft | warning-soft | destructive` (filled). No inline `border-warning/40 text-warning`.
 - **Store / hangar tags**: `Tag kind=…` — one wording and tooltip per kind; `size="xs"` on tiles. Kinds: `warbond standard insurance owned concierge subscribers oos ship sale limited new bestvalue bonus fits lowstock stage size discount gifted giftable meltable upgraded game` (RSI's ribbons come from `StoreItem.tags`, see `lib/store.ts` helpers).
 - **Errors**: `Alert variant="destructive"` (`warning` for caveats). Not a bare `<span class="text-destructive">`.
@@ -29,6 +29,7 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 |---|---|---|
 | `TipButton` | ButtonProps + `tip`, `side`, `align` | Button with a Tooltip |
 | `HintBadge` | Badge props + `hint`, `variant` | Badge with a Tooltip, keyboard-focusable |
+| `LazyTip` | `tip`, `side`, `trigger` snippet `({ props })` | Tooltip around anything; spread `props` on the trigger. Mounts on first hover / focus |
 | `Tag` | `kind`, `value` (insurance/sale), `count` (owned), `size`, `label`, `hint` | Warbond / LTI / owned / Concierge / … |
 | `CartButton` | `state` (ledger entry), `onadd`, `name`, `available`, `busy`, `qty`, `text` | + cart / adding… / in cart / error |
 | `OpenCartButton` | `count`, `always`, `size` | "Open RSI cart (n)" header button |

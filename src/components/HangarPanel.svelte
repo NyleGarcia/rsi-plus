@@ -20,6 +20,7 @@
   import LoadStatus from './LoadStatus.svelte';
   import LoadActions from './LoadActions.svelte';
   import TipButton from './TipButton.svelte';
+  import LazyTip from './LazyTip.svelte';
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
   import FilterChips from './FilterChips.svelte';
@@ -354,9 +355,10 @@
   /**
    * Rows (or ship groups) on screen: the first few paint with the click, the rest follow a chunk per frame — building a
    * 500-pledge table in one go blocked the page for half a second after picking Pledges in the sidebar. Starts over
-   * when the view switches (Pledges ↔ Melt calculator re-renders every row with other columns).
+   * when the view switches (Pledges ↔ Melt calculator re-renders every row with other columns; flat ↔ by ship swaps the
+   * whole tree). Rows are keyed by pledge id so Group: identical / none keeps the DOM of every row that stays.
    */
-  let budget = $derived.by(() => (void pane, 40));
+  let budget = $derived.by(() => (void pane, void byShip, 40));
   $effect(() => {
     if (budget >= Math.max(visible.length, groups.length)) return;
     const t = setTimeout(() => (budget += 60), 16);
@@ -628,24 +630,22 @@
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
                 <Table.Head>
-                  <Tooltip.Root>
-                    <Tooltip.Trigger class="cursor-help">Labels</Tooltip.Trigger>
-                    <Tooltip.Content>Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners</Tooltip.Content>
-                  </Tooltip.Root>
+                  <LazyTip tip="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners">
+                    {#snippet trigger({ props })}<button type="button" {...props} class="cursor-help">Labels</button>{/snippet}
+                  </LazyTip>
                 </Table.Head>
                 {#if melting}
                   <Table.Head>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger class="cursor-help">Would lose</Tooltip.Trigger>
-                      <Tooltip.Content>Items that disappear for good if you melt one more of these on top of what's picked</Tooltip.Content>
-                    </Tooltip.Root>
+                    <LazyTip tip="Items that disappear for good if you melt one more of these on top of what's picked">
+                      {#snippet trigger({ props })}<button type="button" {...props} class="cursor-help">Would lose</button>{/snippet}
+                    </LazyTip>
                   </Table.Head>
                 {/if}
                 <Table.Head>Hangar entries</Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {#each rows as s (s.key)}
+              {#each rows as s (s.rep.id)}
                 {@const p = s.rep}
                 {@const n = s.entries.length}
                 {@const nPicked = pickedIn(s)}
@@ -654,21 +654,18 @@
                 <Table.Row class="align-top" data-state={melting && nPicked > 0 ? 'selected' : undefined}>
                   {#if melting}
                     <Table.Cell>
-                      <Tooltip.Root>
-                        <Tooltip.Trigger>
-                          {#snippet child({ props })}
-                            <Checkbox
-                              {...props}
-                              checked={nMelt > 0 && nPicked === nMelt}
-                              indeterminate={nPicked > 0 && nPicked < nMelt}
-                              disabled={!nMelt}
-                              onCheckedChange={() => toggleStack(s)}
-                              aria-label={`Pick ${p.name}`}
-                            />
-                          {/snippet}
-                        </Tooltip.Trigger>
-                        <Tooltip.Content>{nMelt ? (n > 1 ? `Pick all ${nMelt} meltable copies` : 'Pick to melt') : p.meltable ? 'No melt value ($0)' : 'Not meltable'}</Tooltip.Content>
-                      </Tooltip.Root>
+                      <LazyTip tip={nMelt ? (n > 1 ? `Pick all ${nMelt} meltable copies` : 'Pick to melt') : p.meltable ? 'No melt value ($0)' : 'Not meltable'}>
+                        {#snippet trigger({ props })}
+                          <Checkbox
+                            {...props}
+                            checked={nMelt > 0 && nPicked === nMelt}
+                            indeterminate={nPicked > 0 && nPicked < nMelt}
+                            disabled={!nMelt}
+                            onCheckedChange={() => toggleStack(s)}
+                            aria-label={`Pick ${p.name}`}
+                          />
+                        {/snippet}
+                      </LazyTip>
                     </Table.Cell>
                   {/if}
                   <Table.Cell class="min-w-[200px] whitespace-normal">
@@ -679,10 +676,9 @@
                       {#if up}
                         <div class="text-xs">
                           <ArrowUpRight class="text-primary inline size-3 align-[-2px]" aria-hidden="true" /> <span class="text-muted-foreground">{up.from} →</span> <strong>{up.to}</strong>
-                          <Tooltip.Root>
-                            <Tooltip.Trigger class="text-muted-foreground cursor-help">(upgraded)</Tooltip.Trigger>
-                            <Tooltip.Content>A CCU was applied: the pledge keeps its original name, the hull inside is the new one</Tooltip.Content>
-                          </Tooltip.Root>
+                          <LazyTip tip="A CCU was applied: the pledge keeps its original name, the hull inside is the new one">
+                            {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help">(upgraded)</button>{/snippet}
+                          </LazyTip>
                         </div>
                       {/if}
                     {/if}
@@ -738,12 +734,9 @@
                       {@const on = melting && picked.has(e.id)}
                       <div class="flex items-center gap-1.5 py-px whitespace-nowrap">
                         {#if melting && n > 1}
-                          <Tooltip.Root>
-                            <Tooltip.Trigger>
-                              {#snippet child({ props })}<Checkbox {...props} checked={on} disabled={!canMelt(e)} onCheckedChange={() => togglePick(e.id)} aria-label={`Pick ${e.name} #${e.id}`} />{/snippet}
-                            </Tooltip.Trigger>
-                            <Tooltip.Content>{canMelt(e) ? 'Pick this copy' : e.meltable ? 'No melt value ($0)' : 'Not meltable'}</Tooltip.Content>
-                          </Tooltip.Root>
+                          <LazyTip tip={canMelt(e) ? 'Pick this copy' : e.meltable ? 'No melt value ($0)' : 'Not meltable'}>
+                            {#snippet trigger({ props })}<Checkbox {...props} checked={on} disabled={!canMelt(e)} onCheckedChange={() => togglePick(e.id)} aria-label={`Pick ${e.name} #${e.id}`} />{/snippet}
+                          </LazyTip>
                         {/if}
                         <a class={cn('text-primary no-underline hover:underline', on && 'font-bold')} href={hangarUrl(all, e.id)} target="_blank" rel="noopener" title="Open the hangar page scrolled to this pledge">#{e.id} {@render ext()}</a>
                         {#if canMelt(e)}<TipButton variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'melt')} target="_blank" rel="noopener" tip="Open RSI's melt dialog for this pledge (you confirm with your password there)">melt</TipButton>{/if}

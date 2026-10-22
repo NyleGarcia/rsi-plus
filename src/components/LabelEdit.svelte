@@ -37,6 +37,14 @@
   const set = (name: string, on: boolean) => onchange(setLabel(labels, ids, name, on));
   let text = $state('');
   let open = $state(false);
+  let armed = $state(false);
+  let tipOpen = $state(false);
+  /** Mount the Popover (+ its Tooltip); `tip` opens the tooltip straight away (the pointer is already over the button), `pop` the popover (a click). */
+  const arm = (tip: boolean, pop = false) => {
+    armed = true;
+    if (tip && !pop) tipOpen = true;
+    if (pop) open = true;
+  };
   /** Preset labels keep their colour; your own labels are plain outline. */
   const TONE: Record<string, BadgeVariant> = { keep: 'success', 'lti token': 'warning', 'ccu fodder': 'info', melt: 'destructive' };
 </script>
@@ -48,17 +56,23 @@
       <Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Remove label ${h.name}`} onclick={() => set(h.name, false)}><X /></Button>
     </Badge>
   {/each}
+  {#if !armed}
+    <!-- Bare button until the first hover / focus / click: a Popover + Tooltip per table row cost a second to mount. -->
+    <Button variant="ghost" size="xs" class="text-muted-foreground h-5 px-1.5" aria-label="Edit labels" onpointerenter={() => arm(true)} onfocus={() => arm(true)} onclick={() => arm(true, true)}><Tag class="size-3" /></Button>
+  {:else}
   <Popover.Root bind:open>
     <Popover.Trigger>
       {#snippet child({ props })}
-        <Tooltip.Root>
-          <Tooltip.Trigger {...props}>
-            {#snippet child({ props: tip })}
-              <Button {...tip} variant="ghost" size="xs" class="text-muted-foreground h-5 px-1.5" aria-label="Edit labels"><Tag class="size-3" /></Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>{ids.length > 1 ? `Label all ${ids.length} copies (unstack to label one)` : 'Add your own label'}</Tooltip.Content>
-        </Tooltip.Root>
+        <span class="inline-flex" role="presentation" onpointerleave={() => (tipOpen = false)}>
+          <Tooltip.Root bind:open={tipOpen}>
+            <Tooltip.Trigger {...props}>
+              {#snippet child({ props: tip })}
+                <Button {...tip} variant="ghost" size="xs" class="text-muted-foreground h-5 px-1.5" aria-label="Edit labels"><Tag class="size-3" /></Button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content>{ids.length > 1 ? `Label all ${ids.length} copies (unstack to label one)` : 'Add your own label'}</Tooltip.Content>
+          </Tooltip.Root>
+        </span>
       {/snippet}
     </Popover.Trigger>
     <Popover.Content align="start" class="w-72 gap-1.5 p-2">
@@ -74,4 +88,5 @@
       </form>
     </Popover.Content>
   </Popover.Root>
+  {/if}
 </div>
