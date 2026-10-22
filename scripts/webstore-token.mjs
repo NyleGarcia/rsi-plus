@@ -4,7 +4,10 @@
  * GitHub Actions secrets, without the values ever being printed (docs/release.md). The refresh token is also put on the
  * clipboard so it can be added to the 1Password Environment `rsi-plus` (mounted at .env.submit) for local use.
  *
- *   node scripts/webstore-token.mjs --extension-id <id> [--repo owner/name] [--env chrome-web-store]
+ *   node scripts/webstore-token.mjs --extension-id <id> --publisher-id <id> [--repo owner/name] [--env chrome-web-store]
+ *
+ * The publisher id (Web Store developer dashboard → Account → Publisher ID) is what API v2 addresses items by; v1.1
+ * was switched off on 2026-10-15.
  *
  * Takes the OAuth client id and secret (Desktop app, from scripts/webstore-setup.sh) from `.env.submit`, the environment
  * or a prompt, opens Google's consent page
@@ -22,6 +25,7 @@ const arg = (name, def = '') => {
   return i >= 0 ? (process.argv[i + 1] ?? def) : def;
 };
 const extensionId = arg('extension-id');
+const publisherIdArg = arg('publisher-id');
 const repo = arg('repo');
 const envName = arg('env', 'chrome-web-store');
 if (!/^[a-p]{32}$/.test(extensionId)) {
@@ -43,7 +47,12 @@ const rl = createInterface({ input: stdin, output: stdout });
 const ask = async (q) => (await rl.question(q)).trim();
 const clientId = process.env.CHROME_CLIENT_ID || dotenv.CHROME_CLIENT_ID || (await ask('OAuth client ID: '));
 const clientSecret = process.env.CHROME_CLIENT_SECRET || dotenv.CHROME_CLIENT_SECRET || (await ask('OAuth client secret: '));
+const publisherId = publisherIdArg || process.env.CHROME_PUBLISHER_ID || dotenv.CHROME_PUBLISHER_ID || (await ask('Publisher ID (dashboard → Account): '));
 rl.close();
+if (!publisherId) {
+  console.error('publisher id is required (API v2)');
+  process.exit(1);
+}
 if (!clientId || !clientSecret) {
   console.error('client id and secret are required');
   process.exit(1);
@@ -80,24 +89,25 @@ if (!token.refresh_token) {
   process.exit(1);
 }
 
-// Prove the token works against the item before storing anything.
-const check = await fetch(`https://www.googleapis.com/chromewebstore/v1.1/items/${extensionId}?projection=DRAFT`, {
-  headers: { authorization: `Bearer ${token.access_token}`, 'x-goog-api-version': '2' },
+// Prove the token works against the item (API v2) before storing anything.
+const check = await fetch(`https://chromewebstore.googleapis.com/v2/publishers/${publisherId}/items/${extensionId}:fetchStatus`, {
+  headers: { authorization: `Bearer ${token.access_token}` },
 });
 const item = await check.json().catch(() => ({}));
 if (!check.ok) {
-  console.error(`Web Store API refused (${check.status}): ${item.error?.message ?? 'is the API enabled on the project, and is this the account that owns the item?'}`);
+  console.error(`Web Store API v2 refused (${check.status}): ${item.error?.message ?? 'is the API enabled on the project, is the publisher id right, and is this the account that owns the item?'}`);
   process.exit(1);
 }
-console.log(`Web Store item ${extensionId}: ${item.uploadState ?? 'ok'}${item.crxVersion ? ` · draft ${item.crxVersion}` : ''}`);
+console.log(`Web Store item ${extensionId}: ${JSON.stringify(item).slice(0, 300)}`);
 
 const setSecret = (name, value) =>
   execFileSync('gh', ['secret', 'set', name, '--env', envName, ...(repo ? ['--repo', repo] : [])], { input: value, stdio: ['pipe', 'inherit', 'inherit'] });
 setSecret('CHROME_EXTENSION_ID', extensionId);
+setSecret('CHROME_PUBLISHER_ID', publisherId);
 setSecret('CHROME_CLIENT_ID', clientId);
 setSecret('CHROME_CLIENT_SECRET', clientSecret);
 setSecret('CHROME_REFRESH_TOKEN', token.refresh_token);
-console.log(`\nStored CHROME_EXTENSION_ID, CHROME_CLIENT_ID, CHROME_CLIENT_SECRET, CHROME_REFRESH_TOKEN in the "${envName}" GitHub environment. The next release will submit itself.`);
+console.log(`\nStored CHROME_EXTENSION_ID, CHROME_PUBLISHER_ID, CHROME_CLIENT_ID, CHROME_CLIENT_SECRET, CHROME_REFRESH_TOKEN in the "${envName}" GitHub environment. The next release will submit itself.`);
 
 // For local `wxt submit --dry-run`: hand the token to the clipboard for the 1Password Environment, never to the terminal.
 const copied = ['wl-copy', 'xclip -selection clipboard', 'pbcopy'].some((cmd) => {

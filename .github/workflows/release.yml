@@ -64,9 +64,11 @@ jobs:
           CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
           CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
           CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
         run: |
-          if [ -z "$CHROME_REFRESH_TOKEN" ]; then
+          if [ -z "$CHROME_REFRESH_TOKEN" ] || [ -z "$CHROME_PUBLISHER_ID" ]; then
             echo "::warning::CHROME_* secrets not set — zip attached to the release, nothing submitted to the Web Store (see docs/release.md)"
             exit 0
           fi
-          npx wxt submit --chrome-zip .output/*-chrome.zip
+          # API v1.1 was switched off 2026-10-15; v2 needs the publisher id.
+          npx wxt submit --chrome-api-version v2 --chrome-zip .output/*-chrome.zip
