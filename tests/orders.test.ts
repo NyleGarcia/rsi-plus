@@ -91,3 +91,8 @@ describe("Chairman's Club from the order history", () => {
     expect(clubFromSpend(30_000)).toEqual({ level: 'Legatus Navium', next: null, toGo: null, pct: null });
   });
 });
+
+import { warbondInOrders } from '@/lib/orders';
+it('sums warbond lines', () => {
+  expect(warbondInOrders(parseOrders(doc()))).toEqual({ usd: 200, lines: 1 });
+});

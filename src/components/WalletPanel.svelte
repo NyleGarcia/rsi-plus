@@ -3,7 +3,7 @@
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
-  import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, type Order, type SubPayment } from '@/lib/orders';
+  import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, warbondInOrders, type Order, type SubPayment } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
   import { AreaChart, BarChart, PieChart } from 'layerchart';
@@ -80,6 +80,7 @@
   const oPrev12 = $derived(oLast24.slice(0, 12).reduce((a, b) => a + b, 0));
   const oThis12 = $derived(oLast24.slice(12).reduce((a, b) => a + b, 0));
   const oFirst = $derived(orderList.reduce((t, o) => Math.min(t, o.at), Infinity));
+  const oWarbond = $derived(orderList.length ? warbondInOrders(orderList) : null);
   async function importOrders() {
     ordersBusy = true;
     ordersMsg = '';
@@ -486,10 +487,14 @@
   {:else if id === 'ledger'}
     {#snippet b()}
       <StatGrid layout="divided" class="sens">
-        <Stat value={money(ledger.newMoney)} label="New money for sure" sub={`${ledger.newMoneyCount} warbond pledge${ledger.newMoneyCount === 1 ? '' : 's'}`} hint="Warbond prices can't be paid with store credit" valueTone="ok" />
+        {#if oWarbond}
+          <Stat value={money(oWarbond.usd)} label="Warbond (new money)" sub={`${oWarbond.lines} warbond line${oWarbond.lines === 1 ? '' : 's'} in your orders`} hint="Warbond prices can't be paid with store credit. Counted from the order lines: the hangar drops 'Warbond' from most pledge names, so its own count runs low." valueTone="ok" />
+        {:else}
+          <Stat value={money(ledger.newMoney)} label="New money for sure" sub={`${ledger.newMoneyCount} warbond pledge${ledger.newMoneyCount === 1 ? '' : 's'} by name`} hint="Warbond prices can't be paid with store credit. Only pledges still named 'Warbond' count here — import the order history for the real figure." valueTone="ok" />
+        {/if}
         <Stat value={money(ledger.either)} label="Cash or store credit" sub={`${ledger.eitherCount} standard pledge${ledger.eitherCount === 1 ? '' : 's'}`} hint="Standard pledges accept both; the hangar keeps no record of which you used" />
         <Stat value={money(ledger.melted)} label="Melted into credit" sub={`${ledger.meltedCount} in buyback${ledger.meltedUnknown ? ` · ${ledger.meltedUnknown} unpriced` : ''}`} hint="Buyback entries whose price was read (Buyback → Load contents & prices). Credit you got back, possibly spent again." />
-        <Stat value={`${ledger.gifted}`} label="Gifted / free" sub={`${ledger.gifted} gifts · ${ledger.free} flair`} hint="Pledges with no melt value: received as gifts, referral rewards, event flair" />
+        <Stat value={`${ledger.gifted + ledger.free}`} label="$0 pledges" sub={`${ledger.gifted} gifted (ships, CCUs, paints) · ${ledger.free} flair`} hint="No melt value: received as gifts or referral rewards (a gifted CCU melts for $0), plus event flair, hangar decor and subscriber items" />
         {#if ledger.custom}<Stat value={money(ledger.custom)} label="Paid customization" hint="RSI's configuration value on top of the pledge — cash" />{/if}
         {#if orderSums}
           <Stat value={money(orderSums.cash)} label="Cash paid" context={`${orderSums.count} orders · ${money(orderSums.credits)} paid with store credit`} hint="From the order history: every order's Total is what was charged to you" tone="accent" />

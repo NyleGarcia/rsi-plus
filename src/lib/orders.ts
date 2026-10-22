@@ -337,3 +337,13 @@ export function clubSpend(orders: Order[], subs: SubPayment[]): ClubSpend {
   const paid = subs.filter((x) => /paid/i.test(x.status)).reduce((n, x) => n + x.amount, 0);
   return { orders: r2(t.cash), subs: r2(paid), refunds: r2(t.refunds), total: r2(t.cash - t.refunds + paid) };
 }
+
+/** Warbond lines across the orders: the only sure "new money" — the hangar drops "Warbond" from most pledge names. */
+export function warbondInOrders(orders: Order[]): { usd: number; lines: number } {
+  let usd = 0, lines = 0;
+  for (const o of orders) {
+    if (!counted(o)) continue;
+    for (const l of o.lines) if (/\b(warbond|war bond)\b/i.test(l.title)) (usd += l.total), lines++;
+  }
+  return { usd: r2(usd), lines };
+}
