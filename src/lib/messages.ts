@@ -19,7 +19,7 @@ export type BgRequest =
   | { type: 'sound:ding' };
 
 /** Hub pages (`hub.html#<tab>`). One sidebar entry each; `ships` is a legacy alias the hub redirects (see Hub.svelte). */
-export type HubTab = 'feed' | 'watching' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'paint-rebuy' | 'settings' | 'ships';
+export type HubTab = 'feed' | 'watching' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships';
 
 export interface BulkResult {
   done: string[];

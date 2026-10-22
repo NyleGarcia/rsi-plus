@@ -1,9 +1,12 @@
+<script lang="ts" module>
+  /** The one filter-chip look (FilterChips, FacetBar). */
+  export const CHIP = 'h-6 rounded-full px-2.5 text-xs data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary';
+</script>
+
 <script lang="ts" generics="V extends string">
   /** Filter chips (pledge types, item categories): a rounded ToggleGroup with one look; `multiple` binds a Set. */
   import * as ToggleGroup from '@/components/ui/toggle-group';
   import { cn } from '@/lib/utils';
-
-  export const CHIP = 'h-6 rounded-full px-2.5 text-xs data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary';
 
   let {
     options,

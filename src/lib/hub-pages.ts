@@ -21,6 +21,7 @@ import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import Route from '@lucide/svelte/icons/route';
 import Paintbrush from '@lucide/svelte/icons/paintbrush';
 import Settings from '@lucide/svelte/icons/settings';
+import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 
 export interface HubPage {
   tab: Exclude<HubTab, 'ships'>;
@@ -42,32 +43,38 @@ export const HUB_GROUPS: HubGroup[] = [
   {
     label: 'Spectrum',
     items: [
-      { tab: 'feed', label: 'Feed', sub: 'What your watches found', icon: Rss, popup: true },
+      { tab: 'feed', label: 'Feed', sub: 'What your watches found', icon: Rss, popup: true, short: 'Feed' },
       { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
-      { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true },
+      { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true, short: 'Friends' },
       { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
     ],
   },
   {
     label: 'Hangar',
     items: [
-      { tab: 'hangar', label: 'Pledges', sub: 'Every pledge in your hangar', icon: Warehouse, popup: true },
-      { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator, popup: true, short: 'Melt' },
-      { tab: 'fleet', label: 'My ships', sub: 'Hulls, in-game ships, insurance, compare', icon: Ship, popup: true },
+      { tab: 'hangar', label: 'Pledges', sub: 'Every pledge, filters, exports', icon: Warehouse, popup: true, short: 'Pledges' },
+      { tab: 'fleet', label: 'Ships', sub: 'Hulls you own: insurance, size, stage, compare', icon: Ship, popup: true, short: 'Ships' },
+      { tab: 'ccus', label: 'CCUs', sub: 'Upgrades you hold, in the hangar and buyback', icon: ArrowUpRight, popup: true, short: 'CCUs' },
+      { tab: 'items', label: 'Items', sub: 'Gear, paints, flair in your pledges', icon: Package },
       { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
-      { tab: 'items', label: 'My items', sub: 'Everything else in your pledges', icon: Package },
       { tab: 'buyback', label: 'Buyback', sub: 'What you melted', icon: Undo2 },
-      { tab: 'wallet', label: 'Wallet', sub: "Credits, spend, Chairman's Club, funding", icon: Wallet, popup: true },
+      { tab: 'wallet', label: 'Wallet', sub: "Credits, spend, Chairman's Club, funding", icon: Wallet, popup: true, short: 'Wallet' },
     ],
   },
   {
     label: 'Store',
     items: [
-      { tab: 'notifications', label: 'Notifications', sub: 'Store changes: what was added and removed', icon: BellRing, popup: true, short: 'Notices' },
-      { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store, popup: true, short: 'Catalog' },
-      { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · Concierge · Subscribers', icon: LayoutGrid },
-      { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true, short: 'CCU' },
+      { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, size, stage', icon: Store, popup: true, short: 'Catalog' },
+      { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · limited time, new, special', icon: LayoutGrid },
+      { tab: 'notifications', label: 'Store changes', sub: 'What was added and removed', icon: BellRing, popup: true, short: 'Changes' },
+    ],
+  },
+  {
+    label: 'Plan',
+    items: [
+      { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true, short: 'Planner' },
       { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
+      { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
     ],
   },
 ];

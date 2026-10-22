@@ -30,6 +30,8 @@ export interface CatalogShip {
   /** USD cents; 0 = no price (concept not on sale). */
   msrp: number;
   flyable: string;
+  /** RSI's size class: Vehicle, Snub, Small, Medium, Large, Capital ('' on old saves). */
+  size?: string;
   link: string;
   thumb: string | null;
   /** Standalone ship SKUs on sale right now. */
@@ -96,7 +98,7 @@ export async function session() {
 export async function fetchCatalog(): Promise<Catalog> {
   const init = await gql<{ ships: any[] }>(
     'initShipUpgrade',
-    'query initShipUpgrade { ships { id name medias { productThumbMediumAndSmall } manufacturer { name } focus type flyableStatus msrp link skus { id title price available unlimitedStock showStock availableStock } } }',
+    'query initShipUpgrade { ships { id name medias { productThumbMediumAndSmall } manufacturer { name } focus type flyableStatus size msrp link skus { id title price available unlimitedStock showStock availableStock } } }',
   );
   const ships = init.ships.map(
     (s): CatalogShip => ({
@@ -106,6 +108,7 @@ export async function fetchCatalog(): Promise<Catalog> {
       focus: s.focus ?? '',
       msrp: s.msrp ?? 0,
       flyable: s.flyableStatus ?? '',
+      size: s.size ?? '',
       link: s.link ? new URL(s.link, SPECTRUM_ORIGIN).href : '',
       thumb: s.medias?.productThumbMediumAndSmall ?? null,
       standalone: (s.skus ?? []).map(sku),
@@ -144,6 +147,15 @@ const USD_WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const USD_CENTS = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const usd = (cents: number) => `$${(cents % 100 ? USD_CENTS : USD_WHOLE).format(cents / 100)}`;
 /** `$40 (was $50)` when discounted, else the list price. */
+/** RSI's ribbon tests, so pages never match the strings themselves. */
+export const isLimitedTime = (it: Pick<StoreItem, 'tags'>) => (it.tags ?? []).some((g) => /limited/i.test(g));
+export const isNewListing = (it: Pick<StoreItem, 'tags'>) => (it.tags ?? []).some((g) => /^new$/i.test(g));
+export const isBestValue = (it: Pick<StoreItem, 'tags'>) => (it.tags ?? []).some((g) => /best value/i.test(g));
+export const bonusOf = (it: Pick<StoreItem, 'tags'>): string | null => (it.tags ?? []).find((g) => /^bonus/i.test(g)) ?? null;
+export const fitsOf = (it: Pick<StoreItem, 'tags'>): string | null => (it.tags ?? []).map((g) => g.match(/^fits\s+(.+)$/i)?.[1] ?? null).find((x): x is string => !!x) ?? null;
+export const isLowStock = (it: Pick<StoreItem, 'stockLevel' | 'available'>) => it.available && !!it.stockLevel && it.stockLevel !== 'high';
+/** `limited` CCU SKU (not standard, not warbond) — RSI's time- or quantity-limited upgrades. */
+export const isLimitedSku = (k: Pick<Sku, 'title'>) => /limited/i.test(k.title);
 export const priceLabel = (discounted: number, price: number) => (discounted < price ? `${usd(discounted)} (was ${usd(price)})` : usd(price));
 
 const keys = new Map<string, string>();
@@ -319,17 +331,19 @@ type RawListing = {
   subtitle?: string | null;
   url: string;
   price: { amount: number; discounted: number | null };
-  stock: { available: boolean };
+  stock: { available: boolean; level?: string | null };
   media?: { thumbnail?: { storeSmall?: string } };
   isVip?: boolean;
   isWarbond?: boolean;
   isPackage?: boolean;
+  /** RSI's own ribbons: "Limited Time", "New", "Best Value", "Bonus Paints", "FITS STINGRAY" … */
+  tags?: { name: string }[] | null;
   /** What the SKU grants: `ShipGameItem` (a hull) or `BaseGameItem` (paint, armor, weapon, insurance, hangar, UEC …). */
   gameItems?: { __typename?: string; name: string }[] | null;
 };
 /** `gameItems` is what RSI's own *Details* modal (`DetailsItemModalQuery`) shows as a listing's contents — verified 2026-10-20. */
 const LISTING_QUERY =
-  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage gameItems { __typename name } } ... on TyProduct { isVip } } totalCount } } }';
+  'query GetBrowseListingQuery($query: SearchQuery) { store(browse: true) { listing: search(query: $query) { resources { id name subtitle url price { amount discounted } stock { available level } media { thumbnail { storeSmall } } ... on TySku { isVip isWarbond isPackage tags { name } gameItems { __typename name } } ... on TyProduct { isVip } } totalCount } } }';
 
 export type StoreCategory = 'paints' | 'packs' | 'gear' | 'addons' | 'ships' | 'packages' | 'subscribers';
 export const STORE_CATEGORIES: { id: StoreCategory; label: string; products: string[] }[] = [
@@ -354,6 +368,10 @@ export interface StoreItem extends StorePaint {
   /** Concierge-only listing. */
   vip: boolean;
   warbond: boolean;
+  /** RSI's ribbons on the listing, as written ("Limited Time", "New", "Best Value", "Bonus Paints", "FITS WOLF"). Absent on old saves. */
+  tags?: string[];
+  /** RSI's stock level ("high" normally; anything else = running low). Absent on old saves. */
+  stockLevel?: string;
   /** Everything the listing grants (`gameItems`); missing on copies saved before it was read. Two or more = a bundle. */
   contents?: StoreContent[];
 }
@@ -424,7 +442,7 @@ export async function fetchStoreItems(): Promise<StoreListing> {
       if (seen.has(it.id)) continue;
       seen.add(it.id);
       const contents: StoreContent[] = (r.gameItems ?? []).filter((g) => g?.name).map((g) => ({ name: g.name.replace(/\s+/g, ' ').trim(), ...(g.__typename === 'ShipGameItem' ? { ship: true as const } : {}) }));
-      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name), contents });
+      items.push({ ...it, category: c.id, subtitle: (r.subtitle ?? '').trim(), vip: !!r.isVip, warbond: !!r.isWarbond || /warbond/i.test(it.name), tags: (r.tags ?? []).map((g) => g.name.trim()).filter(Boolean), stockLevel: r.stock?.level ?? undefined, contents });
     }
   }
   return { at: Date.now(), items, subscriber: await fetchSubscriberBadge().catch(() => null) };

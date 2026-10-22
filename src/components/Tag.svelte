@@ -7,7 +7,7 @@
   import type { BadgeVariant } from '@/components/ui/badge';
   import { cn } from '@/lib/utils';
 
-  export type TagKind = 'warbond' | 'standard' | 'insurance' | 'owned' | 'concierge' | 'subscribers' | 'oos' | 'ship' | 'sale';
+  export type TagKind = 'warbond' | 'standard' | 'insurance' | 'owned' | 'concierge' | 'subscribers' | 'oos' | 'ship' | 'sale' | 'limited' | 'new' | 'bestvalue' | 'bonus' | 'fits' | 'lowstock' | 'stage' | 'size' | 'discount' | 'gifted' | 'giftable' | 'meltable' | 'upgraded' | 'game';
 
   let {
     kind,
@@ -53,6 +53,38 @@
         return { label: 'ship', hint: 'A hull — ships come with their own hangar entry', variant: 'outline' };
       case 'sale':
         return { label: value ?? 'on sale', hint: null, variant: 'success' };
+      case 'limited':
+        return { label: 'Limited time', hint: 'RSI marks this listing time-limited — it leaves the store when the window closes', variant: 'destructive' };
+      case 'new':
+        return { label: 'New', hint: 'RSI marks this as new in the store', variant: 'info' };
+      case 'bestvalue':
+        return { label: 'Best value', hint: 'RSI marks this the best value of its kind', variant: 'success' };
+      case 'bonus':
+        return { label: value ?? 'Bonus', hint: 'Comes with extras RSI calls out on the listing', variant: 'success' };
+      case 'fits':
+        return { label: `Fits ${value ?? ''}`, hint: 'RSI says which hull this fits', variant: 'muted' };
+      case 'lowstock':
+        return { label: 'Low stock', hint: 'RSI reports the stock running low', variant: 'warning' };
+      case 'stage':
+        return value && /concept/i.test(value)
+          ? { label: 'Concept', hint: 'Not flyable yet — RSI lists it as in concept', variant: 'muted' }
+          : /flyable|ready/i.test(value ?? '')
+            ? { label: 'Flight ready', hint: 'Flyable in the game today', variant: 'success' }
+            : { label: value || 'In production', hint: "RSI's production status", variant: 'muted' };
+      case 'size':
+        return { label: value ?? '', hint: "RSI's ship size class", variant: 'outline' };
+      case 'discount':
+        return { label: value ?? 'on sale', hint: 'Below list price right now', variant: 'success' };
+      case 'gifted':
+        return { label: 'Gifted', hint: 'No melt value — received as a gift (or a free item)', variant: 'muted' };
+      case 'giftable':
+        return { label: 'Giftable', hint: 'RSI lets you gift this pledge', variant: 'info' };
+      case 'meltable':
+        return { label: 'Meltable', hint: 'Can be melted for store credit', variant: 'muted' };
+      case 'upgraded':
+        return { label: 'Upgraded', hint: 'A CCU was applied to this pledge', variant: 'info' };
+      case 'game':
+        return { label: 'Game package', hint: 'Includes a Star Citizen / Squadron 42 game package', variant: 'info' };
     }
   });
 </script>

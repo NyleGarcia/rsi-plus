@@ -1,5 +1,6 @@
 <script lang="ts">
   import FeedPanel from '@/components/FeedPanel.svelte';
+  import CcusPanel from '@/components/CcusPanel.svelte';
   import WatchingPanel from '@/components/WatchingPanel.svelte';
   import FriendsPanel from '@/components/FriendsPanel.svelte';
   import MutesPanel from '@/components/MutesPanel.svelte';
@@ -200,6 +201,8 @@
           <BrowsePanel />
         {:else if tab === 'notifications'}
           <StoreLog />
+        {:else if tab === 'ccus'}
+          <CcusPanel />
         {:else if tab === 'ccu'}
           <CcuPanel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else if tab === 'settings'}

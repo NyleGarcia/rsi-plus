@@ -16,3 +16,4 @@ updated: 2026-10-22
 - [[plans/specs/ccu-long-term]] · [spec: CCU planner long-term goals](plans/specs/ccu-long-term.md)
 - [[plans/specs/ccu-fleet-plan]] · [spec: CCU fleet plan](plans/specs/ccu-fleet-plan.md)
 - [[plans/specs/shadcn-migration]] · [spec: shadcn-svelte + LayerChart migration](plans/specs/shadcn-migration.md)
+- [[plans/specs/filters-and-labels]] · [spec: facets, labels and the sidebar](plans/specs/filters-and-labels.md)
