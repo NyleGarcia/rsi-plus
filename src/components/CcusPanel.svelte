@@ -151,7 +151,7 @@
         />
       </FacetBar>
 
-      <StatGrid>
+      <StatGrid layout="divided">
         <Stat value={totals.count} label="CCUs" sub={group === 'upgrade' ? `${shown.length} distinct` : null} />
         <Stat value={ownUsd(totals.paid)} label="Paid" hint="Hangar melt values plus buyback prices that were read (gifted CCUs count $0)" />
         <Stat value={ownUsd(totals.gap)} label="MSRP gap" hint="What the same upgrades cost at today's MSRPs (target − source)" />

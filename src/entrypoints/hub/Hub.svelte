@@ -16,6 +16,7 @@
   import AccountSwitch from '@/components/AccountSwitch.svelte';
   import NavItem from './NavItem.svelte';
   import HubFooter from './HubFooter.svelte';
+  import ProductTour, { type TourStep } from '@/components/ProductTour.svelte';
   import * as Sidebar from '@/components/ui/sidebar';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Separator } from '@/components/ui/separator';
@@ -46,6 +47,13 @@
   }
   const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
 
+  const TOUR: TourStep[] = [
+    { icon: pageOf('hangar').icon, title: 'Load your hangar', description: 'Pledges reads every page of your RSI hangar into this browser — melt values, insurance, CCUs, items. Nothing leaves it.', href: '#hangar', linkLabel: 'Open Pledges' },
+    { icon: pageOf('fleet').icon, title: 'Ships, CCUs, paints', description: 'Your hulls with size and stage, every upgrade you hold with what it saves, and the paints you own per ship.', href: '#fleet', linkLabel: 'Open Ships' },
+    { icon: pageOf('store').icon, title: 'The store, filtered', description: 'Ship catalog and Browse show what RSI sells right now — warbond, limited time, new, Concierge — with your hangar matched against it.', href: '#store', linkLabel: 'Open Ship catalog' },
+    { icon: pageOf('ccu').icon, title: 'Plan upgrades', description: 'The CCU planner finds the cheapest chain to a ship using CCUs on sale and the ones you already own, then fills your RSI cart.', href: '#ccu', linkLabel: 'Open the planner' },
+    { icon: pageOf('feed').icon, title: 'Feed', description: 'Watched Spectrum threads, friends coming online, friend requests, store alerts and store changes land here. Settings has the switches.', href: '#feed', linkLabel: 'Open Feed' },
+  ];
   let tab = $state<Tab>(fromHash());
   /** Feed entry badges: unseen events, and store changes not yet dismissed ("+32 −5"). */
   let notices = $state({ add: 0, remove: 0 });
@@ -160,6 +168,7 @@
           </Tooltip.Trigger>
           <Tooltip.Content>{privacy.on ? 'Screenshare mode on — spend, credit and account names hidden. Click to show them.' : 'Screenshare mode: hide spend, store credit, buyback prices, spend charts and account names'}</Tooltip.Content>
         </Tooltip.Root>
+        <ProductTour steps={TOUR} />
         <Tooltip.Root>
           <Tooltip.Trigger>
             {#snippet child({ props })}

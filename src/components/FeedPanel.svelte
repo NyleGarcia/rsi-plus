@@ -12,13 +12,24 @@
   import * as Card from '@/components/ui/card';
   import * as ToggleGroup from '@/components/ui/toggle-group';
   import * as Tooltip from '@/components/ui/tooltip';
-  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
   import Empty from './Empty.svelte';
   import Segmented from './Segmented.svelte';
   import StoreLog from './StoreLog.svelte';
   import SwitchRow from './SwitchRow.svelte';
+  import Timeline, { type TimelineEvent } from './Timeline.svelte';
+  import NewItemsPill from './NewItemsPill.svelte';
+  import Rss from '@lucide/svelte/icons/rss';
+  import MessageSquare from '@lucide/svelte/icons/message-square';
+  import Users from '@lucide/svelte/icons/users';
+  import UserPlus from '@lucide/svelte/icons/user-plus';
+  import PartyPopper from '@lucide/svelte/icons/party-popper';
+  import Store from '@lucide/svelte/icons/store';
+  import Warehouse from '@lucide/svelte/icons/warehouse';
+  import Code from '@lucide/svelte/icons/code';
+  import AtSign from '@lucide/svelte/icons/at-sign';
+  import Hash from '@lucide/svelte/icons/hash';
   import { CHIP } from './FilterChips.svelte';
   import { hashParam } from '@/lib/deep-link.svelte';
 
@@ -84,6 +95,9 @@
   const present = $derived(EVENT_KINDS.filter((k) => (count.get(k.id) ?? 0) > 0 || kinds.includes(k.id)));
   const shown = $derived(kinds.length ? base.filter((e) => kinds.includes(e.kind)) : base);
   const unseen = $derived(feed.filter((e) => !e.seen).length);
+  const ICON: Record<EventKind, typeof Rss> = { replies: MessageSquare, thread: Rss, dev: Code, author: AtSign, keyword: Hash, friend: Users, request: UserPlus, party: PartyPopper, store: Store, hangar: Warehouse };
+  const TONE: Partial<Record<EventKind, TimelineEvent['tone']>> = { friend: 'success', request: 'success', party: 'warning', store: 'warning', replies: 'info', keyword: 'info', hangar: 'info', dev: 'warning' };
+  const rows = $derived<TimelineEvent[]>(shown.map((e) => ({ id: e.key, at: e.at, title: e.title, meta: e.body, href: e.url.startsWith('hub.html') ? e.url.replace(/^hub\.html/, '') : e.url, icon: ICON[e.kind], tone: TONE[e.kind] ?? 'neutral', muted: e.seen, kind: LABEL[e.kind] ?? e.kind, kindClass: KIND_TONE[e.kind] })));
 
   async function pollNow() {
     busy = true;
@@ -98,11 +112,10 @@
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
   };
   /** Same-day events share a date heading. */
-  const day = (ms: number) => new Date(ms).toDateString();
-  const isHub = (url: string) => url.startsWith('hub.html');
 </script>
 
 <div class="grid gap-4">
+  <NewItemsPill count={feed.length} label={(n) => `${n} new`} />
   <Segmented
     options={[
       { id: 'activity', label: `Activity${unseen ? ` · ${unseen} unseen` : ''}`, hint: 'Watches, friends, requests, party mode, store alerts, hangar changes' },
@@ -158,30 +171,7 @@
         {#if !shown.length}
           <Empty>{feed.length ? (unseenOnly ? 'Nothing unseen.' : 'Nothing of that kind.') : 'No events yet. Watch threads (☆ on Spectrum rows), channels, authors or friends — they show up here, with friend requests, store alerts and hangar changes.'}</Empty>
         {:else}
-          <ul class="grid">
-            {#each shown as e, i (e.key)}
-              {#if i === 0 || day(e.at) !== day(shown[i - 1]!.at)}
-                <li class="text-muted-foreground mt-2 px-1 pb-1 text-[11px] font-semibold tracking-wide uppercase first:mt-0">{day(e.at) === day(Date.now()) ? 'Today' : new Date(e.at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</li>
-              {/if}
-              <li
-                class={cn(
-                  "grid grid-cols-[92px_minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 border-b px-1 py-2.5 [grid-template-areas:'kind_title_when''kind_body_when'] last:border-0",
-                  e.seen && 'opacity-55',
-                )}
-              >
-                <Badge variant="outline" class={cn('[grid-area:kind] self-start justify-self-start', KIND_TONE[e.kind])}>{LABEL[e.kind] ?? e.kind}</Badge>
-                <a
-                  class="text-foreground hover:text-primary font-semibold no-underline [grid-area:title]"
-                  href={isHub(e.url) ? e.url.replace(/^hub\.html/, '') : e.url}
-                  target={isHub(e.url) ? undefined : '_blank'}
-                  rel={isHub(e.url) ? undefined : 'noopener'}
-                  onclick={() => bg({ type: 'feed:seen', keys: [e.key] })}>{e.title}</a
-                >
-                <span class="text-muted-foreground [grid-area:body]">{e.body}</span>
-                <span class="text-muted-foreground text-xs whitespace-nowrap [grid-area:when]">{ago(e.at)}</span>
-              </li>
-            {/each}
-          </ul>
+          <Timeline events={rows} label="Activity" onopen={(e) => bg({ type: 'feed:seen', keys: [e.id] })} />
         {/if}
       </Card.Content>
     </Card.Root>

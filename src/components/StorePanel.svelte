@@ -9,6 +9,7 @@
   import { isLimitedSku, isLimitedTime, isWarbondSku, lastSale, lowestOffer, matchShip, usd, type Catalog, type CatalogShip, type SaleHistory, type StoreItem } from '@/lib/store';
   import { applyFacets, SIZE_OPTIONS, STAGE_OPTIONS, stageOf, type Facet, type FacetValues, type RangeFacet } from '@/lib/facets';
   import FacetBar from './FacetBar.svelte';
+  import SkeletonSwap from './SkeletonSwap.svelte';
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import Thumb from './Thumb.svelte';
@@ -209,6 +210,7 @@
       <Input class="w-60" placeholder="Search ship, maker, role" bind:value={q} aria-label="Search ships" />
       <div class="w-[220px]"><Combobox options={makers.map((m) => ({ value: m, label: m }))} value={maker || null} onpick={(v) => (maker = v ?? '')} ariaLabel="Manufacturer" placeholder="All makers" /></div>
     </FacetBar>
+    <SkeletonSwap ready={!!cat || !loading} lines={8} lineHeight={44} label="Listings">
     <Table.Root>
       <Table.Header>
         <Table.Row>
@@ -281,5 +283,6 @@
         {/if}
       </Table.Body>
     </Table.Root>
+    </SkeletonSwap>
   </Card.Content>
 </Card.Root>

@@ -40,6 +40,7 @@
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
   import FacetBar from './FacetBar.svelte';
+  import SkeletonSwap from './SkeletonSwap.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Tooltip from '@/components/ui/tooltip';
   import * as Card from '@/components/ui/card';
@@ -382,6 +383,7 @@
         </div>
       {/if}
 
+      <SkeletonSwap ready={!!items || !loading} lines={8} lineHeight={44} label="Listings">
       <Table.Root>
         <Table.Header>
           <Table.Row>
@@ -555,6 +557,7 @@
           {/if}
         </Table.Body>
       </Table.Root>
+      </SkeletonSwap>
     </Card.Content>
   </Card.Root>
 </div>

@@ -35,8 +35,12 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 | `Empty` | `colspan?` | the empty state |
 | `LoadStatus` | `loading`, `data`, `count`, `noun`, `empty`, children | "Loading page 3 / 12…" + progress / "n pledges · loaded …" |
 | `LoadActions` | `loading`, `data`, `noun`, `onstop`, `onload(resume)`, `onupdate`, `updateHint`, `size`, children | Stop / Resume / Update / Reload ladder |
-| `StatGrid` | `min` | auto-fit row of `Stat` tiles |
-| `Stat` | `value`, `label`, `delta`, `tone`, `valueTone`, `icon`, `sub`, `hint`, `size` | KPI tile |
+| `Stat` | `value`, `label`, `delta`, `tone`, `valueTone`, `icon`, `sub`, `context` (hover line), `hint`, `trend` (sparkline), `size` | KPI tile; counts up in view |
+| `StatGrid` | `min`, `layout: 'plain'\|'divided'` | auto-fit row of `Stat`s; divided = hairline band |
+| `Timeline` | `events {id, at, title, meta, href, detail, icon, tone, muted, kind}`, `now`, `label`, `onopen`, `empty` | day-grouped activity feed (Feed) |
+| `SkeletonSwap` | `ready`, `lines`, `lineHeight`, `reserve`, `delay`, `minVisible`, `label`, `skeleton` | crossfade placeholder, no layout shift |
+| `NewItemsPill` | `count`, `label`, `threshold`, `onjump` | "n new ↑" when items arrive while scrolled |
+| `ProductTour` | `steps {icon, title, description, href, linkLabel}`, `storageKey` | first-run tour popover (hub header) |
 | `Chip` | `onremove`, `removeLabel`, `variant` | removable chip |
 | `FilterChips` | `options`, `bind:value` (id or Set), `multiple`, `ariaLabel` | pledge-type / category chips |
 | `FacetBar` | `facets`, `ranges`, `rows`, `shown`, `bind:values`, `primary`, `keep`, `hideEmpty`, children (search/sort) | the filter bar of every list page |

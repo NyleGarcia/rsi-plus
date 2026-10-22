@@ -507,7 +507,7 @@
           <Alert.Description class="text-xs">Open <a class="text-primary hover:underline" href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing</a> once with the extension on and it's picked up from there. Details: {creditsDebug}</Alert.Description>
         </Alert.Root>
       {/if}
-      <StatGrid>
+      <StatGrid layout="divided">
         <Stat tone="credit" value={credits ? money(credits.credits.usd) : '—'} label="store credit" />
         <Stat tone="credit" value={credits ? fmtN(credits.credits.uec) : '—'} label="UEC" />
         <Stat tone="credit" value={credits ? fmtN(credits.credits.rec) : '—'} label="REC" />
