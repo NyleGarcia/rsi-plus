@@ -1,4 +1,5 @@
 # Prerelease: every push to dev publishes a vX.Y.Z-devNNNN GitHub prerelease with zips for chrome, edge, brave and firefox; keeps the newest 10.
+# GitHub only — prereleases are never submitted to the Chrome Web Store; only mainline releases are (release.yml → publish).
 name: Prerelease
 on:
   push:
