@@ -21,6 +21,10 @@
   import HintBadge from './HintBadge.svelte';
   import Segmented from './Segmented.svelte';
   import Empty from './Empty.svelte';
+  import ConfirmButton from './ConfirmButton.svelte';
+  import LazyTip from './LazyTip.svelte';
+  import { LINK_QUIET } from '@/lib/ui';
+  import { fmtDate, fmtDateTime } from '@/lib/dates';
   import { PARTY_REMIND, clampSetting, toggleOf } from '@/lib/settings-ui';
   import { groupByOrg, mainOrgFromBadges, ORG_TTL, type Org, type OrgCache } from '@/lib/orgs';
   import { friendNotesItem, getSettings, getWatches, orgCacheItem, partyLogItem, partyModeItem, patchSettings, patchWatches, watchesItem } from '@/lib/settings';
@@ -34,7 +38,6 @@
   import * as Collapsible from '@/components/ui/collapsible';
   import * as Select from '@/components/ui/select';
   import * as Table from '@/components/ui/table';
-  import * as Tooltip from '@/components/ui/tooltip';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { Checkbox } from '@/components/ui/checkbox';
@@ -69,7 +72,6 @@
   let added = $state('');
   let partyHours = $state(12);
   let selected = $state<Set<string>>(new Set());
-  let confirmRemove = $state(false);
   let bulkTag = $state('');
   let msg = $state('');
   let orgProgress = $state<{ done: number; total: number } | null>(null);
@@ -194,11 +196,9 @@
     const s = new Set(selected);
     s.has(id) ? s.delete(id) : s.add(id);
     selected = s;
-    confirmRemove = false;
   }
   function selectShown() {
     selected = shown.every((r) => selected.has(r.member.id)) ? new Set() : new Set(shown.map((r) => r.member.id));
-    confirmRemove = false;
   }
 
   function report(r: BulkResult, verb: string) {
@@ -206,8 +206,6 @@
   }
 
   async function removeSelected() {
-    if (!confirmRemove) return (confirmRemove = true);
-    confirmRemove = false;
     const r = await bg({ type: 'friends:remove', ids: [...selected] });
     report(r, 'Removed');
     selected = new Set();
@@ -241,11 +239,10 @@
     if (t == null) return '';
     if (t === 0) return 'before RSI+';
     const h = (Date.now() - t) / 3600_000;
-    return h < 1 ? `${Math.max(1, Math.round(h * 60))} min ago` : h < 48 ? `${Math.round(h)} h ago` : new Date(t).toLocaleDateString();
+    return h < 1 ? `${Math.max(1, Math.round(h * 60))} min ago` : h < 48 ? `${Math.round(h)} h ago` : fmtDate(t);
   };
 
   let busyReq = $state<string | null>(null);
-  let confirmDeclineAll = $state(false);
 
   async function requestAction(action: 'accept' | 'decline' | 'cancel', ids: string[], party = false) {
     busyReq = ids.length === 1 ? ids[0]! : 'bulk';
@@ -306,14 +303,29 @@
     return o ? `${o.sid} — ${o.name} (${o.n})` : 'All orgs';
   });
   const allShownSelected = $derived(shown.every((r) => selected.has(r.member.id)));
-  const link = 'text-foreground hover:text-primary no-underline';
+  const link = LINK_QUIET;
 
   const lastSeen = (m: Member) => {
     if (isOnline(statusOf(m))) return '';
     const t = Math.max(notes[m.id]?.lastOnline ?? 0, (m.presence?.since ?? 0) * 1000);
-    return t ? new Date(t).toLocaleDateString() : '';
+    return t ? fmtDate(t) : '';
   };
+
+  /** Rows on screen: 40 first, 60 more a frame — a 500-friend list built in one go blocked the page. Resets on a new list / view. */
+  const rowCount = $derived(view === 'list' ? shown.length : groups.reduce((n, g) => n + g.items.length, 0));
+  /** Rows before each group, so the grouped view spends the same budget top-down. */
+  const groupStart = $derived(groups.reduce<number[]>((a, g, i) => (a.push(i ? a[i - 1]! + groups[i - 1]!.items.length : 0), a), []));
+  let budget = $derived.by(() => (void shown, void view, 40));
+  $effect(() => {
+    if (budget >= rowCount) return;
+    const t = setTimeout(() => (budget += 60), 16);
+    return () => clearTimeout(t);
+  });
 </script>
+
+{#snippet avatar(src: string | null | undefined)}
+  {#if src}<img class="size-7 rounded-full object-cover" {src} alt="" width="28" height="28" loading="lazy" />{/if}
+{/snippet}
 
 {#snippet friendRow(m: Member)}
   {@const n = notes[m.id]}
@@ -323,7 +335,7 @@
     <Table.Cell><Checkbox checked={selected.has(m.id)} onCheckedChange={() => toggle(m.id)} aria-label={`Select ${m.displayname}`} /></Table.Cell>
     <Table.Cell>
       <div class="flex items-center gap-2">
-        {#if m.avatar}<img class="size-7 rounded-full object-cover" src={m.avatar} alt="" width="28" height="28" loading="lazy" />{/if}
+        {@render avatar(m.avatar)}
         <div>
           <a class={link} href={memberUrl(m.nickname)} target="_blank" rel="noopener"><strong>{m.displayname}</strong></a>
           <div class="text-muted-foreground text-[11px]">@{m.nickname}</div>
@@ -345,14 +357,11 @@
           {#if o.redacted}
             <HintBadge variant="muted" hint="Hidden by the member">Redacted</HintBadge>
           {:else}
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  <Badge {...props} variant={o.main ? 'info' : 'outline'} class="no-underline" href={`https://robertsspaceindustries.com/orgs/${o.sid}`} target="_blank" rel="noopener">{o.sid}</Badge>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content>{o.name}{o.rank ? ` · ${o.rank}` : ''}{o.main ? ' · main org' : ''}</Tooltip.Content>
-            </Tooltip.Root>
+            <LazyTip tip={`${o.name}${o.rank ? ` · ${o.rank}` : ''}${o.main ? ' · main org' : ''}`}>
+              {#snippet trigger({ props })}
+                <Badge {...props} variant={o.main ? 'info' : 'outline'} class="no-underline" href={`https://robertsspaceindustries.com/orgs/${o.sid}`} target="_blank" rel="noopener">{o.sid}</Badge>
+              {/snippet}
+            </LazyTip>
           {/if}
         {:else}
           <span class="text-muted-foreground text-[11px]">—</span>
@@ -362,8 +371,8 @@
     <Table.Cell class="whitespace-normal">
       {#if editing === m.id}
         <form class="grid min-w-48 gap-1" onsubmit={(e) => (e.preventDefault(), (editing = null))}>
-          <Input class="h-7" placeholder="tags, comma separated" value={(n?.tags ?? []).join(', ')} onchange={(e) => setNote(m.id, { tags: parseTags(e.currentTarget.value) })} />
-          <Input class="h-7" placeholder="note" value={n?.note ?? ''} onchange={(e) => setNote(m.id, { note: e.currentTarget.value })} />
+          <Input placeholder="tags, comma separated" value={(n?.tags ?? []).join(', ')} onchange={(e) => setNote(m.id, { tags: parseTags(e.currentTarget.value) })} />
+          <Input placeholder="note" value={n?.note ?? ''} onchange={(e) => setNote(m.id, { note: e.currentTarget.value })} />
           <Button type="submit" variant="outline" size="xs" class="justify-self-start">Done</Button>
         </form>
       {:else}
@@ -374,7 +383,7 @@
         </TipButton>
       {/if}
     </Table.Cell>
-    <Table.Cell>
+    <Table.Cell class="text-right">
       <TipButton
         variant="ghost"
         size="icon-sm"
@@ -393,7 +402,7 @@
 
 {#snippet who(member: Member | null, fallbackId: string, req: import('@/lib/types').FriendRequest)}
   <div class="flex items-center gap-2">
-    {#if member?.avatar}<img class="size-7 rounded-full object-cover" src={member.avatar} alt="" width="28" height="28" loading="lazy" />{/if}
+    {@render avatar(member?.avatar)}
     <div>
       <div class="flex flex-wrap items-center gap-1.5">
         {#if member}
@@ -404,7 +413,7 @@
           <strong>Member {fallbackId}</strong>
         {/if}
       </div>
-      {#if req.time_created}<div class="text-muted-foreground text-[11px]">{new Date(req.time_created * 1000).toLocaleString()}</div>{/if}
+      {#if req.time_created}<div class="text-muted-foreground text-[11px]">{fmtDateTime(req.time_created * 1000)}</div>{/if}
     </div>
   </div>
 {/snippet}
@@ -471,7 +480,7 @@
       <Card.Root>
         <Card.Header>
           <Card.Title class="flex flex-wrap items-center gap-2">Friend requests <Badge variant="secondary">{requests.incoming.length} incoming · {requests.outgoing.length} sent</Badge></Card.Title>
-          <Card.Action><Button variant="outline" size="xs" onclick={load} disabled={loading || !!busyReq}>Refresh</Button></Card.Action>
+          <Card.Action><Button variant="outline" onclick={load} disabled={loading || !!busyReq}>Refresh</Button></Card.Action>
         </Card.Header>
         <Card.Content class="grid gap-3">
           {#if requests.incoming.length}
@@ -486,21 +495,15 @@
                   onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id), true)}
                   tip="Accept and flag as party friends for later cleanup">Accept all as party</TipButton
                 >
-                <Button
-                  variant="destructive"
-                  size="xs"
+                <ConfirmButton
                   disabled={!!busyReq}
-                  onclick={() =>
-                    confirmDeclineAll
-                      ? ((confirmDeclineAll = false),
-                        requestAction(
-                          'decline',
-                          requests.incoming.map((r) => r.req.id),
-                        ))
-                      : (confirmDeclineAll = true)}
+                  confirmLabel={`Confirm: decline ${requests.incoming.length}`}
+                  onconfirm={() =>
+                    requestAction(
+                      'decline',
+                      requests.incoming.map((r) => r.req.id),
+                    )}>Decline all</ConfirmButton
                 >
-                  {confirmDeclineAll ? `Confirm: decline ${requests.incoming.length}` : 'Decline all'}
-                </Button>
               </div>
             </div>
             <Table.Root>
@@ -545,7 +548,7 @@
 
     <Card.Root>
       <Card.Header>
-        <Card.Title>Friends</Card.Title>
+        <Card.Title>Friend list</Card.Title>
         <Card.Description class="grid gap-1">
           <p class="max-w-3xl text-[11px]">
             "Added" is recorded by RSI+ (Spectrum doesn't store it): friends present at the first snapshot show "before RSI+"; anyone added later — including people you
@@ -556,10 +559,11 @@
             {loading ? 'Loading…' : `${friends.length} friends · ${online} online`}
             {#if data}
               {#if data.warnings.length}
-                <Tooltip.Root>
-                  <Tooltip.Trigger class="text-[11px]">· source {data.source} · {data.warnings.length} warning(s) — hover</Tooltip.Trigger>
-                  <Tooltip.Content class="whitespace-pre-line">{data.warnings.join('\n')}</Tooltip.Content>
-                </Tooltip.Root>
+                <LazyTip tip={data.warnings.join('\n')}>
+                  {#snippet trigger({ props })}
+                    <button type="button" {...props} class="cursor-default text-[11px]">· source {data!.source} · {data!.warnings.length} warning(s) — hover</button>
+                  {/snippet}
+                </LazyTip>
               {:else}
                 <span class="text-[11px]">· source {data.source}</span>
               {/if}
@@ -628,12 +632,12 @@
         {#if selected.size}
           <div class="bg-primary/8 flex flex-wrap items-center gap-2 rounded-lg px-2.5 py-2">
             <strong>{selected.size} selected</strong>
-            <Input class="h-7 w-48" placeholder="add tags" bind:value={bulkTag} aria-label="Tags to add" />
+            <Input class="w-48" placeholder="add tags" bind:value={bulkTag} aria-label="Tags to add" />
             <Button variant="outline" size="xs" disabled={!bulkTag.trim()} onclick={tagSelected}>Tag</Button>
             <Button variant="outline" size="xs" onclick={() => setParty(true)}>Mark party</Button>
             <Button variant="outline" size="xs" onclick={() => setParty(false)}>Unmark party</Button>
-            <Button variant="destructive" size="xs" onclick={removeSelected}>{confirmRemove ? `Confirm: unfriend ${selected.size}` : 'Unfriend'}</Button>
-            <Button variant="outline" size="xs" onclick={() => ((selected = new Set()), (confirmRemove = false))}>Clear</Button>
+            <ConfirmButton confirmLabel={`Confirm: unfriend ${selected.size}`} onconfirm={removeSelected}>Unfriend</ConfirmButton>
+            <Button variant="ghost" size="xs" onclick={() => (selected = new Set())}>Clear</Button>
           </div>
         {/if}
         {#if msg}<span class="text-muted-foreground">{msg}</span>{/if}
@@ -650,15 +654,15 @@
                 <SortTh key="added" bind:sort firstDir="desc">Added</SortTh>
                 <SortTh key="orgs" bind:sort>Orgs</SortTh>
                 <SortTh key="tags" bind:sort>Tags / note</SortTh>
-                <Table.Head></Table.Head>
+                <Table.Head><span class="sr-only">Actions</span></Table.Head>
               </Table.Row>
             </Table.Header>
             {#if view === 'list'}
               <Table.Body>
-                {#each shown as r (r.member.id)}{@render friendRow(r.member)}{/each}
+                {#each shown.slice(0, budget) as r (r.member.id)}{@render friendRow(r.member)}{/each}
               </Table.Body>
             {:else}
-              {#each groups as g (g.sid)}
+              {#each groups as g, gi (g.sid)}
                 <Collapsible.Root open={true}>
                   {#snippet child()}
                     <tbody data-slot="table-body">
@@ -672,7 +676,7 @@
                                 </Button>
                               {/snippet}
                             </Collapsible.Trigger>
-                            {#if g.sid}<a class="text-foreground hover:text-primary" href={`https://robertsspaceindustries.com/orgs/${g.sid}`} target="_blank" rel="noopener">{g.name}</a>
+                            {#if g.sid}<a class={link} href={`https://robertsspaceindustries.com/orgs/${g.sid}`} target="_blank" rel="noopener">{g.name}</a>
                               <span class="text-muted-foreground font-normal">[{g.sid}]</span>{:else}{g.name}{/if}
                             <span class="text-muted-foreground font-normal">· {g.items.length}</span>
                           </div>
@@ -682,7 +686,7 @@
                     <Collapsible.Content>
                       {#snippet child({ props, open })}
                         <tbody {...props} data-slot="table-body">
-                          {#if open}{#each g.items as r (r.member.id)}{@render friendRow(r.member)}{/each}{/if}
+                          {#if open}{#each g.items.slice(0, Math.max(0, budget - (groupStart[gi] ?? 0))) as r (r.member.id)}{@render friendRow(r.member)}{/each}{/if}
                         </tbody>
                       {/snippet}
                     </Collapsible.Content>

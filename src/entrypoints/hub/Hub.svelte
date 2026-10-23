@@ -1,18 +1,6 @@
 <script lang="ts">
-  import FeedPanel from '@/components/FeedPanel.svelte';
-  import CcusPanel from '@/components/CcusPanel.svelte';
-  import WatchingPanel from '@/components/WatchingPanel.svelte';
-  import FriendsPanel from '@/components/FriendsPanel.svelte';
-  import MutesPanel from '@/components/MutesPanel.svelte';
-  import HangarPanel from '@/components/HangarPanel.svelte';
-  import WalletPanel from '@/components/WalletPanel.svelte';
-  import BuybackPanel from '@/components/BuybackPanel.svelte';
-  import ItemsPanel from '@/components/ItemsPanel.svelte';
-  import ShipsPanel from '@/components/ShipsPanel.svelte';
-  import StorePanel from '@/components/StorePanel.svelte';
-  import BrowsePanel from '@/components/BrowsePanel.svelte';
-  import CcuPanel from '@/components/CcuPanel.svelte';
-  import SettingsPanel from '@/components/SettingsPanel.svelte';
+  import type { Component } from 'svelte';
+  import SkeletonSwap from '@/components/SkeletonSwap.svelte';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
   import NavItem from './NavItem.svelte';
   import HubFooter from './HubFooter.svelte';
@@ -21,9 +9,9 @@
   import * as Tooltip from '@/components/ui/tooltip';
   import { Separator } from '@/components/ui/separator';
   import HintBadge from '@/components/HintBadge.svelte';
+  import TipButton from '@/components/TipButton.svelte';
   import Settings from '@lucide/svelte/icons/settings';
   import EyeOff from '@lucide/svelte/icons/eye-off';
-  import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
@@ -55,6 +43,48 @@
     { icon: pageOf('feed').icon, title: 'Feed', description: 'Watched Spectrum threads, friends coming online, friend requests, store alerts and store changes land here. Settings has the switches.', href: '#feed', linkLabel: 'Open Feed' },
   ];
   let tab = $state<Tab>(fromHash());
+
+  /**
+   * Panels load on first visit (one chunk each) instead of all fifteen up front: the hub chunk was 1.1 MB parsed on
+   * every open. The rest are fetched in idle time after the first panel paints, so switching stays instant. A loaded
+   * panel stays loaded (same component instance rules as before: Pledges / Melt share one, Paints / Fleet / Paint rebuy share one).
+   */
+  const LOADERS = {
+    feed: () => import('@/components/FeedPanel.svelte'),
+    watching: () => import('@/components/WatchingPanel.svelte'),
+    friends: () => import('@/components/FriendsPanel.svelte'),
+    hangar: () => import('@/components/HangarPanel.svelte'),
+    wallet: () => import('@/components/WalletPanel.svelte'),
+    ships: () => import('@/components/ShipsPanel.svelte'),
+    items: () => import('@/components/ItemsPanel.svelte'),
+    buyback: () => import('@/components/BuybackPanel.svelte'),
+    store: () => import('@/components/StorePanel.svelte'),
+    browse: () => import('@/components/BrowsePanel.svelte'),
+    ccus: () => import('@/components/CcusPanel.svelte'),
+    ccu: () => import('@/components/CcuPanel.svelte'),
+    settings: () => import('@/components/SettingsPanel.svelte'),
+    mutes: () => import('@/components/MutesPanel.svelte'),
+  } as const;
+  type PanelKey = keyof typeof LOADERS;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let loaded = $state<Partial<Record<PanelKey, Component<any>>>>({});
+  const panelKey = $derived<PanelKey>(
+    tab === 'melt' ? 'hangar' : tab === 'fleet' || tab === 'paint-rebuy' || tab === 'paints' ? 'ships' : tab in LOADERS ? (tab as PanelKey) : 'mutes',
+  );
+  const Panel = $derived(loaded[panelKey]);
+  const load = (k: PanelKey) => (loaded[k] ? Promise.resolve() : LOADERS[k]().then((m) => void (loaded[k] = m.default)));
+  let prefetched = false;
+  $effect(() => {
+    const k = panelKey;
+    void load(k).then(() => {
+      if (prefetched) return;
+      prefetched = true;
+      const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 1500));
+      idle(() => {
+        for (const other of Object.keys(LOADERS) as PanelKey[]) if (other !== k) void load(other);
+      });
+    });
+  });
   /** Feed entry badges: unseen events, and store changes not yet dismissed ("+32 −5"). */
   let notices = $state({ add: 0, remove: 0 });
   let unseen = $state(0);
@@ -158,60 +188,47 @@
           <h2 id="hub-title" class="m-0 truncate text-base font-semibold">{current.label}</h2>
           <span class="text-muted-foreground truncate text-xs">{current.sub}</span>
         </div>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button {...props} variant={privacy.on ? 'outline' : 'ghost'} size={privacy.on ? 'sm' : 'icon-sm'} class={cn(privacy.on && 'border-warning/60 text-warning hover:text-warning')} aria-pressed={privacy.on} onclick={togglePrivacy}>
-                <EyeOff aria-hidden="true" />{#if privacy.on}Screenshare{/if}
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>{privacy.on ? 'Screenshare mode on — spend, credit and account names hidden. Click to show them.' : 'Screenshare mode: hide spend, store credit, buyback prices, spend charts and account names'}</Tooltip.Content>
-        </Tooltip.Root>
+        <!-- One size in both states so the header doesn't jump; the state is the tone + aria-pressed, the words are in the tip. -->
+        <TipButton
+          variant={privacy.on ? 'outline' : 'ghost'}
+          size="icon-sm"
+          class={cn(privacy.on && 'border-warning/60 text-warning hover:text-warning')}
+          aria-label="Screenshare mode"
+          aria-pressed={privacy.on}
+          onclick={togglePrivacy}
+          tip={privacy.on ? 'Screenshare mode on — spend, credit and account names hidden. Click to show them.' : 'Screenshare mode: hide spend, store credit, buyback prices, spend charts and account names'}
+        >
+          <EyeOff aria-hidden="true" />
+        </TipButton>
         <ProductTour steps={TOUR} />
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button {...props} id="nav-settings" variant="ghost" size="icon-sm" class={cn(tab === 'settings' && 'bg-accent text-primary')} aria-pressed={tab === 'settings'} aria-controls="panel" onclick={() => select(SETTINGS_PAGE)}>
-                <Settings aria-hidden="true" />
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>{SETTINGS_PAGE.label} — {SETTINGS_PAGE.sub.toLowerCase()}</Tooltip.Content>
-        </Tooltip.Root>
+        <TipButton
+          id="nav-settings"
+          variant="ghost"
+          size="icon-sm"
+          class={cn(tab === 'settings' && 'bg-accent text-primary')}
+          aria-label={SETTINGS_PAGE.label}
+          aria-pressed={tab === 'settings'}
+          aria-controls="panel"
+          onclick={() => select(SETTINGS_PAGE)}
+          tip={`${SETTINGS_PAGE.label} — ${SETTINGS_PAGE.sub.toLowerCase()}`}
+        >
+          <Settings aria-hidden="true" />
+        </TipButton>
         <AccountSwitch />
       </header>
 
       <main id="panel" class="mx-auto w-full max-w-[1800px] min-w-0 p-6 pb-12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-sm:px-3" aria-labelledby="hub-title" tabindex="-1">
-        {#if tab === 'feed'}
-          <FeedPanel />
-        {:else if tab === 'watching'}
-          <WatchingPanel />
-        {:else if tab === 'friends'}
-          <FriendsPanel />
-        {:else if tab === 'hangar' || tab === 'melt'}
+        {#if !Panel}
+          <SkeletonSwap ready={false} lines={8} lineHeight={44} label="Page"><div></div></SkeletonSwap>
+        {:else if panelKey === 'hangar'}
           <!-- One instance for both pages: the melt ticks and filters survive switching between them. -->
-          <HangarPanel pane={tab === 'melt' ? 'melt' : 'pledges'} />
-        {:else if tab === 'wallet'}
-          <WalletPanel />
-        {:else if tab === 'paints' || tab === 'fleet' || tab === 'paint-rebuy'}
-          <ShipsPanel view={tab === 'fleet' ? 'ships' : tab === 'paint-rebuy' ? 'bundle' : 'paints'} />
-        {:else if tab === 'items'}
-          <ItemsPanel />
-        {:else if tab === 'buyback'}
-          <BuybackPanel />
-        {:else if tab === 'store'}
-          <StorePanel />
-        {:else if tab === 'browse'}
-          <BrowsePanel />
-        {:else if tab === 'ccus'}
-          <CcusPanel />
-        {:else if tab === 'ccu'}
-          <CcuPanel initialTo={ccuTo} initialAhead={ccuAhead} />
-        {:else if tab === 'settings'}
-          <SettingsPanel />
+          <Panel pane={tab === 'melt' ? 'melt' : 'pledges'} />
+        {:else if panelKey === 'ships'}
+          <Panel view={tab === 'fleet' ? 'ships' : tab === 'paint-rebuy' ? 'bundle' : 'paints'} />
+        {:else if panelKey === 'ccu'}
+          <Panel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else}
-          <MutesPanel />
+          <Panel />
         {/if}
       </main>
       <!-- Fankit: notice in an always-visible nav area (sidebar, short) and/or the home page — the footer carries the full one on every page. -->

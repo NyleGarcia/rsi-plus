@@ -1,0 +1,50 @@
+/*
+ * One look for RSI+'s floating bars: SiteBar (RSI pages) and ThreadBar (Spectrum). Each lives in its own shadow
+ * root, so these classes are unscoped on purpose. Component <style> blocks keep only their layout.
+ */
+.rp {
+  --rp-fg: #e8edf3;
+  --rp-accent: #3cc8ff;
+  --rp-muted: #8b95a5;
+  --rp-gold: #ffd166;
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--rp-fg);
+}
+/* Floating surface: bar, toast, help, pip. */
+.rp-surface {
+  background: rgb(14 18 24 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+}
+.rp .logo {
+  font-weight: 800;
+  color: var(--rp-accent);
+}
+.rp .muted {
+  color: var(--rp-muted);
+}
+.rp .btn {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.05);
+  color: inherit;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.rp .btn:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+.rp .btn.on {
+  color: var(--rp-gold);
+}
+.rp .x {
+  border: 0;
+  background: none;
+  color: var(--rp-muted);
+  font-size: 18px;
+  cursor: pointer;
+}

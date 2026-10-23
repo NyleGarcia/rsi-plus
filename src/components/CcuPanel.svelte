@@ -3,7 +3,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planGraph, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
@@ -21,18 +21,20 @@
   import Chip from './Chip.svelte';
   import TipButton from './TipButton.svelte';
   import HintBadge from './HintBadge.svelte';
+  import LazyTip from './LazyTip.svelte';
+  import SwitchRow from './SwitchRow.svelte';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import ConfirmButton from './ConfirmButton.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
-  import * as Tooltip from '@/components/ui/tooltip';
   import { Badge, type BadgeVariant } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
-  import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
+  import { LINK } from '@/lib/ui';
+  import { fmtDate } from '@/lib/dates';
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -131,11 +133,15 @@
   });
   const startId = $derived(mode === 'store' ? STORE_START : fromId);
   /** Chain with today's sales; when there is none (target not on sale — Orion, Arrastra…) plan ahead without asking. */
+  // Graphs for the current options, kept while only the source / target change (the ahead one is built on demand).
+  const graphNow = $derived(planGraph(ships, ccus.owned, effective));
+  const aheadOpt = $derived<PlanOptions>({ ...effective, planAhead: true });
+  const graphAhead = $derived(planGraph(ships, ccus.owned, aheadOpt));
   const planned = $derived.by(() => {
     if (startId == null || toId == null) return { result: null, ahead: false };
-    const r = plan(ships, ccus.owned, startId, toId, effective);
+    const r = plan(ships, ccus.owned, startId, toId, effective, graphNow);
     if (r || effective.planAhead) return { result: r, ahead: false };
-    const a = plan(ships, ccus.owned, startId, toId, { ...effective, planAhead: true });
+    const a = plan(ships, ccus.owned, startId, toId, aheadOpt, graphAhead);
     return { result: a, ahead: !!a };
   });
   const result = $derived(planned.result);
@@ -283,6 +289,9 @@
     const others = reservedRefs(chains.filter((x) => x.id !== c.id));
     return plan(ships, ccus.owned, c.startId, c.targetId, { ...c.opt, exclude: [...new Set([...c.opt.exclude, ...others])] });
   }
+  /** Saved chains (grouped) with today's price, planned once per change instead of per render. */
+  const savedRows = $derived([...chains].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '')).map((c) => ({ c, p: now(c) })));
+  const ownedSorted = $derived([...ccus.owned].sort((a, b) => (byId.get(a.fromId)?.msrp ?? 0) - (byId.get(b.fromId)?.msrp ?? 0)));
   const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted' | 'planAhead'; label: string; hint?: string }[] = [
     { key: 'warbond', label: 'Warbond CCUs' },
     { key: 'buyback', label: 'Buyback CCUs' },
@@ -368,7 +377,6 @@
 <div class="grid gap-4">
   <Card.Root>
     <Card.Header>
-      <Card.Title>CCU chain planner</Card.Title>
       <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money. <em>Plan ahead</em> adds hulls nobody sells a CCU to today (at MSRP, bought when they return) for long-term goals. <em>Fleet plan</em> plans several ships at once without using a CCU or hull twice.</Card.Description>
       <Card.Action>
         <Segmented
@@ -397,21 +405,9 @@
         <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
           {#each OPTIONS as o (o.key)}
-            <label class="flex cursor-pointer items-center gap-2 text-sm">
-              {#if o.hint}
-                <Tooltip.Root>
-                  <Tooltip.Trigger>
-                    {#snippet child({ props })}<Checkbox {...props} bind:checked={opt[o.key]} />{/snippet}
-                  </Tooltip.Trigger>
-                  <Tooltip.Content class="max-w-80">{o.hint}</Tooltip.Content>
-                </Tooltip.Root>
-              {:else}<Checkbox bind:checked={opt[o.key]} />{/if}
-              {o.label}
-            </label>
+            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={!!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
           {/each}
-          <label class="flex cursor-pointer items-center gap-2 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-60">
-            <Checkbox bind:checked={excludeSaved} disabled={!chains.length} /> Exclude saved chains{chains.length ? ` (${reservedBy.size} CCUs)` : ''}
-          </label>
+          <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Exclude saved chains${chains.length ? ` (${reservedBy.size} CCUs)` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => (excludeSaved = v)} />
         </div>
         <span class="text-muted-foreground text-[11px]">
           {hangar ? `${ccus.owned.filter((o) => o.source === 'hangar').length} owned CCUs` : 'Load your hangar to use owned CCUs'}
@@ -444,20 +440,11 @@
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
           <legend class="text-muted-foreground px-1 text-xs">4 · Target</legend>
           <ShipSelect ships={targetable} mine={targetOwned ? mine : []} saleTag bind:value={toId} ariaLabel="Target ship" placeholder="Pick a target…" />
-          <label class="text-muted-foreground flex items-center gap-2 text-xs">
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}<Checkbox {...props} bind:checked={targetOwned} />{/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content>List the ships already in your hangar too</Tooltip.Content>
-            </Tooltip.Root>
-            include ships I own
-          </label>
+          <SwitchRow id="ccu-target-owned" size="sm" class="text-xs" label="Include ships I own" hint="List the ships already in your hangar too" checked={targetOwned} onchange={(v) => (targetOwned = v)} />
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
-            <Tooltip.Root>
-              <Tooltip.Trigger class="text-muted-foreground cursor-help">Stops</Tooltip.Trigger>
-              <Tooltip.Content>Hulls the chain must pass through — to fly them for a while on the way to the target</Tooltip.Content>
-            </Tooltip.Root>
+            <LazyTip tip="Hulls the chain must pass through — to fly them for a while on the way to the target">
+              {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help">Stops</button>{/snippet}
+            </LazyTip>
             {#each opt.via ?? [] as v (v)}
               <Chip removeLabel={`Remove stop ${name(v)}`} onremove={() => (opt.via = (opt.via ?? []).filter((x) => x !== v))}>{name(v)}</Chip>
             {/each}
@@ -499,16 +486,24 @@
                 : null}
             />
           </StatGrid>
-          <ol class="chain" aria-label="Chain steps">
+          <ol class="m-0 grid list-none p-0" aria-label="Chain steps">
             {#each result.steps as s, i (i)}
               {@const a = addable(s, byId)}
               {@const c = cart.of(cartKey(s))}
               {@const done = s.kind === 'owned' || c?.st === 'added'}
               {@const v = verify[cartKey(s)]}
-              <li class="step" class:done class:busy={c?.st === 'adding' || v?.st === 'checking'} class:bad={c?.st === 'error' || v?.st === 'no'}>
-                <div class="rail">
-                  <span class="dot">{#if done}✓{:else if c?.st === 'error' || v?.st === 'no'}!{:else}{i + 1}{/if}</span>
-                  {#if i < result.steps.length - 1}<span class="line"></span>{/if}
+              {@const bad = c?.st === 'error' || v?.st === 'no'}
+              <li class="grid grid-cols-[28px_1fr] gap-3">
+                <div class="grid grid-rows-[auto_1fr] justify-items-center">
+                  <span
+                    class={cn(
+                      'bg-popover text-foreground border-border grid size-[26px] place-items-center rounded-full border text-xs font-bold transition-colors',
+                      done && 'border-success/60 bg-success/15 text-success',
+                      (c?.st === 'adding' || v?.st === 'checking') && 'border-primary ring-primary/20 ring-3',
+                      bad && 'border-destructive text-destructive',
+                    )}>{#if done}<Check class="size-3.5" />{:else if bad}!{:else}{i + 1}{/if}</span
+                  >
+                  {#if i < result.steps.length - 1}<span class={cn('my-1 min-h-4 w-0.5 rounded-[1px]', done ? 'bg-success/45' : 'from-border to-border/35 bg-linear-to-b')}></span>{/if}
                 </div>
                 <div class="min-w-0 pt-0.5 pb-4">
                   <div class="flex flex-wrap items-center justify-between gap-2">
@@ -577,14 +572,14 @@
               </span>
             </div>
             <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
-              <Input class="h-7 w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
+              <Input class="w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
               <Button variant="outline" size="sm" type="submit">Save chain</Button>
               <TipButton variant="outline" size="sm" type="button" onclick={addToFleet} tip="Add this source → target (with its stops) as a goal at the end of your fleet plan">Add to fleet plan</TipButton>
               {#if saved.text}<span class="text-success text-[11px]">Saved “{saved.text}”</span>{/if}
               {#if addedToFleet.text}<span class="text-success text-[11px]">{addedToFleet.text} — <Button variant="link" size="xs" class="h-auto p-0 text-[11px]" onclick={() => (planner = 'fleet')}>open Fleet plan</Button></span>{/if}
             </form>
           </div>
-          <span class="text-muted-foreground text-[11px]">Or buy by hand on the RSI <a class="text-primary underline-offset-4 hover:underline" href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
+          <span class="text-muted-foreground text-[11px]">Or buy by hand on the RSI <a class={LINK} href={UPGRADES} target="_blank" rel="noopener">ship upgrades page</a>. Prices change during sales — refresh in Store.</span>
         {/if}
       {/if}
       {/if}
@@ -598,22 +593,21 @@
             <p class="text-muted-foreground m-0 text-sm">Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. “Now” re-prices each chain on today's store + hangar; a chain with steps waiting for a sale is a long-term goal — the Feed alerts when one of those CCUs is in the store.</p>
             <Table.Root>
               <Table.Header>
-                <Table.Row><Table.Head>Name</Table.Head><Table.Head>Chain</Table.Head><Table.Head>Saved</Table.Head><Table.Head>Now</Table.Head><Table.Head></Table.Head></Table.Row>
+                <Table.Row><Table.Head>Name</Table.Head><Table.Head>Chain</Table.Head><Table.Head class="text-right">Saved</Table.Head><Table.Head class="text-right">Now</Table.Head><Table.Head><span class="sr-only">Actions</span></Table.Head></Table.Row>
               </Table.Header>
               <Table.Body>
-                {#each [...chains].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '')) as c (c.id)}
-                  {@const p = now(c)}
+                {#each savedRows as { c, p } (c.id)}
                   <Table.Row>
                     {@const savedWaits = c.steps.filter((s) => s.kind === 'future').length}
-                    <Table.Cell>{#if c.group}<span class="text-primary text-[11px]">{c.group}</span><br />{/if}<strong>{c.name}</strong>{#if savedWaits}<Badge variant="warning" class="ml-1.5">{savedWaits} waiting</Badge>{/if}<br /><span class="text-muted-foreground text-[11px]">{new Date(c.at).toLocaleDateString()} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
+                    <Table.Cell>{#if c.group}<span class="text-primary text-[11px]">{c.group}</span><br />{/if}<strong>{c.name}</strong>{#if savedWaits}<Badge variant="warning" class="ml-1.5">{savedWaits} waiting</Badge>{/if}<br /><span class="text-muted-foreground text-[11px]">{fmtDate(c.at)} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
                     <Table.Cell class="text-[11px] whitespace-normal">{[name(c.startId), ...c.steps.map((s) => name(s.toId))].join(' → ')}</Table.Cell>
-                    <Table.Cell>{usd(c.total)}<br /><span class="text-muted-foreground text-[11px]">{usd(c.cash)} new money</span></Table.Cell>
-                    <Table.Cell>
-                      {#if !p}<span class="text-destructive">no longer possible</span>
+                    <Table.Cell class="text-right tabular-nums">{usd(c.total)}<br /><span class="text-muted-foreground text-[11px]">{usd(c.cash)} new money</span></Table.Cell>
+                    <Table.Cell class="text-right tabular-nums">
+                      {#if !p}<HintBadge variant="destructive" hint="A step is no longer on sale or in your hangar, or its CCU is now reserved by another saved chain">no longer possible</HintBadge>
                       {:else}<span class={cn(p.total < c.total && 'text-success', p.total > c.total && 'text-warning')}>{usd(p.total)}</span>{#if savedWaits && p.waits < savedWaits}<br /><span class="text-success text-[11px]">on sale now — {savedWaits - p.waits} waiting step{savedWaits - p.waits === 1 ? '' : 's'} buyable</span>{:else if changed(c, p)}<br /><span class="text-muted-foreground text-[11px]">chain changed</span>{/if}{/if}
                     </Table.Cell>
-                    <Table.Cell>
-                      <div class="flex items-center gap-1.5">
+                    <Table.Cell class="text-right">
+                      <div class="flex items-center justify-end gap-1.5">
                         <Button variant="outline" size="xs" onclick={() => loadChain(c)}>Load</Button>
                         <ConfirmButton onconfirm={() => persist(chains.filter((x) => x.id !== c.id))}>Delete</ConfirmButton>
                       </div>
@@ -634,17 +628,17 @@
             <p class="text-muted-foreground m-0 text-sm">Click <em>Force</em> to require a CCU in the chain (include), click again to keep it out (exclude), again to reset.</p>
             <Table.Root>
               <Table.Header>
-                <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Source</Table.Head><Table.Head>Paid</Table.Head><Table.Head>Upgrade value</Table.Head><Table.Head>Reserved by</Table.Head><Table.Head>Force</Table.Head></Table.Row>
+                <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Source</Table.Head><Table.Head class="text-right">Paid</Table.Head><Table.Head class="text-right">Upgrade value</Table.Head><Table.Head>Reserved by</Table.Head><Table.Head>Force</Table.Head></Table.Row>
               </Table.Header>
               <Table.Body>
-                {#each ccus.owned.sort((a, b) => (byId.get(a.fromId)?.msrp ?? 0) - (byId.get(b.fromId)?.msrp ?? 0)) as o (o.source + o.ref)}
+                {#each ownedSorted as o (o.source + o.ref)}
                   {@const gain = (byId.get(o.toId)?.msrp ?? 0) - (byId.get(o.fromId)?.msrp ?? 0)}
                   {@const f = forceOf(o.ref)}
                   <Table.Row>
                     <Table.Cell><span class="text-muted-foreground">{name(o.fromId)} →</span> <strong>{name(o.toId)}</strong></Table.Cell>
                     <Table.Cell>{o.source}{o.gifted ? ' · gift' : ''}</Table.Cell>
-                    <Table.Cell>{o.value ? ownUsd(o.value) : o.source === 'hangar' ? '—' : '?'}</Table.Cell>
-                    <Table.Cell class={cn(o.value && gain > o.value && 'text-success')}>{usd(gain)}</Table.Cell>
+                    <Table.Cell class="text-right tabular-nums">{o.value ? ownUsd(o.value) : o.source === 'hangar' ? '—' : '?'}</Table.Cell>
+                    <Table.Cell class={cn('text-right tabular-nums', o.value && gain > o.value && 'text-success')}>{usd(gain)}</Table.Cell>
                     <Table.Cell class="text-[11px]">{reservedBy.get(o.ref)?.name ?? ''}</Table.Cell>
                     <Table.Cell>
                       <Button variant="outline" size="xs" class={cn('min-w-16', f === 'include' && 'text-success', f === 'exclude' && 'text-destructive')} onclick={() => cycleForce(o.ref)}>{f || 'auto'}</Button>
@@ -672,61 +666,3 @@
   {/if}
 </div>
 
-<style>
-  /* vertical stepper rail (pattern after 21st.dev's titled steppers) */
-  .chain {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-  }
-  .step {
-    display: grid;
-    grid-template-columns: 28px 1fr;
-    gap: 12px;
-  }
-  .rail {
-    display: grid;
-    grid-template-rows: auto 1fr;
-    justify-items: center;
-  }
-  .dot {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    font-size: 12px;
-    font-weight: 700;
-    border: 1px solid var(--border);
-    background: var(--popover);
-    color: var(--foreground);
-    transition:
-      background 150ms,
-      border-color 150ms;
-  }
-  .step.done .dot {
-    background: color-mix(in srgb, var(--success) 18%, transparent);
-    border-color: color-mix(in srgb, var(--success) 60%, transparent);
-    color: var(--success);
-  }
-  .step.busy .dot {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
-  }
-  .step.bad .dot {
-    border-color: var(--destructive);
-    color: var(--destructive);
-  }
-  .line {
-    width: 2px;
-    flex: 1;
-    min-height: 16px;
-    margin: 4px 0;
-    background: linear-gradient(180deg, var(--border), color-mix(in srgb, var(--border) 35%, transparent));
-    border-radius: 1px;
-  }
-  .step.done .line {
-    background: color-mix(in srgb, var(--success) 45%, transparent);
-  }
-</style>

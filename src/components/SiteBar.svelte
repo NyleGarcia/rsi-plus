@@ -2,6 +2,7 @@
   import { bg, type HubTab } from '@/lib/messages';
   import { catalogItem, getSettings, settingsItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { isWarbondSku, lowestOffer, usd, type Catalog, type CatalogShip } from '@/lib/store';
+  import './site-bar.css';
 
   let path = $state(location.pathname);
   let enabled = $state(true);
@@ -46,12 +47,13 @@
 </script>
 
 {#if enabled && !hidden && (ship || page)}
-  <div class="bar" role="toolbar" aria-label="RSI+">
+  <div class="bar rp rp-surface" role="toolbar" aria-label="RSI+">
     <span class="logo">RSI+</span>
     {#if ship}
       <span><strong>{ship.name}</strong> <span class="muted">MSRP {usd(ship.msrp)}</span></span>
       {#if wb}<span class="wb">Warbond CCU {usd(wb.price)}</span>{:else if offer}<span class="muted">{offer.title} {usd(offer.price)}</span>{/if}
-      <button class="btn" class:on={wished} onclick={toggleWish} title="Notify when a warbond / lower price appears">{wished ? '★ Wishlisted' : '☆ Wishlist'}</button>
+      <button class="btn" class:on={wished} onclick={toggleWish} aria-describedby="rp-wish-hint">{wished ? '★ Wishlisted' : '☆ Wishlist'}</button>
+      <span id="rp-wish-hint" class="muted">alerts on a warbond / lower price</span>
       <button class="btn" onclick={() => hub('ccu', { to: String(ship.id) })}>Plan CCU</button>
     {:else if page === 'hangar'}
       <span class="muted">Whole hangar: melt totals, filters, CSV</span>
@@ -67,6 +69,7 @@
 {/if}
 
 <style>
+  /* Palette, buttons, logo: site-bar.css (shared with ThreadBar). */
   .bar {
     position: fixed;
     right: 18px;
@@ -75,47 +78,11 @@
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
-    font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #e8edf3;
-    background: rgb(14 18 24 / 0.94);
-    border: 1px solid rgb(255 255 255 / 0.1);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
     max-width: calc(100vw - 36px);
     flex-wrap: wrap;
   }
-  .logo {
-    font-weight: 800;
-    color: #3cc8ff;
-  }
-  .muted {
-    color: #8b95a5;
-  }
   .wb {
-    color: #ffd166;
+    color: var(--rp-gold);
     font-weight: 600;
-  }
-  .btn {
-    border: 1px solid rgb(255 255 255 / 0.12);
-    background: rgb(255 255 255 / 0.05);
-    color: inherit;
-    border-radius: 8px;
-    padding: 4px 10px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .btn:hover {
-    background: rgb(255 255 255 / 0.12);
-  }
-  .btn.on {
-    color: #ffd166;
-  }
-  .x {
-    border: 0;
-    background: none;
-    color: #8b95a5;
-    font-size: 18px;
-    cursor: pointer;
   }
 </style>

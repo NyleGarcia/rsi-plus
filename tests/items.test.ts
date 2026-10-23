@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
-import { paintCopiesNeeded, seriesOf, categorize, family, familyLabel, line, inventory, itemsCsv, ownedShipsWithPaints, paintGroups, paintStatus, shipGroups, shipsFor, upgradedFrom } from '@/lib/items';
+import { paintCopiesNeeded, seriesOf, categorize, family, familyLabel, fitsLabel, line, lineCounts, inventory, itemsCsv, ownedShipsWithPaints, paintGroups, paintStatus, shipGroups, shipsFor, upgradedFrom } from '@/lib/items';
 import { matchShip, type CatalogShip } from '@/lib/store';
 
 const ship = (id: number, name: string): CatalogShip => ({ id, name, manufacturer: '', focus: '', msrp: id * 1000, flyable: '', link: '', thumb: null, standalone: [], ccu: [] });
@@ -12,6 +12,17 @@ const pledge = (id: number, items: [string, string][], extra: Partial<Pledge> = 
 });
 
 describe('items', () => {
+  it('fitsLabel: whole line → "All …", else names; lineCounts cached per catalog', () => {
+    const row = (fits: CatalogShip[], s: CatalogShip | null = null) => ({ ...inventory([pledge(1, [['X Paint', 'Skin']])], [])[0]!, fits, ship: s });
+    expect(lineCounts(ships).get('cutlass')).toBe(2);
+    expect(lineCounts(ships)).toBe(lineCounts(ships));
+    expect(fitsLabel(row([]), ships)).toBe('');
+    expect(fitsLabel(row([ships[0]!]), ships)).toBe('Cutlass Black');
+    expect(fitsLabel(row([ships[0]!, ships[1]!]), ships)).toBe('All Cutlass');
+    expect(fitsLabel(row([ships[0]!, ships[4]!]), ships)).toBe('Cutlass Black · Carrack');
+    expect(fitsLabel(row([], ships[4]!), ships)).toBe('Carrack');
+  });
+
   it('categorizes RSI kinds and titles', () => {
     expect(categorize('Cutlass Black', 'Ship')).toBe('ship');
     expect(categorize('Cutlass - Black and White Livery', 'Skin')).toBe('paint');

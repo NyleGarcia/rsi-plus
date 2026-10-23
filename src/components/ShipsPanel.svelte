@@ -6,6 +6,7 @@
   import {
     line,
     familyLabel,
+    fitsLabel as fitsLabelOf,
     inventory,
     itemsCsv,
     ownedShipsWithPaints,
@@ -36,7 +37,6 @@
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
-  import * as Tooltip from '@/components/ui/tooltip';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
   import * as Collapsible from '@/components/ui/collapsible';
@@ -44,7 +44,10 @@
   import { Badge } from '@/components/ui/badge';
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
+  import { LINK, LINK_QUIET } from '@/lib/ui';
+  import { fmtDateTime } from '@/lib/dates';
   import { Checkbox } from '@/components/ui/checkbox';
+  import SwitchRow from './SwitchRow.svelte';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import Check from '@lucide/svelte/icons/check';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -155,19 +158,9 @@
 
   // ---- helpers ----
   const qty = (list: ItemRow[]) => list.reduce((n, r) => n + r.count, 0);
-  const fitsLabel = (r: ItemRow) => {
-    if (r.ship) return r.ship.name;
-    if (!r.fits.length) return '';
-    if (r.fits.length === 1) return r.fits[0]!.name;
-    const fams = [...new Set(r.fits.map((s) => line(s.name, ships)))];
-    return fams
-      .map((f) => {
-        const inFam = ships.filter((s) => line(s.name, ships) === f).length;
-        const hit = r.fits.filter((s) => line(s.name, ships) === f);
-        return hit.length >= inFam && inFam > 1 ? `All ${familyLabel(f, hit)}` : hit.map((s) => s.name).join(', ');
-      })
-      .join(' · ');
-  };
+  /** Fits text per hangar row, once per hangar / catalog change. */
+  const fitsLabels = $derived(new Map(rows.map((r) => [r.key, fitsLabelOf(r, ships)])));
+  const fitsLabel = (r: ItemRow) => fitsLabels.get(r.key) ?? fitsLabelOf(r, ships);
   function download(name: string, body: string, type = 'text/csv') {
     const url = URL.createObjectURL(new Blob([body], { type }));
     Object.assign(document.createElement('a'), { href: url, download: name }).click();
@@ -273,6 +266,13 @@
       .sort((a, b) => Number(a.key === '~' || a.key === 'packs') - Number(b.key === '~' || b.key === 'packs') || Number(!a.owned.length) - Number(!b.owned.length) || a.label.localeCompare(b.label));
   });
   const groupKeys = $derived(groups.map((g) => `p|${g.key}`));
+  // Groups mount in chunks (12 first, then +20 a frame); a new filter starts over.
+  let groupBudget = $derived.by(() => (void groups, 12));
+  $effect(() => {
+    if (groupBudget >= groups.length) return;
+    const t = setTimeout(() => (groupBudget += 20), 16);
+    return () => clearTimeout(t);
+  });
   const cheapest = (fits: CatalogShip[]) => [...fits].filter((s) => s.msrp).sort((a, b) => a.msrp - b.msrp)[0] ?? fits[0];
   const familyShips = (g: Group) => g.variants ?? ships.filter((s) => line(s.name, ships) === g.fam);
 
@@ -318,19 +318,18 @@
   const removeGame = (g: GameShip) => bumpGame(g.id, g.how, -g.count);
   /** Your labels on the pledges holding a hull (`lib/labels.ts`). */
   const shipTags = (f: { items: ItemRow[] }) => [...new Set(f.items.flatMap((i) => i.pledges).flatMap((p) => labelsOf(labels, p.id)))];
-  const linkCls = 'text-primary inline-flex items-center gap-1 whitespace-nowrap no-underline hover:underline';
 </script>
 
 {#snippet links(r: Row)}
   <span class="inline-flex flex-wrap gap-2">
     {#if r.store}
-      <a class={linkCls} href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Open on the store'}><ExternalLink class="size-3" /> {r.owned ? 'store' : `store ${priceLabel(r.store.discounted, r.store.price)}`}</a>
+      <a class="{LINK} inline-flex items-center gap-1 whitespace-nowrap" href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Open on the store'}><ExternalLink class="size-3" /> {r.owned ? 'store' : `store ${priceLabel(r.store.discounted, r.store.price)}`}</a>
       {@const sku = r.store.id}
       {#if r.store.available || cart.of(sku)}<CartButton state={cart.of(sku)} onadd={() => addOne(sku)} name={r.title} available={r.store.available} />{/if}
     {/if}
     {#if r.owned}
       {#each [...new Map(r.owned.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-        <a class={linkCls} href={hangarUrl(hangar?.pledges ?? [], p.id)} target="_blank" rel="noopener" title={`Open the hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
+        <a class="{LINK} inline-flex items-center gap-1 whitespace-nowrap" href={hangarUrl(hangar?.pledges ?? [], p.id)} target="_blank" rel="noopener" title={`Open the hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
       {/each}
     {/if}
   </span>
@@ -341,7 +340,7 @@
 {/snippet}
 
 {#if !hangar}
-  <Card.Root><Card.Content><Empty>Load your hangar first (<a class="text-primary hover:underline" href="#hangar">Pledges</a>) — ships and paints are built from it.</Empty></Card.Content></Card.Root>
+  <Card.Root><Card.Content><Empty>Load your hangar first (<a class={LINK} href="#hangar">Pledges</a>) — ships and paints are built from it.</Empty></Card.Content></Card.Root>
 {:else}
   <div class="grid gap-4">
     {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
@@ -355,15 +354,11 @@
         {#if view === 'paints'}
           <Card.Root>
             <Card.Header>
-              <Card.Title>Paints by ship</Card.Title>
               <Card.Description>
                 Your paints and the store's, per ship. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">Store</span> opens the store page, <House class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">Hangar</span> the hangar page holding it (gift / melt).
-                {#if storePaints}· {storePaints.paints.length} store paints from {new Date(storePaints.at).toLocaleString()}{/if}
+                {#if storePaints}· {storePaints.paints.length} store paints from {fmtDateTime(storePaints.at)}{/if}
                 {#if ownedPaints.length}· pictures for {ownedPaints.filter((r) => r.image || storePaintFor(r, storeIdx)).length} of {ownedPaints.length} owned paints{#if !ownedPaints.some((r) => r.image)}
-                  <Tooltip.Root>
-                    <Tooltip.Trigger class="text-warning cursor-default">(none from the hangar page — reload it on Pledges)</Tooltip.Trigger>
-                    <Tooltip.Content class="max-w-80">The hangar page's item pictures are kept when the hangar is loaded — reload it on Pledges. If this stays, RSI's hangar markup differs from what the parser expects.</Tooltip.Content>
-                  </Tooltip.Root>
+                  <HintBadge variant="warning" hint="The hangar page's item pictures are kept when the hangar is loaded — reload it on Pledges. If this stays, RSI's hangar markup differs from what the parser expects.">none from the hangar page — reload it on Pledges</HintBadge>
                 {/if}{/if}
               </Card.Description>
               <Card.Action class="flex flex-wrap items-center gap-2">
@@ -388,7 +383,7 @@
                     size="sm"
                   />
                   {#if groupShow !== 'not-owned' && groupShow !== 'unknown'}
-                    <label class="text-muted-foreground flex items-center gap-2 text-xs"><Checkbox bind:checked={withEmpty} /> also my ships with no paints</label>
+                    <SwitchRow id="ships-with-empty" size="sm" class="text-xs" label="Also my ships with no paints" checked={withEmpty} onchange={(v) => (withEmpty = v)} />
                   {/if}
                 </div>
                 <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Paints</span>
@@ -416,7 +411,7 @@
                 <Empty>No paints match.</Empty>
               {:else}
                 <div class="flex flex-col gap-1.5">
-                  {#each groups as g (g.key)}
+                  {#each groups.slice(0, groupBudget) as g (g.key)}
                     {@const k = `p|${g.key}`}
                     {@const st = g.key === 'packs' ? 'unknown' : pgStatus(g)}
                     {@const nOwned = g.rows.filter((r) => r.owned).length}
@@ -432,7 +427,8 @@
                         <span class="text-muted-foreground text-[11px]">{nOwned} owned · {g.rows.length - nOwned} on store</span>
                       </Collapsible.Trigger>
                       <Collapsible.Content>
-                        {#if g.rows.length}
+                        {#if collapsed.has(k)}<!-- closed: nothing mounted -->
+                        {:else if g.rows.length}
                           <!-- Fixed widths for the fits / links columns so "buy" lines up across every ship's table. -->
                           <Table.Root class="table-fixed">
                             <Table.Body>
@@ -471,6 +467,7 @@
                       </Collapsible.Content>
                     </Collapsible.Root>
                   {/each}
+                  {#if groupBudget < groups.length}<p class="text-muted-foreground text-xs">… {groups.length - groupBudget} more ships loading</p>{/if}
                 </div>
               {/if}
             </Card.Content>
@@ -550,12 +547,12 @@
                   <Table.Row>
                     <Table.Head>Compare</Table.Head>
                     <SortTh key="name" bind:sort={shipSort}>Ship</SortTh>
-                    <SortTh key="maker" bind:sort={shipSort}>Maker / role</SortTh>
+                    <SortTh key="maker" bind:sort={shipSort}>Maker · role</SortTh>
                     <SortTh key="count" bind:sort={shipSort} firstDir="desc">Copies</SortTh>
-                    <SortTh key="msrp" bind:sort={shipSort}>MSRP</SortTh>
+                    <SortTh key="msrp" bind:sort={shipSort} numeric>MSRP</SortTh>
                     <SortTh key="insurance" bind:sort={shipSort} firstDir="desc">Insurance</SortTh>
                     <SortTh key="paints" bind:sort={shipSort} firstDir="desc">Paints</SortTh>
-                    <Table.Head>Links</Table.Head>
+                    <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -583,18 +580,18 @@
                         ×{f.count}
                         {#if f.game}<HintBadge variant="outline" class="ml-1 text-[11px]" hint={`${f.game} in the game only (${f.gameHow.map((h) => (h === 'bought' ? 'bought with aUEC' : 'earned')).join(', ')}), not on your RSI account`}><Gamepad2 /> {f.game === f.count ? 'in-game' : `${f.game} in-game`}</HintBadge>{/if}
                       </Table.Cell>
-                      <Table.Cell>{f.ship.msrp ? usd(f.ship.msrp) : '—'}</Table.Cell>
+                      <Table.Cell class="text-right tabular-nums">{f.ship.msrp ? usd(f.ship.msrp) : '—'}</Table.Cell>
                       <Table.Cell>{@render insBadges(f.insurance, 'text-muted-foreground text-[11px]')}</Table.Cell>
                       <Table.Cell>
                         <TipButton variant="link" size="xs" class="h-auto px-0 font-semibold" onclick={() => openPaintsFor(f.ship.name)} tip={f.paints.map((p) => p.title).join('\n')}>
                           {qty(f.paints)} owned{more ? ` · ${more} more on store` : ''} →
                         </TipButton>
                       </Table.Cell>
-                      <Table.Cell class="text-[11px]">
-                        <span class="inline-flex flex-wrap gap-2">
-                          {#if f.ship.link}<a class={linkCls} href={f.ship.link} target="_blank" rel="noopener"><ShoppingCart class="size-3" /> store</a>{/if}
+                      <Table.Cell class="text-right text-[11px]">
+                        <span class="inline-flex flex-wrap justify-end gap-2">
+                          {#if f.ship.link}<a class="{LINK} inline-flex items-center gap-1 whitespace-nowrap" href={f.ship.link} target="_blank" rel="noopener"><ShoppingCart class="size-3" /> store</a>{/if}
                           {#each [...new Map(f.items.flatMap((i) => i.pledges).map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-                            <a class={linkCls} href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name}`}><House class="size-3" /> #{p.id}</a>
+                            <a class="{LINK} inline-flex items-center gap-1 whitespace-nowrap" href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name}`}><House class="size-3" /> #{p.id}</a>
                           {/each}
                         </span>
                       </Table.Cell>
@@ -637,7 +634,7 @@
               <Table.Row><Table.Head>Manufacturer</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.manufacturer}</Table.Cell>{/each}</Table.Row>
               <Table.Row><Table.Head>Role</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.focus}</Table.Cell>{/each}</Table.Row>
               <Table.Row><Table.Head>Status</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.flyable}</Table.Cell>{/each}</Table.Row>
-              <Table.Row><Table.Head>MSRP</Table.Head>{#each compared as s (s.id)}<Table.Cell>{s.msrp ? usd(s.msrp) : '—'}</Table.Cell>{/each}</Table.Row>
+              <Table.Row><Table.Head>MSRP</Table.Head>{#each compared as s (s.id)}<Table.Cell class="tabular-nums">{s.msrp ? usd(s.msrp) : '—'}</Table.Cell>{/each}</Table.Row>
               <Table.Row><Table.Head>You own</Table.Head>{#each compared as s (s.id)}<Table.Cell>{fleetOf(s.id) ? `×${fleetOf(s.id)!.count}` : '—'}</Table.Cell>{/each}</Table.Row>
               <Table.Row><Table.Head>Insurance</Table.Head>{#each compared as s (s.id)}<Table.Cell>{@render insBadges(fleetOf(s.id)?.insurance ?? [], 'text-muted-foreground')}</Table.Cell>{/each}</Table.Row>
               <Table.Row>
@@ -651,13 +648,13 @@
                 <Table.Head>Store paints</Table.Head>
                 {#each compared as s (s.id)}
                   {@const sp = storeFor(line(s.name, ships))}
-                  <Table.Cell>{#each sp.slice(0, 8) as p (p.id)}<div class="text-[11px]"><a class="hover:underline" href={p.url} target="_blank" rel="noopener">{p.name}</a> {usd(p.discounted)}</div>{:else}<span class="text-muted-foreground">—</span>{/each}{#if sp.length > 8}<div class="text-muted-foreground text-[11px]">+{sp.length - 8} more</div>{/if}</Table.Cell>
+                  <Table.Cell>{#each sp.slice(0, 8) as p (p.id)}<div class="text-[11px]"><a class={LINK_QUIET} href={p.url} target="_blank" rel="noopener">{p.name}</a> {usd(p.discounted)}</div>{:else}<span class="text-muted-foreground">—</span>{/each}{#if sp.length > 8}<div class="text-muted-foreground text-[11px]">+{sp.length - 8} more</div>{/if}</Table.Cell>
                 {/each}
               </Table.Row>
               <Table.Row>
                 <Table.Head>Pledges with it</Table.Head>
                 {#each compared as s (s.id)}
-                  <Table.Cell>{#each fleetOf(s.id)?.items.flatMap((i) => i.pledges) ?? [] as p, i (i)}<div class="text-[11px]"><a class="hover:underline" href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener">{p.name}</a> · {ownUsd(p.value * 100)}</div>{:else}<span class="text-muted-foreground">—</span>{/each}</Table.Cell>
+                  <Table.Cell>{#each fleetOf(s.id)?.items.flatMap((i) => i.pledges) ?? [] as p, i (i)}<div class="text-[11px]"><a class={LINK_QUIET} href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener">{p.name}</a> · {ownUsd(p.value * 100)}</div>{:else}<span class="text-muted-foreground">—</span>{/each}</Table.Cell>
                 {/each}
               </Table.Row>
               <Table.Row>
@@ -671,7 +668,7 @@
                 {/each}
               </Table.Row>
               <Table.Row>
-                <Table.Head></Table.Head>
+                <Table.Head><span class="sr-only">Actions</span></Table.Head>
                 {#each compared as s (s.id)}
                   <Table.Cell>
                     <div class="flex flex-wrap items-center gap-2">

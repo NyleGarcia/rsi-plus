@@ -17,16 +17,17 @@
   import StatGrid from './StatGrid.svelte';
   import Chip from './Chip.svelte';
   import HintBadge from './HintBadge.svelte';
+  import LazyTip from './LazyTip.svelte';
+  import SwitchRow from './SwitchRow.svelte';
   import TipButton from './TipButton.svelte';
   import Tag from './Tag.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Table from '@/components/ui/table';
-  import * as Tooltip from '@/components/ui/tooltip';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
-  import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
+  import { fmtDate } from '@/lib/dates';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import ArrowUp from '@lucide/svelte/icons/arrow-up';
   import Plus from '@lucide/svelte/icons/plus';
@@ -136,7 +137,7 @@
   let planName = $state('');
   const savedMsg = transient(3000);
   async function savePlan() {
-    const group = planName.trim() || `Fleet plan ${new Date().toLocaleDateString()}`;
+    const group = planName.trim() || `Fleet plan ${fmtDate(Date.now())}`;
     const now = Date.now();
     const made: SavedChain[] = fleet.legs
       .filter((l) => l.plan && l.startId != null)
@@ -200,10 +201,9 @@
         </div>
         {#if srcOf(g) !== 'store'}
           <div class="flex flex-wrap items-center gap-2">
-            <Tooltip.Root>
-              <Tooltip.Trigger class="text-muted-foreground cursor-help text-xs">Insurance</Tooltip.Trigger>
-              <Tooltip.Content>A CCU keeps the pledge's insurance: upgrade an LTI copy to end with an LTI ship</Tooltip.Content>
-            </Tooltip.Root>
+            <LazyTip tip="A CCU keeps the pledge's insurance: upgrade an LTI copy to end with an LTI ship">
+              {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help text-xs">Insurance</button>{/snippet}
+            </LazyTip>
             <Segmented
               options={[
                 { id: 'any', label: 'Any', hint: 'Any copy; a non-LTI copy is used first so LTI copies stay free for LTI goals' },
@@ -216,15 +216,16 @@
               size="sm"
             />
             {#if srcOf(g) === 'auto'}
-              <label class={cn('text-muted-foreground flex items-center gap-2 text-xs', g.lti === 'only' && 'opacity-50')}>
-                <Tooltip.Root>
-                  <Tooltip.Trigger>
-                    {#snippet child({ props })}<Checkbox {...props} checked={!!g.storeStart && g.lti !== 'only'} disabled={g.lti === 'only'} onCheckedChange={(v) => edit(i, { storeStart: !!v })} />{/snippet}
-                  </Tooltip.Trigger>
-                  <Tooltip.Content>This goal may start by buying a standalone ship on sale instead of upgrading one of yours</Tooltip.Content>
-                </Tooltip.Root>
-                may start from a store ship
-              </label>
+              <SwitchRow
+                id={`fleet-store-${g.id}`}
+                size="sm"
+                class={cn('text-xs', g.lti === 'only' && 'opacity-50')}
+                label="May start from a store ship"
+                hint="Buy a standalone ship on sale instead of upgrading one of yours"
+                checked={!!g.storeStart && g.lti !== 'only'}
+                disabled={g.lti === 'only'}
+                onchange={(v) => edit(i, { storeStart: v })}
+              />
             {/if}
           </div>
         {/if}
@@ -239,10 +240,9 @@
               <span class="text-muted-foreground">{name(leg.startId)}</span>
               {#each leg.plan.steps as s, k (k)}
                 <span class="text-muted-foreground">→</span>
-                <Tooltip.Root>
-                  <Tooltip.Trigger class={cn('cursor-help', s.kind === 'future' && 'text-warning', s.kind === 'owned' && 'text-success', g.via.includes(s.toId) && 'font-semibold')}>{name(s.toId)}{s.kind === 'future' ? ' ⏳' : ''}</Tooltip.Trigger>
-                  <Tooltip.Content>{s.label} · {s.cost ? usd(s.cost) : 'free'}</Tooltip.Content>
-                </Tooltip.Root>
+                <LazyTip tip={`${s.label} · ${s.cost ? usd(s.cost) : 'free'}`}>
+                  {#snippet trigger({ props })}<button type="button" {...props} class={cn('cursor-help', s.kind === 'future' && 'text-warning', s.kind === 'owned' && 'text-success', g.via.includes(s.toId) && 'font-semibold')}>{name(s.toId)}{s.kind === 'future' ? ' ⏳' : ''}</button>{/snippet}
+                </LazyTip>
               {/each}
               <span class="flex-1"></span>
               <span class="tabular-nums">{usd(leg.plan.total - leg.plan.later)} now{leg.plan.later ? ` · ${usd(leg.plan.later)} later` : ''} · <span class={cn(leg.plan.savings > 0 && 'text-success')}>{usd(leg.plan.savings)} saved</span></span>
@@ -254,15 +254,7 @@
     {/each}
     <div class="flex flex-wrap items-center gap-2">
       <div class="w-[260px]"><ShipSelect ships={wantable} mine={wantOwned ? mine : []} saleTag bind:value={addTo} onpick={addGoal} ariaLabel="Add a goal ship" placeholder="+ Add a ship you want…" /></div>
-      <label class="text-muted-foreground flex items-center gap-2 text-xs">
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}<Checkbox {...props} bind:checked={wantOwned} />{/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>List the ships already in your hangar too (another copy, or a goal you already reached)</Tooltip.Content>
-        </Tooltip.Root>
-        include ships I own
-      </label>
+      <SwitchRow id="fleet-want-owned" size="sm" class="text-xs" label="Include ships I own" hint="List the ships already in your hangar too (another copy, or a goal you already reached)" checked={wantOwned} onchange={(v) => (wantOwned = v)} />
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">Never auto-upgrade</span>
@@ -273,10 +265,9 @@
       {#if keep.length}<Button variant="ghost" size="xs" onclick={() => (keep = [])}><X /> Clear all</Button>{/if}
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
-      <Tooltip.Root>
-        <Tooltip.Trigger class="text-muted-foreground cursor-help">Prefer to upgrade</Tooltip.Trigger>
-        <Tooltip.Content>Auto upgrades one of these first whenever it gets to the target — cheap LTI tokens, ships you don't fly</Tooltip.Content>
-      </Tooltip.Root>
+      <LazyTip tip="Auto upgrades one of these first whenever it gets to the target — cheap LTI tokens, ships you don't fly">
+        {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help">Prefer to upgrade</button>{/snippet}
+      </LazyTip>
       {#each prefer as k (k)}
         <Chip variant="success-soft" removeLabel={`Stop preferring ${name(k)}`} onremove={() => (prefer = prefer.filter((x) => x !== k))}>{name(k)}</Chip>
       {/each}
@@ -284,10 +275,9 @@
       {#if ltiToAdd.length}<TipButton variant="outline" size="xs" onclick={() => addPrefer(ltiToAdd)} tip={ltiToAdd.map((id) => name(id)).join(', ')}><Plus /> my LTI hulls ({ltiToAdd.length})</TipButton>{/if}
       {#if prefer.length}<Button variant="ghost" size="xs" onclick={() => (prefer = [])}><X /> Clear all</Button>{/if}
       {#if labelPrefer.length}
-        <Tooltip.Root>
-          <Tooltip.Trigger class="text-muted-foreground cursor-help text-left">+ from labels: {labelPrefer.map((id) => name(id)).join(', ')}</Tooltip.Trigger>
-          <Tooltip.Content>Pledges you labelled LTI token / CCU fodder on the Pledges page</Tooltip.Content>
-        </Tooltip.Root>
+        <LazyTip tip="Pledges you labelled LTI token / CCU fodder on the Pledges page">
+          {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help text-left">+ from labels: {labelPrefer.map((id) => name(id)).join(', ')}</button>{/snippet}
+        </LazyTip>
       {/if}
     </div>
     <span class="text-muted-foreground text-xs">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain · Auto tries preferred hulls first, never the kept ones{keptByLabel ? ` · ${keptByLabel} pledge${keptByLabel === 1 ? '' : 's'} labelled Keep left out` : ''}</span>
@@ -308,14 +298,14 @@
         <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Waiting for a sale · the Feed alerts once the plan is saved</span>
         <Table.Root>
           <Table.Header>
-            <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Goal</Table.Head><Table.Head>Planned</Table.Head><Table.Head>History</Table.Head></Table.Row>
+            <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Goal</Table.Head><Table.Head class="text-right">Planned</Table.Head><Table.Head>History</Table.Head></Table.Row>
           </Table.Header>
           <Table.Body>
             {#each waiting as w, i (i)}
               <Table.Row>
                 <Table.Cell><span class="text-muted-foreground">{name(w.s.fromId)} →</span> <strong>{name(w.s.toId)}</strong></Table.Cell>
                 <Table.Cell>#{w.goal} {name(goals[w.goal - 1]?.targetId ?? null)}</Table.Cell>
-                <Table.Cell class="tabular-nums">{usd(w.s.cost)}</Table.Cell>
+                <Table.Cell class="text-right tabular-nums">{usd(w.s.cost)}</Table.Cell>
                 <Table.Cell class="text-muted-foreground text-[11px]">{seen(w.s.toId)}</Table.Cell>
               </Table.Row>
             {/each}
@@ -325,7 +315,7 @@
     {/if}
 
     <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), savePlan())}>
-      <Input class="h-7 w-56" placeholder="Plan name (optional)" bind:value={planName} aria-label="Plan name" />
+      <Input class="w-56" placeholder="Plan name (optional)" bind:value={planName} aria-label="Plan name" />
       <Button size="sm" type="submit" disabled={fleet.failed === goals.length}><Plus /> Save plan</Button>
       <span class="text-muted-foreground text-[11px]">One saved chain per goal; saving again under the same name replaces them. Saved chains keep their CCUs out of new plans.</span>
       {#if savedMsg.text}<span class="text-success text-[11px]">{savedMsg.text}</span>{/if}

@@ -2,7 +2,7 @@
   import { fetchCredits, loadHangar, updateHangar } from '@/lib/account';
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
-  import { canMelt, copiesElsewhere, duplicatePlan, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
+  import { canMelt, copiesElsewhere, duplicatePlan, holdersIndex, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
   import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
   import { storeLinksFor } from '@/lib/paints';
   import { applyFacets, type FacetValues } from '@/lib/facets';
@@ -28,8 +28,11 @@
   import Empty from './Empty.svelte';
   import { ownDollars } from '@/lib/privacy.svelte';
   import { dateStamp, downloadFile } from '@/lib/download';
+  import SwitchRow from './SwitchRow.svelte';
   import * as Alert from '@/components/ui/alert';
   import { cn } from '@/lib/utils';
+  import { LINK, LINK_ICON } from '@/lib/ui';
+  import { fmtDate, fmtDateTime, parseRsiDate } from '@/lib/dates';
   import { hangarEvents } from '@/lib/hangar-events';
   import { mergeEvents } from '@/lib/watch';
   import { feedItem } from '@/lib/settings';
@@ -38,7 +41,6 @@
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
   import * as Table from '@/components/ui/table';
-  import * as Tooltip from '@/components/ui/tooltip';
   import * as Collapsible from '@/components/ui/collapsible';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
   import { Checkbox } from '@/components/ui/checkbox';
@@ -146,7 +148,8 @@
 
   const all = $derived(data?.pledges ?? []);
   /** Meltable pledges labelled *Melt* (one-click pick in the melt calculator). */
-  const meltLabelled = $derived(all.filter((p) => idsWith(labels, MELT).has(p.id) && canMelt(p)));
+  const meltIds = $derived(idsWith(labels, MELT));
+  const meltLabelled = $derived(all.filter((p) => meltIds.has(p.id) && canMelt(p)));
   /** Total pages while loading: the page's own pagination, else the last page a saved pledge came from. */
   const lastPage = $derived(all.reduce((m, p) => Math.max(m, p.page ?? 0), 0));
   const totalPages = $derived(loading?.pages ?? (lastPage ? Math.max(loading?.page ?? 0, lastPage) : undefined));
@@ -321,8 +324,15 @@
   /** Meltable pledges holding only paints for ships you don't own (unknown-ship paints don't count — could be yours). */
   const orphanPaints = $derived.by(() => {
     const noShip = new Set(inv.rows.filter((r) => r.category === 'paint' && paintStatus(r, inv.ownedIds) === 'no-ship').flatMap((r) => r.pledges.map((p) => p.id)));
-    const paintOnly = (p: Pledge) => p.items.length > 0 && inv.rows.filter((r) => r.pledges.some((x) => x.id === p.id)).every((r) => r.category === 'paint');
-    return all.filter((p) => canMelt(p) && noShip.has(p.id) && paintOnly(p) && inv.rows.filter((r) => r.pledges.some((x) => x.id === p.id)).every((r) => paintStatus(r, inv.ownedIds) === 'no-ship'));
+    const rowsOf = new Map<number, typeof inv.rows>();
+    for (const r of inv.rows)
+      for (const id of new Set(r.pledges.map((x) => x.id))) {
+        const list = rowsOf.get(id);
+        if (list) list.push(r);
+        else rowsOf.set(id, [r]);
+      }
+    const paintOnly = (p: Pledge) => p.items.length > 0 && (rowsOf.get(p.id) ?? []).every((r) => r.category === 'paint');
+    return all.filter((p) => canMelt(p) && noShip.has(p.id) && paintOnly(p) && (rowsOf.get(p.id) ?? []).every((r) => paintStatus(r, inv.ownedIds) === 'no-ship'));
   });
   const orphanCredit = $derived(orphanPaints.reduce((n, p) => n + p.value, 0));
   /** Pledges labelled *Keep* are never picked by the dedupe / target planners. */
@@ -330,6 +340,8 @@
   const melt = $derived(meltSummary(all, picked, opts));
   /** One kept-count table per pick change for every row's "Would lose" (instead of one per row). */
   const kept = $derived(keptCounts(all, picked));
+  /** Item → pledges holding it, once per hangar, for the "also in #…" lines under each pick. */
+  const holders = $derived(holdersIndex(all));
   const dupes = $derived(duplicatePlan(all, opts));
   const dupeCredit = $derived(dupes.reduce((n, p) => n + p.value, 0));
   /** What each type would add if allowed (planned with only that type enabled on top of the current chips). */
@@ -352,18 +364,45 @@
     for (const p of list) if (canMelt(p)) on ? s.add(p.id) : s.delete(p.id);
     picked = s;
   };
+  /** Rows of open ship groups before each group (by-ship chunking). */
+  const groupStarts = $derived.by(() => {
+    let n = 0;
+    return groups.map((g) => {
+      const at = n;
+      if (!closed.has(g.key)) n += g.rows.length;
+      return at;
+    });
+  });
+  const rowCount = $derived.by(() => (byShip ? groups.reduce((n, g) => n + (closed.has(g.key) ? 0 : g.rows.length), 0) : visible.length));
   /**
-   * Rows (or ship groups) on screen: the first few paint with the click, the rest follow a chunk per frame — building a
+   * Rows on screen: the first few paint with the click, the rest follow a chunk per frame — building a
    * 500-pledge table in one go blocked the page for half a second after picking Pledges in the sidebar. Starts over
    * when the view switches (Pledges ↔ Melt calculator re-renders every row with other columns; flat ↔ by ship swaps the
-   * whole tree). Rows are keyed by pledge id so Group: identical / none keeps the DOM of every row that stays.
+   * whole tree). Rows are keyed by pledge id so Group: identical / none keeps the DOM of every row that stays. A filter
+   * change keeps what is on screen (capped to the new list), so clearing a filter grows from there instead of mounting
+   * every row in one frame. By ship, the budget counts the rows of open groups.
    */
-  let budget = $derived.by(() => (void pane, void byShip, 40));
+  // Plain (not reactive): rows on screen and the view they were for, read when the list changes.
+  let onScreen = 0;
+  let onScreenView = '';
+  let budget = $derived.by(() => {
+    const view = `${pane}|${byShip}`;
+    const keep = view === onScreenView ? onScreen : 0;
+    onScreenView = view;
+    return Math.max(40, Math.min(keep, rowCount));
+  });
   $effect(() => {
-    if (budget >= Math.max(visible.length, groups.length)) return;
+    onScreen = Math.min(budget, rowCount);
+    if (budget >= rowCount) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
+  /** Header box of the melt table: every meltable pledge shown is picked. */
+  const allShownPicked = $derived(shown.some(canMelt) && shown.every((p) => !canMelt(p) || picked.has(p.id)));
+  const dateCell = (d: string) => {
+    const t = parseRsiDate(d);
+    return Number.isNaN(t) ? d : fmtDate(t);
+  };
   const visible = $derived(!melting || pickView === 'all' ? stacks : stacks.filter((s) => s.entries.some((p) => picked.has(p.id))));
   const pickedIn = (s: PledgeStack) => s.entries.filter((p) => picked.has(p.id)).length;
   const meltableIn = (s: PledgeStack) => s.entries.filter(canMelt).length;
@@ -390,7 +429,7 @@
   }
 </script>
 
-{#snippet ext()}<ExternalLink class="inline size-3 align-[-1px]" aria-hidden="true" />{/snippet}
+{#snippet ext()}<ExternalLink class={LINK_ICON} aria-hidden="true" />{/snippet}
   <Card.Root>
     <Card.Header>
       <Card.Title>{pane === 'melt' ? 'Melt calculator' : 'Pledges'}</Card.Title>
@@ -426,8 +465,8 @@
           <div class="grid gap-4">
             <StatGrid>
               {#if data?.credits}
-                <Stat value={money(data.credits.usd)} label="store credit" tone="credit" hint={data.creditsAt ? `as of ${new Date(data.creditsAt).toLocaleString()}` : null}>
-                  <a class="text-primary text-[11.5px]" href="#wallet">Wallet</a>
+                <Stat value={money(data.credits.usd)} label="store credit" tone="credit" hint={data.creditsAt ? `as of ${fmtDateTime(data.creditsAt)}` : null}>
+                  <a class="{LINK} text-[11.5px]" href="#wallet">Wallet</a>
                 </Stat>
               {/if}
               <Stat value={money(sum.value)} label="melt value" />
@@ -452,22 +491,11 @@
                   Pick labelled “Melt” · {meltLabelled.length} · {money(meltLabelled.reduce((n, p) => n + p.value, 0))}
                 </TipButton>
               {/if}
-              <Tooltip.Root>
-                <Tooltip.Trigger>
-                  {#snippet child({ props })}
-                    <span {...props} class="inline-flex">
-                      <Button variant="outline" size="sm" disabled={!orphanPaints.length} onclick={() => ((picked = new Set([...picked, ...orphanPaints.map((p) => p.id)])), (pickView = 'picked'))}>
-                        Pick paints without a ship{orphanPaints.length ? ` · ${orphanPaints.length} · ${money(orphanCredit)}` : ' · none'}
-                      </Button>
-                    </span>
-                  {/snippet}
-                </Tooltip.Trigger>
-                {#if !cat || orphanPaints.length}
-                  <Tooltip.Content class="whitespace-pre-line">{cat ? orphanPaints.map((p) => `${p.name} · ${money(p.value)}`).join('\n') : 'Needs the store ship list (loading…)'}</Tooltip.Content>
-                {/if}
-              </Tooltip.Root>
+              <TipButton variant="outline" size="sm" disabled={!orphanPaints.length} tip={cat ? orphanPaints.map((p) => `${p.name} · ${money(p.value)}`).join('\n') : 'Needs the store ship list (loading…)'} onclick={() => ((picked = new Set([...picked, ...orphanPaints.map((p) => p.id)])), (pickView = 'picked'))}>
+                Pick paints without a ship{orphanPaints.length ? ` · ${orphanPaints.length} · ${money(orphanCredit)}` : ' · none'}
+              </TipButton>
               <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), planTarget())}>
-                <label class="text-muted-foreground flex items-center gap-1 text-xs">Need $<Input type="number" min="1" step="1" class="h-7 w-[90px]" bind:value={target} placeholder="credit" aria-label="Credit needed" /></label>
+                <label class="text-muted-foreground flex items-center gap-1 text-xs">Need $<Input type="number" min="1" step="1" class="w-[90px]" bind:value={target} placeholder="credit" aria-label="Credit needed" /></label>
                 <Button type="submit" variant="outline" size="sm" disabled={!target}>Plan for target</Button>
               </form>
               <Button variant="outline" size="sm" disabled={!shown.length} onclick={() => pickAll(shown, true)}>Pick shown</Button>
@@ -476,7 +504,7 @@
             <div class="flex flex-wrap items-center gap-2 text-xs">
               <span class="text-muted-foreground">May pick:</span>
               <FilterChips options={dedupeOptions} bind:value={dedupe} multiple ariaLabel="Pledge types the planner may pick" />
-              <label class="text-muted-foreground flex items-center gap-1.5"><Checkbox bind:checked={keepLti} /> never LTI</label>
+              <SwitchRow id="melt-never-lti" size="sm" label="Never LTI" checked={keepLti} onchange={(v) => (keepLti = v)} />
             </div>
             {#if planNote}<div class="text-xs">{planNote}</div>{/if}
             {#if picked.size}
@@ -504,7 +532,7 @@
                   <p class="text-muted-foreground my-2">RSI asks for your account password on every melt, so RSI+ can't do it for you. Each link opens the hangar on the right page, scrolls to the pledge and opens RSI's own melt dialog. Listed last hangar page first: melting from the bottom keeps the rows above in place, so the next link is still right. If a pledge did move, the hangar page looks for it on the nearby pages. <em>Reload all</em> here afterwards.</p>
                   <ul class="mt-1 list-disc pl-[18px]">
                     {#each all.filter((p) => picked.has(p.id)).reverse() as p (p.id)}
-                      <li><a class="text-primary font-semibold no-underline hover:underline" href={hangarUrl(all, p.id, 'melt')} target="_blank" rel="noopener">Melt {@render ext()}</a> <strong>{p.name}</strong> <span class="text-muted-foreground">#{p.id} · {money(p.value)}</span></li>
+                      <li><a class="{LINK} font-semibold" href={hangarUrl(all, p.id, 'melt')} target="_blank" rel="noopener">Melt {@render ext()}</a> <strong>{p.name}</strong> <span class="text-muted-foreground">#{p.id} · {money(p.value)}</span></li>
                     {/each}
                   </ul>
                 </Collapsible.Content>
@@ -549,8 +577,9 @@
     </div>
     <div class="grid gap-2">
       {#if !groups.length}<Empty>Nothing matches.</Empty>{/if}
-      {#each groups.slice(0, budget) as g (g.key)}
+      {#each groups as g, gi (g.key)}
         {@const open = !closed.has(g.key)}
+        {#if groupStarts[gi]! < budget}
         <Collapsible.Root {open} onOpenChange={() => toggleGroup(g.key)} class="rounded-lg border px-2 pt-0.5 pb-1.5">
           <Collapsible.Trigger class="focus-visible:ring-ring/50 flex w-full cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] outline-none focus-visible:ring-2">
             {#if open}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
@@ -562,10 +591,12 @@
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
           </Collapsible.Trigger>
           <Collapsible.Content>
-            {@render pledgeTable(g.rows)}
+            {#if open}{@render pledgeTable(g.rows.slice(0, Math.max(0, budget - groupStarts[gi]!)))}{/if}
           </Collapsible.Content>
         </Collapsible.Root>
+        {/if}
       {/each}
+      {#if budget < rowCount}<p class="text-muted-foreground text-xs">… {rowCount - budget} more loading</p>{/if}
     </div>
   {/if}
 {/snippet}
@@ -583,16 +614,8 @@
       ariaLabel="Group pledges"
       size="sm"
     />
-    <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
-      <Tooltip.Root>
-        <Tooltip.Trigger>
-          {#snippet child({ props })}<Checkbox {...props} id="hangar-by-ship" bind:checked={byShip} />{/snippet}
-        </Tooltip.Trigger>
-        <Tooltip.Content>Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row</Tooltip.Content>
-      </Tooltip.Root>
-      <label for="hangar-by-ship">Group by ship</label>
-    </span>
-    <label class="text-muted-foreground flex items-center gap-1.5 text-xs"><Checkbox bind:checked={allItems} /> Show all items in every pledge</label>
+    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row" checked={byShip} onchange={(v) => (byShip = v)} />
+    <SwitchRow id="hangar-all-items" size="sm" label="Show all items in every pledge" checked={allItems} onchange={(v) => (allItems = v)} />
     {#if setOptions.length}
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
@@ -622,22 +645,22 @@
           <Table.Root>
             <Table.Header>
               <Table.Row>
-                {#if melting}<Table.Head><Checkbox aria-label="Pick all shown" checked={shown.some(canMelt) && shown.every((p) => !canMelt(p) || picked.has(p.id))} onCheckedChange={(v) => pickAll(shown, v)} /></Table.Head>{/if}
+                {#if melting}<Table.Head><Checkbox aria-label="Pick all shown" checked={allShownPicked} onCheckedChange={(v) => pickAll(shown, v)} /></Table.Head>{/if}
                 <SortTh key="name" bind:sort>Pledge</SortTh>
                 <SortTh key="qty" bind:sort firstDir="desc">Qty</SortTh>
                 <SortTh key="type" bind:sort>Type</SortTh>
-                <SortTh key="value" bind:sort firstDir="desc">Value</SortTh>
+                <SortTh key="value" bind:sort firstDir="desc" numeric>Value</SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
                 <Table.Head>
                   <LazyTip tip="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners">
-                    {#snippet trigger({ props })}<button type="button" {...props} class="cursor-help">Labels</button>{/snippet}
+                    {#snippet trigger({ props })}<button type="button" {...props} class="cursor-default">Labels</button>{/snippet}
                   </LazyTip>
                 </Table.Head>
                 {#if melting}
                   <Table.Head>
                     <LazyTip tip="Items that disappear for good if you melt one more of these on top of what's picked">
-                      {#snippet trigger({ props })}<button type="button" {...props} class="cursor-help">Would lose</button>{/snippet}
+                      {#snippet trigger({ props })}<button type="button" {...props} class="cursor-default">Would lose</button>{/snippet}
                     </LazyTip>
                   </Table.Head>
                 {/if}
@@ -677,7 +700,7 @@
                         <div class="text-xs">
                           <ArrowUpRight class="text-primary inline size-3 align-[-2px]" aria-hidden="true" /> <span class="text-muted-foreground">{up.from} →</span> <strong>{up.to}</strong>
                           <LazyTip tip="A CCU was applied: the pledge keeps its original name, the hull inside is the new one">
-                            {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help">(upgraded)</button>{/snippet}
+                            {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-default">(upgraded)</button>{/snippet}
                           </LazyTip>
                         </div>
                       {/if}
@@ -698,12 +721,12 @@
                     {#if melting && nPicked}<div class="text-xs"><span class="text-warning">{nPicked} melt</span>{#if n - nPicked}<span class="text-muted-foreground"> · {n - nPicked} keep</span>{/if}</div>{/if}
                   </Table.Cell>
                   <Table.Cell>{p.type}</Table.Cell>
-                  <Table.Cell>{money(p.value)}{#if n > 1}<div class="text-muted-foreground text-xs">{money(p.value * n)} total</div>{/if}</Table.Cell>
-                  <Table.Cell class="text-muted-foreground text-xs">{n > 1 ? `${s.entries[n - 1]!.date} – ${p.date}` : p.date}</Table.Cell>
+                  <Table.Cell class="text-right tabular-nums">{money(p.value)}{#if n > 1}<div class="text-muted-foreground text-xs">{money(p.value * n)} total</div>{/if}</Table.Cell>
+                  <Table.Cell class="text-muted-foreground text-xs">{n > 1 ? `${dateCell(s.entries[n - 1]!.date)} – ${dateCell(p.date)}` : dateCell(p.date)}</Table.Cell>
                   <Table.Cell class="whitespace-normal">
                     <div class="flex flex-wrap gap-0.5">
                       {#if p.insurance}<Tag kind="insurance" value={p.insurance} />{:else if p.lti}<Tag kind="insurance" value="LTI" />{/if}
-                      {#if p.warbond}<Badge variant="secondary">WB</Badge>{/if}
+                      {#if p.warbond}<Tag kind="warbond" />{/if}
                       {#if s.entries.some((e) => e.giftable)}<Tag kind="giftable" label={n > 1 ? `Giftable ${s.entries.filter((e) => e.giftable).length}/${n}` : null} />{/if}
                       {#if isGifted(p)}<Tag kind="gifted" />{/if}
                       {#if p.upgraded}<Tag kind="upgraded" />{/if}
@@ -723,7 +746,7 @@
                       {:else}
                         {@const loss = lossWith(kept, next, opts)}
                         {#if loss.length}
-                          <HintBadge variant="warning" class="cursor-help" hint={loss.join('\n')}>−{loss.length}</HintBadge>
+                          <HintBadge variant="warning" hint={loss.join('\n')}>−{loss.length}</HintBadge>
                           <span class="text-muted-foreground">{loss.slice(0, 2).join(', ')}{loss.length > 2 ? '…' : ''}</span>
                         {:else}<Badge variant="success">duplicate</Badge>{/if}
                       {/if}
@@ -738,22 +761,22 @@
                             {#snippet trigger({ props })}<Checkbox {...props} checked={on} disabled={!canMelt(e)} onCheckedChange={() => togglePick(e.id)} aria-label={`Pick ${e.name} #${e.id}`} />{/snippet}
                           </LazyTip>
                         {/if}
-                        <a class={cn('text-primary no-underline hover:underline', on && 'font-bold')} href={hangarUrl(all, e.id)} target="_blank" rel="noopener" title="Open the hangar page scrolled to this pledge">#{e.id} {@render ext()}</a>
+                        <a class={cn(LINK, on && 'font-bold')} href={hangarUrl(all, e.id)} target="_blank" rel="noopener" title="Open the hangar page scrolled to this pledge">#{e.id} {@render ext()}</a>
                         {#if canMelt(e)}<TipButton variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'melt')} target="_blank" rel="noopener" tip="Open RSI's melt dialog for this pledge (you confirm with your password there)">melt</TipButton>{/if}
                         {#if e.giftable}<TipButton variant="outline" size="xs" class="text-muted-foreground h-5 px-1.5" href={hangarUrl(all, e.id, 'gift')} target="_blank" rel="noopener" tip="Open RSI's gift dialog for this pledge">gift</TipButton>{/if}
-                        {#if n > 1}<span class="text-muted-foreground">{e.date}</span>{/if}
+                        {#if n > 1}<span class="text-muted-foreground">{dateCell(e.date)}</span>{/if}
                         {#if e.nickname}<span class="text-muted-foreground">“{e.nickname}”</span>{/if}
                         {#if n > 1 && e.giftable}<Tag kind="giftable" size="xs" />{/if}
                       </div>
                       {#if on}
-                        {@const where = copiesElsewhere(all, picked, e)}
+                        {@const where = copiesElsewhere(holders, picked, e)}
                         {#if where.length}
                           <div class="mt-0.5 mb-1 ml-5 text-[11px] leading-normal">
                             {#each where as w (w.title)}
                               <div>
                                 {#if w.in.length}
                                   <span class="text-success inline-flex items-center gap-0.5"><Check class="size-3" aria-hidden="true" /> {w.title}</span> <span class="text-muted-foreground">also in</span>
-                                  {#each w.in.slice(0, 3) as q (q.id)}<a class="text-primary ml-1 no-underline hover:underline" href={hangarUrl(all, q.id)} target="_blank" rel="noopener" title={q.name}>#{q.id}</a>{/each}
+                                  {#each w.in.slice(0, 3) as q (q.id)}<a class="{LINK} ml-1" href={hangarUrl(all, q.id)} target="_blank" rel="noopener" title={q.name}>#{q.id}</a>{/each}
                                   {#if w.in.length > 3}<span class="text-muted-foreground">+{w.in.length - 3}</span>{/if}
                                 {:else}
                                   <span class="text-warning inline-flex items-center gap-0.5"><X class="size-3" aria-hidden="true" /> {w.title}</span> <span class="text-muted-foreground">— last copy</span>

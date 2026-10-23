@@ -7,9 +7,10 @@
   import Segmented from './Segmented.svelte';
   import SwitchRow from './SwitchRow.svelte';
   import TipButton from './TipButton.svelte';
+  import LazyTip from './LazyTip.svelte';
+  import { LINK } from '@/lib/ui';
   import * as Card from '@/components/ui/card';
   import * as ToggleGroup from '@/components/ui/toggle-group';
-  import * as Tooltip from '@/components/ui/tooltip';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
   import { Button } from '@/components/ui/button';
@@ -47,16 +48,9 @@
       {#if active}<Check class="size-3" />{/if}
     </ToggleGroup.Item>
   {/snippet}
-  {#if hint}
-    <Tooltip.Root>
-      <Tooltip.Trigger>
-        {#snippet child({ props })}{@render item(props)}{/snippet}
-      </Tooltip.Trigger>
-      <Tooltip.Content>{hint}</Tooltip.Content>
-    </Tooltip.Root>
-  {:else}
-    {@render item()}
-  {/if}
+  <LazyTip tip={hint}>
+    {#snippet trigger({ props })}{@render item(props)}{/snippet}
+  </LazyTip>
 {/snippet}
 
 {#snippet numberField(n: NumberSetting, value: number, disabled = false)}
@@ -95,7 +89,7 @@
         <span class="text-muted-foreground">Preview:</span>
         <Button size="sm">Primary</Button>
         <Button size="sm" variant="outline">Outline</Button>
-        <a class="text-primary hover:underline" href="#settings">a link</a>
+        <a class={LINK} href="#settings">a link</a>
         <span class="text-success">success</span>
         <span class="text-warning">warning</span>
         <span class="text-destructive">destructive</span>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
-import { canMelt, copiesElsewhere, duplicatePlan, marginalLoss, meltSummary, targetPlan } from '@/lib/melt';
+import { canMelt, copiesElsewhere, duplicatePlan, holdersIndex, marginalLoss, meltSummary, targetPlan } from '@/lib/melt';
 
 const pledge = (id: number, items: [string, string][], extra: Partial<Pledge> = {}): Pledge => ({
   id, name: `Pledge ${id}`, value: 10, date: '', type: 'ship', items: items.map(([title, kind]) => ({ title, kind })), ships: [], upgrade: null,
@@ -71,11 +71,16 @@ describe('melt', () => {
   });
 
   it('copies elsewhere: where each item of a melted pledge still lives', () => {
-    const w = copiesElsewhere(all, new Set([2, 3]), all[2]!); // melting 2 and 3; pledge 3 = Cutlass + paint
+    const idx = holdersIndex(all);
+    const w = copiesElsewhere(idx, new Set([2, 3]), all[2]!); // melting 2 and 3; pledge 3 = Cutlass + paint
     expect(w.map((x) => [x.title, x.in.map((p) => p.id)])).toEqual([
       ['Cutlass Black', [1, 8]], // 2 is picked too, so it doesn't count
       ['Cutlass - Frost Livery', []], // last copy
     ]);
+    // One index serves every pick: nothing else picked → 2 counts again; the pledge itself never does.
+    expect(copiesElsewhere(idx, new Set([3]), all[2]!)[0]!.in.map((p) => p.id)).toEqual([1, 2, 8]);
+    // A pledge listing an item twice is indexed once.
+    expect(holdersIndex([pledge(1, [['Mug', 'Hangar decoration'], ['Mug', 'Hangar decoration']])]).get('mug')!.map((p) => p.id)).toEqual([1]);
   });
 
   it('dedupe options: exclude types, never LTI', () => {

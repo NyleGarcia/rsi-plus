@@ -15,16 +15,17 @@
   import Thumb from './Thumb.svelte';
   import Tag from './Tag.svelte';
   import HintBadge from './HintBadge.svelte';
+  import LazyTip from './LazyTip.svelte';
   import TipButton from './TipButton.svelte';
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
-  import * as Tooltip from '@/components/ui/tooltip';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
-  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
+  import { fmtDate, fmtDateTime } from '@/lib/dates';
+  import { LINK_QUIET } from '@/lib/ui';
   import Star from '@lucide/svelte/icons/star';
   import FanNotice from './FanNotice.svelte';
 
@@ -191,9 +192,8 @@
 
 <Card.Root>
   <Card.Header>
-    <Card.Title>Ship catalog</Card.Title>
     <Card.Description>
-      {cat ? `What the pledge store sells right now — ${onSaleCount} of ${cat.ships.length} hulls · prices from ${new Date(cat.at).toLocaleString()}` : loading ? 'Loading…' : ''}
+      {cat ? `What the pledge store sells right now — ${onSaleCount} of ${cat.ships.length} hulls · prices from ${fmtDateTime(cat.at)}` : loading ? 'Loading…' : ''}
       · ★ wishlist alerts when a warbond / sale price appears (checked every 30 min) · <em>Not on sale</em> lists the rest; <em>Plan CCU</em> works for those too (Plan ahead)
     </Card.Description>
     <Card.Action class="flex flex-wrap items-center gap-2">
@@ -217,9 +217,9 @@
         <Table.Row>
           <SortTh key="wish" bind:sort firstDir="desc">★</SortTh>
           <SortTh key="name" bind:sort>Ship</SortTh>
-          <SortTh key="msrp" bind:sort>MSRP</SortTh>
+          <SortTh key="msrp" bind:sort numeric>MSRP</SortTh>
           <SortTh key="offer" bind:sort>On sale</SortTh>
-          <SortTh key="saving" bind:sort firstDir="desc">Under MSRP</SortTh>
+          <SortTh key="saving" bind:sort firstDir="desc" numeric>Under MSRP</SortTh>
           <Table.Head><span class="sr-only">Actions</span></Table.Head>
         </Table.Row>
       </Table.Header>
@@ -237,7 +237,7 @@
               <div class="flex items-center gap-2.5">
                 <Thumb src={s.thumb} name={s.name} width={64} height={36} />
                 <div class="grid gap-0.5">
-                  <a class="text-foreground no-underline hover:underline" href={s.link} target="_blank" rel="noopener"><strong>{s.name}</strong></a>
+                  <a class={LINK_QUIET} href={s.link} target="_blank" rel="noopener"><strong>{s.name}</strong></a>
                   <div class="text-muted-foreground text-[11px]">{s.manufacturer} · {s.focus} · {s.flyable}</div>
                   {#if vipIds.has(s.id) || stageOf(s.flyable) !== 'ready' || s.size}
                     <div class="flex flex-wrap gap-1">
@@ -256,23 +256,22 @@
                 </div>
               </div>
             </Table.Cell>
-            <Table.Cell>{s.msrp ? usd(s.msrp) : '—'}</Table.Cell>
+            <Table.Cell class="text-right tabular-nums">{s.msrp ? usd(s.msrp) : '—'}</Table.Cell>
             <Table.Cell class="whitespace-normal">
               <div class="flex flex-wrap gap-1">
-                {#if wb}<Badge variant="warning">WB {usd(wb.price)}{wb.stock != null ? ` · ${wb.stock} left` : ''}</Badge>{#if isLimitedSku(wb)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/if}
-                {#each s.ccu.filter((k) => k !== wb) as k (k.id)}<Badge variant="outline">{k.title || 'CCU'} {usd(k.price)}</Badge>{#if isLimitedSku(k)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/each}
-                {#each s.standalone.filter((k) => k.available) as k (k.id)}<Badge variant="success">Standalone {usd(k.price)}</Badge>{/each}
+                {#if wb}<Tag kind="warbond" label={`Warbond ${usd(wb.price)}${wb.stock != null ? ` · ${wb.stock} left` : ''}`} />{#if isLimitedSku(wb)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/if}
+                {#each s.ccu.filter((k) => k !== wb) as k (k.id)}<Tag kind="sale" label={`${k.title || 'CCU'} ${usd(k.price)}`} />{#if isLimitedSku(k)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/each}
+                {#each s.standalone.filter((k) => k.available) as k (k.id)}<Tag kind="sale" label={`Standalone ${usd(k.price)}`} />{/each}
                 {#if limitedIds.has(s.id)}<Tag kind="limited" size="xs" class="self-center" hint="RSI marks the standalone listing time-limited (from Browse)" />{/if}
                 {#if !onSale(s)}
                   {@const t = lastSale(sales, s.id)}
-                  <Tooltip.Root>
-                    <Tooltip.Trigger class="text-muted-foreground cursor-default text-[11px]">not on sale{t ? ` · last ${new Date(t).toLocaleDateString()}` : ''}</Tooltip.Trigger>
-                    <Tooltip.Content class="max-w-80">{t ? 'Last seen on sale by RSI+ (history starts when it was installed)' : "Not seen on sale since RSI+ was installed — ships come back at IAE (November), Invictus (May) or the maker's showcase"}</Tooltip.Content>
-                  </Tooltip.Root>
+                  <LazyTip tip={t ? 'Last seen on sale by RSI+ (history starts when it was installed)' : "Not seen on sale since RSI+ was installed — ships come back at IAE (November), Invictus (May) or the maker's showcase"}>
+                    {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-default text-[11px]">not on sale{t ? ` · last ${fmtDate(t)}` : ''}</button>{/snippet}
+                  </LazyTip>
                 {/if}
               </div>
             </Table.Cell>
-            <Table.Cell class="whitespace-nowrap">
+            <Table.Cell class="text-right whitespace-nowrap tabular-nums">
               {#if saving(s) > 0}
                 {@const o = lowestOffer(s)!}
                 <HintBadge variant="success-soft" hint={`${usd(s.msrp)} MSRP, cheapest offer now ${o.title} at ${usd(o.price)}`}>−{usd(saving(s))}</HintBadge>

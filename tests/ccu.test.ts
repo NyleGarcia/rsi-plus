@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planFleet, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planFleet, planGraph, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -310,5 +310,27 @@ describe('plan ahead (long-term goals)', () => {
     // prefer LTI: picks the LTI copy's hull over a hull that saves more
     const pref = planFleet(all, [], [{ id: 'p', fromId: null, targetId: 4, via: [], lti: 'prefer' as const }], o({ warbond: false }), { hulls: [{ id: 1, count: 1, lti: 0 }, { id: 2, count: 1, lti: 1 }] });
     expect(pref.legs[0]).toMatchObject({ startId: 2, lti: true });
+  });
+
+  it('a shared planGraph gives the same chains as a graph per plan', () => {
+    const E = ship(5, 'Carrack', 50000, [sku('Standard Edition', 50000), sku('Warbond Edition', 47000)], [sku('Standalone', 52000)]);
+    const all = [...ships, { ...B, standalone: [sku('Standalone', 5500)] }, E].filter((s, i, a) => a.findIndex((x) => x.id === s.id) === i);
+    const owned = [own(1, 3, 91, { value: 7500 }), own(3, 5, 92, { source: 'buyback' }), own(2, 4, 93)];
+    for (const objective of ['spend', 'cash', 'longterm'] as const) {
+      for (const buyback of [false, true]) {
+        const opt = o({ objective, buyback });
+        const g = planGraph(all, owned, opt);
+        for (const start of [STORE_START, 1, 2, 3]) {
+          for (const target of [3, 4, 5]) {
+            expect(plan(all, owned, start, target, opt, g)).toEqual(plan(all, owned, start, target, opt));
+            const via = o({ objective, buyback, via: [3], include: [93] });
+            expect(plan(all, owned, start, target, via, g)).toEqual(plan(all, owned, start, target, via));
+          }
+        }
+      }
+    }
+    // planFleet shares graphs across candidates: same pick as planning each source alone
+    const f = planFleet(all, owned, [{ id: 'g', fromId: 1, targetId: 5, via: [] }], o({ buyback: true }), { hulls: [{ id: 1, count: 1 }] });
+    expect(f.legs[0]!.plan).toEqual(plan(all, owned, 1, 5, o({ buyback: true })));
   });
 });

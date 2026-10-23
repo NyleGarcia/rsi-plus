@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BuybackItem, Pledge } from '@/lib/hangar';
 import { storePaintIndex } from '@/lib/items';
-import { bestScenario, bundleScenarios, bundleTotals, buybackCompare, costAlone, countTitles, hangarCounts, storeLinksFor, titleWithCount, gainAt, meltOnlySplit, nextPaintTier, optionAt, optionPay, optionSubset, paintDiscount, paintLine, planBundle, rebuyCandidates, storePacks } from '@/lib/paints';
+import { bestScenario, bundleScenarios, bundleTotals, buybackCompare, costAlone, countTitles, hangarCounts, packHint, storeLinksFor, titleWithCount, gainAt, meltOnlySplit, nextPaintTier, optionAt, optionPay, optionSubset, paintDiscount, paintLine, planBundle, rebuyCandidates, storePacks } from '@/lib/paints';
 import { inventory, ownedShipsWithPaints } from '@/lib/items';
 import type { CatalogShip } from '@/lib/store';
 import type { StorePaint } from '@/lib/store';
@@ -355,6 +355,11 @@ describe('buyback compare', () => {
       [20, 5, 'Cutlass', [{ title: 'Cutlass - Frost Livery', n: 1 }]],
       [21, 2, '', []],
     ]);
+    // packHint direct: the cached paint-line index answers the same twice, and a new ships array rebuilds it.
+    const pack = bb(20, 'Cutlass - 5 Paint Pack', '5 items', { type: 'paint' });
+    expect(packHint(pack, rows, ships).ownedForHull).toEqual([{ title: 'Cutlass - Frost Livery', n: 1 }]);
+    expect(packHint(pack, rows, ships).ownedForHull).toEqual([{ title: 'Cutlass - Frost Livery', n: 1 }]);
+    expect(packHint(pack, rows, [...ships]).ownedForHull).toEqual([{ title: 'Cutlass - Frost Livery', n: 1 }]);
     const hc = hangarCounts(pl);
     expect([hc.get('cutlass black'), hc.get('cutlass - frost livery'), hc.get('pembroke helmet'), hc.get('nope')]).toEqual([1, 1, 1, undefined]);
     expect(hangarCounts([pledge(9, 5, [], { name: 'Aurora - Red Paint' }), pledge(9, 5, [], { name: 'Aurora - Red Paint' })]).get('aurora - red paint')).toBe(2);

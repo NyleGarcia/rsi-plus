@@ -90,12 +90,21 @@ try {
   const n = await tabs.count();
   for (let i = 1; i < n; i++) await interact(`tab ${(await tabs.nth(i).textContent()).trim()}`, () => tabs.nth(i).click());
   await interact('tab All', () => tabs.nth(0).click());
-  await interact('toggle Out of stock', () => page.getByRole('button', { name: 'Include out of stock' }).click());
-  await interact('toggle Out of stock off', () => page.getByRole('button', { name: 'Include out of stock' }).click());
-  await interact('toggle Bundles', () => page.getByRole('button', { name: 'Bundles' }).click());
+  // FacetBar (2026-10): facets are popover buttons named "<Facet> filter[: picks]"; options inside are checkboxes by label.
+  const facet = (name) => page.getByRole('button', { name: new RegExp(`^${name} filter`) }).first();
+  const pick = async (label, facetName, option) => {
+    await facet(facetName).click();
+    await interact(label, () => page.getByRole('checkbox', { name: option }).click());
+    await page.keyboard.press('Escape');
+  };
+  await pick('facet Out of stock on', 'Stock', 'Out of stock');
+  await pick('facet Out of stock off', 'Stock', 'Out of stock');
+  await pick('facet Bundles only on', 'Bundles', 'Bundles only');
   const chev = page.locator('button[aria-expanded="false"]').first();
   if (await chev.count()) await interact('expand bundle', () => chev.click());
-  await interact('toggle Bundles off', () => page.getByRole('button', { name: 'Bundles' }).click());
+  await pick('facet Bundles only off', 'Bundles', 'Bundles only');
+  const clearAll = page.getByRole('button', { name: /^Clear all/ }).first();
+  if (await clearAll.count()) await interact('clear all filters', () => clearAll.click());
   await interact('search "paint"', () => page.getByLabel('Search listings').fill('paint'));
   await interact('clear search', () => page.getByLabel('Search listings').fill(''));
   await interact('sort by price', () => page.locator('thead th', { hasText: /^Price/ }).first().click());

@@ -2,11 +2,11 @@
   /**
    * Segmented control on shadcn ToggleGroup (type="single"): a radio group of a few options with a pill that slides to
    * the selection (progressive — `data-state=on` styles the item without it). bits-ui handles the roving focus and
-   * arrow keys; clicking the active option keeps it (no empty state). `hint` is a Tooltip. Ids may be numbers — the
+   * arrow keys; clicking the active option keeps it (no empty state). `hint` is a Tooltip (mounted on first hover). Ids may be numbers — the
    * ToggleGroup works on their string form.
    */
   import * as ToggleGroup from '@/components/ui/toggle-group';
-  import * as Tooltip from '@/components/ui/tooltip';
+  import LazyTip from './LazyTip.svelte';
   import { cn } from '@/lib/utils';
 
   let {
@@ -79,17 +79,8 @@
     aria-hidden="true"
   ></span>
   {#each options as o (o.id)}
-    {#if o.hint}
-      <Tooltip.Root>
-        <Tooltip.Trigger>
-          {#snippet child({ props })}
-            <ToggleGroup.Item {...props} value={String(o.id)} class={itemCls}>{o.label}</ToggleGroup.Item>
-          {/snippet}
-        </Tooltip.Trigger>
-        <Tooltip.Content class="max-w-80">{o.hint}</Tooltip.Content>
-      </Tooltip.Root>
-    {:else}
-      <ToggleGroup.Item value={String(o.id)} class={itemCls}>{o.label}</ToggleGroup.Item>
-    {/if}
+    <LazyTip tip={o.hint}>
+      {#snippet trigger({ props })}<ToggleGroup.Item {...props} value={String(o.id)} class={itemCls}>{o.label}</ToggleGroup.Item>{/snippet}
+    </LazyTip>
   {/each}
 </ToggleGroup.Root>

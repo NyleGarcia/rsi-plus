@@ -24,9 +24,10 @@
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
   import Empty from './Empty.svelte';
+  import SwitchRow from './SwitchRow.svelte';
   import * as Alert from '@/components/ui/alert';
-  import { Checkbox } from '@/components/ui/checkbox';
-  import { Label } from '@/components/ui/label';
+  import { LINK } from '@/lib/ui';
+  import { fmtDate, parseRsiDate } from '@/lib/dates';
   import * as Card from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
   import * as Table from '@/components/ui/table';
@@ -63,7 +64,15 @@
     return { parts, hint, owned, any, status: (owned ? 'owned' : any ? 'partly' : hint ? 'unknown' : 'missing') as Own };
   };
   type Own = 'all' | 'owned' | 'partly' | 'missing' | 'unknown';
-  const ownCount = (k: Own) => all.filter((i) => inHangar(i).status === k).length;
+  /** `inHangar` per entry, once per data / hangar / catalog change (the filter, counts and cells all read it). */
+  const ownOf = $derived.by(() => new Map(all.map((b) => [b, inHangar(b)])));
+  const ownFor = (b: BuybackItem) => ownOf.get(b) ?? inHangar(b);
+  const ownCounts = $derived.by(() => {
+    const m = new Map<Own, number>();
+    for (const h of ownOf.values()) m.set(h.status, (m.get(h.status) ?? 0) + 1);
+    return m;
+  });
+  const ownCount = (k: Own) => ownCounts.get(k) ?? 0;
   /** Debug: copy the raw markup of the first buyback entries so a parser mismatch can be fixed from a paste. */
   let debugMsg = $state('');
   async function copyMarkup() {
@@ -154,16 +163,31 @@
   /** Store link for one item title of an entry (from `storeFor`). */
   const storeLink = (b: BuybackItem, title: string) => storeFor(b).find((l) => l.title === title) ?? null;
   /** Store pages for what each entry holds, when the store sells it today (CCUs: the planner's job). */
-  const storeFor = (b: BuybackItem) => (b.type === 'upgrade' || b.upgrade ? [] : storeLinksFor(buybackContents(b), ships, storeIdx));
+  const storeOf = (b: BuybackItem) => (b.type === 'upgrade' || b.upgrade ? [] : storeLinksFor(buybackContents(b), ships, storeIdx));
+  const storeMap = $derived(new Map(all.map((b) => [b, storeOf(b)])));
+  const storeFor = (b: BuybackItem) => storeMap.get(b) ?? storeOf(b);
+  /** Row keys: the id, suffixed only when RSI repeats one. */
+  const rowKey = $derived.by(() => {
+    const seen = new Map<number, number>();
+    for (const b of all) seen.set(b.id, (seen.get(b.id) ?? 0) + 1);
+    return new Map(all.map((b, i) => [b, (seen.get(b.id) ?? 0) > 1 || !b.id ? `${b.id}:${i}` : String(b.id)]));
+  });
   let onlyStore = $state(false);
   const types = $derived([...new Set(all.map((i) => i.type))]);
   const shown = $derived(
     sortBy(
-      all.filter((i) => (type === 'all' || i.type === type) && (!onlyStore || storeFor(i).length > 0) && (own === 'all' || inHangar(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
+      all.filter((i) => (type === 'all' || i.type === type) && (!onlyStore || storeFor(i).length > 0) && (own === 'all' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
       sort,
       { name: (i) => i.name, type: (i) => i.type, date: (i) => dateValue(i.date) },
     ),
   );
+  // Rows mount in chunks (40 first, then +60 a frame) so a long buyback list doesn't block the first paint.
+  let budget = $derived.by(() => (void shown, 40));
+  $effect(() => {
+    if (budget >= shown.length) return;
+    const t = setTimeout(() => (budget += 60), 16);
+    return () => clearTimeout(t);
+  });
 </script>
 
 {#snippet cartBtn(sku: number, qty = 1)}
@@ -172,7 +196,6 @@
 
 <Card.Root>
   <Card.Header>
-    <Card.Title>Buyback</Card.Title>
     <LoadStatus {loading} {data} count={all.length} noun="items" />
     <Card.Action class="flex flex-wrap items-center gap-2">
       {#if detailing && !loading}
@@ -212,7 +235,7 @@
             <Select.Item value="unknown" label={`Contents not loaded · ${ownCount('unknown')}`} />
           </Select.Content>
         </Select.Root>
-        <Label for="buyback-only-store" class="text-muted-foreground flex items-center gap-2 text-sm font-normal"><Checkbox id="buyback-only-store" bind:checked={onlyStore} /> only entries the store sells today</Label>
+        <SwitchRow id="buyback-only-store" size="sm" label="Only entries the store sells today" checked={onlyStore} onchange={(v) => (onlyStore = v)} />
         <span class="text-muted-foreground text-sm">{shown.length} shown · buyback CCUs can be used by the CCU planner</span>
         <span class="flex-1"></span>
         <TipButton variant="ghost" size="xs" onclick={copyMarkup} tip="Copies the raw HTML of the first two buyback entries (as RSI serves them) to the clipboard, for fixing the parser when contents or dates come out wrong">Copy page markup</TipButton>
@@ -225,11 +248,11 @@
             <SortTh key="type" bind:sort>Type</SortTh>
             <SortTh key="date" bind:sort firstDir="desc">Melted</SortTh>
             <Table.Head>In hangar · store</Table.Head>
-            <Table.Head></Table.Head>
+            <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {#each shown as b, i (`${b.id}:${i}`)}
+          {#each shown.slice(0, budget) as b (rowKey.get(b))}
             <Table.Row>
               <Table.Cell class="whitespace-normal">
                 <strong>{b.name}</strong>
@@ -237,9 +260,10 @@
                 {:else if b.contained}<div class="text-muted-foreground text-xs">{b.contained}</div>{/if}
               </Table.Cell>
               <Table.Cell>{b.type}</Table.Cell>
-              <Table.Cell class="text-muted-foreground text-xs">{b.date}</Table.Cell>
+              {@const melted = parseRsiDate(b.date)}
+              <Table.Cell class="text-muted-foreground text-xs">{Number.isNaN(melted) ? b.date : fmtDate(melted)}</Table.Cell>
               <Table.Cell class="whitespace-normal text-xs">
-                {@const h = inHangar(b)}
+                {@const h = ownFor(b)}
                 {#if !hangarPledges.length}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
                 {:else if h.hint}
                   <HintBadge variant={h.owned ? 'success' : h.hint.ownedForHull.length ? 'warning' : 'muted'} hint="The list page only says how many items — use “Load contents & prices” to read this entry's page">{h.owned ? 'likely all in hangar' : 'contents not loaded'} · {h.hint.count} items</HintBadge>
@@ -251,7 +275,7 @@
                   <div class="flex flex-wrap items-center gap-2">
                     {#if h.parts[0]!.n}<Tag kind="owned" count={h.parts[0]!.n} />{:else}<Badge variant="muted">not in hangar</Badge>{/if}
                     {#if sl}
-                      <a href={sl.url} target="_blank" rel="noopener" class="text-primary no-underline hover:underline" title="Open the store page">store page{#if sl.price != null} · {usd(sl.price)}{/if}</a>
+                      <a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">store page{#if sl.price != null} · {usd(sl.price)}{/if}</a>
                       {@render cartBtn(sl.sku)}
                     {/if}
                   </div>
@@ -262,7 +286,7 @@
                   <ul class="m-0 mt-1.5 grid list-none gap-0.5 p-0">
                     {#each lack as p (p.title)}
                       {@const sl = storeLink(b, p.title)}
-                      <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class="text-primary no-underline hover:underline" title="Open the store page">{p.title}</a>{:else}{p.title}{/if}{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
+                      <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
                     {/each}
                     {#each have as p (p.title)}
                       <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
@@ -280,12 +304,15 @@
                   {/if}
                 {/if}
               </Table.Cell>
-              <Table.Cell>
+              <Table.Cell class="text-right">
                 {#if b.url}<Button variant="outline" size="xs" href={b.url} target="_blank" rel="noopener">Buy back</Button>{/if}
                 {#if b.price != null}<div class="mt-1 text-xs whitespace-nowrap"><strong>{ownUsd(b.price)}</strong>{#if b.listPrice && b.listPrice > b.price}<span class="text-muted-foreground"> was {ownUsd(b.listPrice)} · −{Math.round(100 - (100 * b.price) / b.listPrice)}%</span>{/if}</div>{/if}
               </Table.Cell>
             </Table.Row>
           {/each}
+          {#if budget < shown.length}
+            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+          {/if}
           {#if !shown.length}<Empty colspan={5}>Nothing matches.</Empty>{/if}
         </Table.Body>
       </Table.Root>

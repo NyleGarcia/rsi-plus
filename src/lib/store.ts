@@ -207,7 +207,7 @@ function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
   // "Wolf L-21" → "L-21 Wolf"; never "L-22 Alpha Wolf", which adds a real word). Shortest catalog name wins.
   // Words no catalog name uses ("Starlifter" in "Hercules Starlifter C2", RSI's older hangar spelling) can't decide
   // anything — drop them, as long as a real word is left.
-  const vocab = new Set(ships.flatMap((s) => shipKey(s.name).split(' ')));
+  const vocab = vocabOf(ships);
   const known = k.split(' ').filter((t) => vocab.has(t));
   const want = known.some((t) => t.length >= 3 && !/^\d+$/.test(t)) ? known : k.split(' ');
   if (!want.some((t) => t.length >= 3 && !/^\d+$/.test(t))) return null;
@@ -228,6 +228,13 @@ function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
     if (!best || s.name.length < best.name.length) best = s;
   }
   return best;
+}
+const vocabs = new WeakMap<object, Set<string>>();
+/** Every word of the catalog's ship keys, once per catalog array (`findShip` misses used to rebuild it per name). */
+function vocabOf(ships: CatalogShip[]): Set<string> {
+  let v = vocabs.get(ships);
+  if (!v) vocabs.set(ships, (v = new Set(ships.flatMap((s) => shipKey(s.name).split(' ')))));
+  return v;
 }
 /** A model code or its fragments: "f7c", "a2", "l", "21" — not "mk" / "ii" / variant suffixes like "es", which tell hulls apart. */
 const CODE_BIT = /^([a-z]|\d{1,3}|[a-z]\d{1,3}[a-z]?)$/;
@@ -452,8 +459,12 @@ export async function fetchStoreItems(): Promise<StoreListing> {
 /** Manufacturer names RSI sometimes puts in front of the hull ("Drake Dragonfly - Coalfire Paint" vs "Dragonfly - Coalfire Paint"). */
 const MAKERS =
   /^(drake( interplanetary)?|anvil( aerospace)?|aegis( dynamics)?|origin( jumpworks)?|roberts space industries|rsi|misc|musashi industrial (and|&) starflight concern|crusader( industries)?|argo( astronautics)?|consolidated outland|cnou|c\.o\.|kruger( intergalactic)?|tumbril( land systems)?|greycat( industrial)?|banu|esperia|gatac( manufacture)?|mirai|aopoa|vanduul|xi'?an|xnaa|kastak( arms)?) /;
+const paintKeys = new Map<string, string>();
+/** Memoized like `shipKey`: paint matching keys every hangar / store title against every other. */
 export function paintKey(title: string): string {
-  return title
+  let k = paintKeys.get(title);
+  if (k !== undefined) return k;
+  k = title
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .replace(/\s*[-–—:]\s*/g, ' ')
@@ -463,4 +474,7 @@ export function paintKey(title: string): string {
     .replace(MAKERS, '')
     .replace(/'/g, '')
     .trim();
+  if (paintKeys.size > 5000) paintKeys.clear();
+  paintKeys.set(title, k);
+  return k;
 }

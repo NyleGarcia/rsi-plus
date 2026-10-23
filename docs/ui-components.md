@@ -22,13 +22,19 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 - **Toolbar heights**: one per toolbar — controls `size="sm"` (h-7) together, or default (h-8) together; `Input` is h-8 by default, do not add `h-7`/`h-8` classes.
 - **Conditional classes**: `cn()`, not Svelte class arrays.
 - **Icons**: `@lucide/svelte/icons/<name>`, never the barrel.
-- **Destructive one-click actions**: `ConfirmButton` (first click arms "Sure?").
+- **Destructive one-click actions**: `ConfirmButton` (first click arms "Sure?"). No page re-rolls its own two-click confirm. Reset / clear buttons are `ghost`; `destructive` only when data is lost (and then ConfirmButton).
+- **Tables**: sortable heads are `SortTh`; money / count columns are `SortTh numeric` (or `Table.Head class="text-right"`) with cells `class="text-right tabular-nums"`. The actions column is last, head `<Table.Head><span class="sr-only">Actions</span></Table.Head>`, cells `text-right`. Column heads join words with "·", never "/".
+- **Links in text**: `LINK` / `LINK_QUIET` / `LINK_ICON` from `lib/ui.ts` — no per-page `link` consts, no inline `text-primary hover:underline` strings.
+- **Dates**: `fmtDate` in table cells, `fmtDateTime` on "loaded / read …" lines, `ago` in the feed (`lib/dates.ts`). No raw `toLocaleDateString` / `toLocaleString` in pages.
+- **Money**: `usd(cents)` for store prices, `ownDollars` (masked in screenshare) for the user's own numbers, `usd0` for whole-dollar bars and facts (`lib/money.ts`). The two unit systems are `Usd` (floats, hangar / billing) and `Cents` (ints, store / buyback); convert with `cents` / `dollars`.
+- **Wording**: "MSRP" (never "list price"), "Warbond" via `Tag kind="warbond"` (never "WB"), "store credit", "melt value".
+- **Long lists**: render in chunks — a `budget` that starts at 40 and grows 60 per frame, reset when the list is swapped (see `StorePanel`); key rows by a stable id, never by index. Per-row work (`fitsLabel`, ownership, store links) lives in one `$derived` Map, not in the template.
 
 ## Shared components (`src/components/`)
 | Component | Props | Use |
 |---|---|---|
 | `TipButton` | ButtonProps + `tip`, `side`, `align` | Button with a Tooltip |
-| `HintBadge` | Badge props + `hint`, `variant` | Badge with a Tooltip, keyboard-focusable |
+| `HintBadge` | Badge props + `hint`, `variant`, `size: 'default'\|'xs'` | Badge with a Tooltip, keyboard-focusable; `xs` for counts in titles / row corners |
 | `LazyTip` | `tip`, `side`, `trigger` snippet `({ props })` | Tooltip around anything; spread `props` on the trigger. Mounts on first hover / focus |
 | `Tag` | `kind`, `value` (insurance/sale), `count` (owned), `size`, `label`, `hint` | Warbond / LTI / owned / Concierge / … |
 | `CartButton` | `state` (ledger entry), `onadd`, `name`, `available`, `busy`, `qty`, `text` | + cart / adding… / in cart / error |
@@ -43,13 +49,14 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 | `NewItemsPill` | `count`, `label`, `threshold`, `onjump` | "n new ↑" when items arrive while scrolled |
 | `ProductTour` | `steps {icon, title, description, href, linkLabel}`, `storageKey` | first-run tour popover (hub header) |
 | `Chip` | `onremove`, `removeLabel`, `variant` | removable chip |
-| `FilterChips` | `options`, `bind:value` (id or Set), `multiple`, `ariaLabel` | pledge-type / category chips |
+| `FilterChips` | `options {id,label,hint,count}`, `bind:value` (id or Set), `multiple`, `ariaLabel` | pledge-type / category / feed-kind chips; hint = lazy tooltip, count = muted number |
 | `FacetBar` | `facets`, `ranges`, `rows`, `shown`, `bind:values`, `primary`, `keep`, `hideEmpty`, children (search/sort) | the filter bar of every list page |
 | `SwitchRow` | `id`, `label`, `hint`, `checked`, `onchange`, `disabled`, children | one setting as a switch |
 | `ConfirmButton` | ButtonProps + `onconfirm`, `confirmLabel`, `ms` | two-click delete |
 | `Segmented` | `options {id,label,hint}`, `bind:value`, `ariaLabel`, `size`, `disabled`, `class` | radio pill |
 | `Thumb` | `src`, `name`, `width`, `height`, `placeholder: 'icon'\|'block'` | thumbnail + hover preview |
-| `Section`, `Combobox`, `ShipSelect`, `SortTh`, `Wizard`, `LabelEdit`, `FanNotice`, `WidgetGrid` | unchanged | — |
+| `SortTh` | `key`, `bind:sort`, `firstDir`, `numeric`, `class` | sortable head; `numeric` right-aligns |
+| `Section`, `Combobox`, `ShipSelect`, `Wizard`, `LabelEdit`, `FanNotice`, `WidgetGrid` | unchanged | — |
 
 ## Shared helpers (`src/lib/`)
 - `cart-ui.svelte.ts` — `createCartLedger()` → `{ state, busy, added, of(key), add(key, task), addAll(lines), reset() }`, `cartErrorLabel(code)`. Pages keep the call (`addStandalone`, `addStep`) and hand it to the ledger.
@@ -59,6 +66,7 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 - `download.ts` — `downloadFile(name, body, type)`, `dateStamp()`.
 - `flash.svelte.ts` — `transient(ms)` → `{ text, show(msg), clear() }` for "Saved …" messages.
 - `store.ts` — `priceLabel(discounted, price)`, ribbon tests `isLimitedTime`, `isNewListing`, `isBestValue`, `bonusOf`, `fitsOf`, `isLowStock`, `isLimitedSku`.
+- `money.ts` — `parseMoney`, `r2`, `cents`, `dollars`, `usd0`, types `Usd` / `Cents`. `dates.ts` — `MONTHS`, `monthKey`, `monthKeys`, `monthsSince`, `parseRsiDate`, `fmtDate`, `fmtDateTime`, `ago`. `dom.ts` — `clean`, `text`, `textNodes` for parsed RSI pages. `ui.ts` — `LINK`, `LINK_QUIET`, `LINK_ICON`.
 - `facets.ts` — `Facet`, `RangeFacet`, `applyFacets`, `facetCounts`, `toggleFacet`, `clearFacets`, `INSURANCE_OPTIONS`, `STAGE_OPTIONS`, `SIZE_OPTIONS`, `yesNo`, `insuranceBucket`, `stageOf`.
 
 ## Page scaffold

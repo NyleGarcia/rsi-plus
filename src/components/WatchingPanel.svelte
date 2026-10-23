@@ -8,6 +8,9 @@
   import SwitchRow from './SwitchRow.svelte';
   import Chip from './Chip.svelte';
   import Empty from './Empty.svelte';
+  import { LINK_QUIET } from '@/lib/ui';
+  import { fmtDate } from '@/lib/dates';
+  import { cn } from '@/lib/utils';
   import { POLL_MINUTES, clampSetting, toggleOf } from '@/lib/settings-ui';
   import * as Card from '@/components/ui/card';
   import * as Select from '@/components/ui/select';
@@ -44,7 +47,7 @@
 
   const unwatched = $derived(channels.filter((c) => !w.channels.some((x) => x.id === String(c.id))));
   const pickName = $derived(unwatched.find((c) => String(c.id) === pick)?.name);
-  const link = 'text-foreground hover:text-primary font-semibold no-underline';
+  const link = cn(LINK_QUIET, 'font-semibold');
 
   function addChannel() {
     const c = channels.find((x) => String(x.id) === pick);
@@ -122,7 +125,7 @@
               <SortTh key="subject" bind:sort>Thread</SortTh>
               <SortTh key="replies" bind:sort firstDir="desc">Replies</SortTh>
               <SortTh key="added" bind:sort firstDir="desc">Since</SortTh>
-              <Table.Head></Table.Head>
+              <Table.Head><span class="sr-only">Actions</span></Table.Head>
             </Table.Row>
           </Table.Header>
           <Table.Body>
@@ -130,7 +133,7 @@
               <Table.Row>
                 <Table.Cell class="whitespace-normal"><a class={link} href={threadUrl(t.channelId, t.slug)} target="_blank" rel="noopener">{t.subject}</a></Table.Cell>
                 <Table.Cell>{t.replies}</Table.Cell>
-                <Table.Cell class="text-muted-foreground">{new Date(t.addedAt).toLocaleDateString()}</Table.Cell>
+                <Table.Cell class="text-muted-foreground">{fmtDate(t.addedAt)}</Table.Cell>
                 <Table.Cell class="text-right">
                   <Button variant="outline" size="xs" onclick={() => patchWatches((v) => ({ ...v, threads: v.threads.filter((x) => x.id !== t.id) }))}>Unwatch</Button>
                 </Table.Cell>
@@ -198,7 +201,7 @@
               <Table.Row>
                 <Table.Cell><code class="text-[12.5px]">{k.pattern}</code></Table.Cell>
                 <Table.Cell class="text-muted-foreground">{k.channelId == null ? 'every watched channel' : channelName(k.channelId)}</Table.Cell>
-                <Table.Cell class="text-muted-foreground">{new Date(k.addedAt).toLocaleDateString()}</Table.Cell>
+                <Table.Cell class="text-muted-foreground">{fmtDate(k.addedAt)}</Table.Cell>
                 <Table.Cell class="text-right">
                   <Button variant="outline" size="xs" onclick={() => patchWatches((v) => ({ ...v, keywords: v.keywords.filter((x) => !(x.pattern === k.pattern && x.channelId === k.channelId)) }))}>Remove</Button>
                 </Table.Cell>
@@ -217,9 +220,9 @@
           </Select.Content>
         </Select.Root>
         <Button type="submit" variant="outline" disabled={!kwValid}>Follow</Button>
-        {#if kwInput.trim() && !kwValid}<span class="text-destructive text-xs">Invalid regex.</span>{/if}
-        {#if !w.channels.length && !kwChannel}<span class="text-muted-foreground text-xs">No watched channels yet — pick one above or here, keywords are only seen in watched channels.</span>{/if}
       </form>
+      {#if kwInput.trim() && !kwValid}<Alert.Root variant="destructive"><Alert.Description>Invalid regex.</Alert.Description></Alert.Root>{/if}
+      {#if !w.channels.length && !kwChannel}<Empty class="py-3 text-xs">No watched channels yet — pick one above or here, keywords are only seen in watched channels.</Empty>{/if}
     </Card.Content>
   </Card.Root>
 

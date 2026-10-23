@@ -15,6 +15,7 @@
   import { downloadFile, dateStamp } from '@/lib/download';
   import { sortBy, type SortState } from '@/lib/sort';
   import { cn } from '@/lib/utils';
+  import { LINK } from '@/lib/ui';
   import FacetBar from './FacetBar.svelte';
   import Segmented from './Segmented.svelte';
   import SortTh from './SortTh.svelte';
@@ -120,11 +121,10 @@
 
 <Card.Root>
   <Card.Header>
-    <Card.Title>CCUs</Card.Title>
     <Card.Description>
       Every upgrade you hold — in the hangar and in buyback — with what you paid against the MSRP gap between the two hulls. Read from the saved
-      <a class="text-primary hover:underline" href="#hangar">Pledges</a>{#if !hangar}<span class="text-warning"> (not loaded)</span>{/if} and
-      <a class="text-primary hover:underline" href="#buyback">Buyback</a>{#if !buyback}<span class="text-warning"> (not loaded)</span>{:else if bbItems.some((b) => b.upgrade && b.price == null)} (load contents & prices there for buyback costs){/if} pages.
+      <a class={LINK} href="#hangar">Pledges</a>{#if !hangar}<span class="text-warning"> (not loaded)</span>{/if} and
+      <a class={LINK} href="#buyback">Buyback</a>{#if !buyback}<span class="text-warning"> (not loaded)</span>{:else if bbItems.some((b) => b.upgrade && b.price == null)} (load contents & prices there for buyback costs){/if} pages.
     </Card.Description>
     <Card.Action class="flex flex-wrap items-center gap-2">
       <Button variant="outline" href="#ccu"><Route /> Open CCU planner</Button>
@@ -134,9 +134,9 @@
   <Card.Content class="grid gap-4">
     {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
     {#if !hangar && !buyback}
-      <Empty>No hangar or buyback read yet. Load your <a class="text-primary hover:underline" href="#hangar">Pledges</a> (and <a class="text-primary hover:underline" href="#buyback">Buyback</a>) first.</Empty>
+      <Empty>No hangar or buyback read yet. Load your <a class={LINK} href="#hangar">Pledges</a> (and <a class={LINK} href="#buyback">Buyback</a>) first.</Empty>
     {:else if !rows.length}
-      <Empty>No CCUs in what was read.{#if !hangar} Pledges not loaded — <a class="text-primary hover:underline" href="#hangar">load them</a>.{/if}{#if !buyback} Buyback not loaded — <a class="text-primary hover:underline" href="#buyback">load it</a>.{/if}</Empty>
+      <Empty>No CCUs in what was read.{#if !hangar} Pledges not loaded — <a class={LINK} href="#hangar">load them</a>.{/if}{#if !buyback} Buyback not loaded — <a class={LINK} href="#buyback">load it</a>.{/if}</Empty>
     {:else}
       <FacetBar {facets} ranges={ccuRanges} {rows} shown={filtered.length} bind:values primary={['place', 'saving', 'warbond']} hideEmpty>
         <Input class="w-56" placeholder="Search ships" bind:value={q} aria-label="Search CCUs by ship" />
@@ -163,12 +163,12 @@
           <Table.Row>
             <SortTh key="from" bind:sort>From</SortTh>
             <SortTh key="to" bind:sort>→ To</SortTh>
-            <SortTh key="paid" bind:sort firstDir="desc">Paid</SortTh>
-            <SortTh key="gap" bind:sort firstDir="desc">Gap</SortTh>
-            <SortTh key="saving" bind:sort firstDir="desc">Saving</SortTh>
+            <SortTh key="paid" bind:sort firstDir="desc" numeric>Paid</SortTh>
+            <SortTh key="gap" bind:sort firstDir="desc" numeric>Gap</SortTh>
+            <SortTh key="saving" bind:sort firstDir="desc" numeric>Saving</SortTh>
             <SortTh key="place" bind:sort>Place</SortTh>
             <Table.Head>Flags</Table.Head>
-            <Table.Head></Table.Head>
+            <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -184,11 +184,11 @@
                   {#if g.rows.length > 1}<HintBadge variant="secondary" hint={`${g.rows.length} identical CCUs · paid ${ownUsd(g.rows.reduce((n, x) => n + (x.paid ?? 0), 0))} in all`}>×{g.rows.length}</HintBadge>{/if}
                 </div>
               </Table.Cell>
-              <Table.Cell class="tabular-nums">
+              <Table.Cell class="text-right tabular-nums">
                 {#if r.paid != null}{ownUsd(r.paid)}{:else}<HintBadge variant="muted" hint="Buyback price not read yet — use “Load contents & prices” on the Buyback page">?</HintBadge>{/if}
               </Table.Cell>
-              <Table.Cell class="tabular-nums">{r.gap != null ? usd(r.gap) : '—'}</Table.Cell>
-              <Table.Cell class={cn('tabular-nums', r.saving != null && r.saving > 0 && 'text-success', r.saving != null && r.saving < 0 && 'text-destructive')}>{r.saving != null ? ownUsd(r.saving) : '—'}</Table.Cell>
+              <Table.Cell class="text-right tabular-nums">{r.gap != null ? usd(r.gap) : '—'}</Table.Cell>
+              <Table.Cell class={cn('text-right tabular-nums', r.saving != null && r.saving > 0 && 'text-success', r.saving != null && r.saving < 0 && 'text-destructive')}>{r.saving != null ? ownUsd(r.saving) : '—'}</Table.Cell>
               <Table.Cell>
                 {#if r.place === 'hangar'}<HintBadge variant="success" hint="In your hangar — applying it costs nothing more">hangar</HintBadge>
                 {:else}<HintBadge variant="warning" hint="Melted — buy it back to use it">buyback</HintBadge>{/if}
@@ -200,11 +200,11 @@
                   {#if r.giftable}<Tag kind="giftable" size="xs" />{/if}
                   {#if r.gifted}<Tag kind="gifted" size="xs" />{/if}
                   {#if r.meltable}<Tag kind="meltable" size="xs" />{/if}
-                  {#if r.chain}<HintBadge variant="info" class="h-4 px-1 text-[10px]" hint={`Used by the saved chain “${r.chain}” in the CCU planner`}>in chain</HintBadge>{/if}
+                  {#if r.chain}<HintBadge variant="info" size="xs" hint={`Used by the saved chain “${r.chain}” in the CCU planner`}>in chain</HintBadge>{/if}
                 </div>
               </Table.Cell>
-              <Table.Cell>
-                <div class="flex items-center gap-1">
+              <Table.Cell class="text-right">
+                <div class="flex items-center justify-end gap-1">
                   <TipButton variant="ghost" size="icon-xs" href={openUrl(r)} target="_blank" rel="noopener" tip={r.place === 'hangar' ? 'Open the hangar page holding this pledge' : r.buyback?.url ? 'Open the buy-back page of this CCU' : 'Open your buyback list'} aria-label={r.place === 'hangar' ? 'Open in hangar' : 'Open in buyback'}><ExternalLink /></TipButton>
                   {#if r.to}<TipButton variant="ghost" size="icon-xs" href={`#ccu?to=${r.to.id}`} tip={`Plan a chain to the ${r.to.name} in the CCU planner — your CCUs, this one included, are routed in automatically`} aria-label="Plan from this"><Route /></TipButton>{/if}
                 </div>

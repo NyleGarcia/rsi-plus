@@ -88,7 +88,7 @@
 
 <Card.Root size="sm" class={cn('shadow-none', on ? 'ring-primary/30' : 'bg-transparent')}>
   <Card.Header class="flex flex-wrap items-center gap-2">
-    <Card.Title class="flex items-center gap-2 text-sm font-semibold">
+    <Card.Title class="flex items-center gap-2">
       {title}
       {#if on && !finished}<span class="text-muted-foreground font-normal">step {current + 1} of {steps.length}</span>{/if}
     </Card.Title>
@@ -103,7 +103,7 @@
       <Progress value={n} max={steps.length || 1} class="h-1 *:data-[slot=progress-indicator]:bg-primary" aria-hidden="true" />
       {#if finished}
         <div class="text-success flex items-center gap-2 text-sm"><PartyPopper class="size-4" /> {doneText}</div>
-        {#if onReset}<div><Button variant="outline" size="sm" onclick={onReset}>{resetLabel}</Button></div>{/if}
+        {#if onReset}<div><Button variant="ghost" size="sm" onclick={onReset}>{resetLabel}</Button></div>{/if}
       {:else}
         <ol class="m-0 grid list-none gap-1 p-0">
           {#each steps as s, i (s.id)}

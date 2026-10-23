@@ -13,11 +13,14 @@
   import { Input } from '@/components/ui/input';
   import { Slider } from '@/components/ui/slider';
   import Chip from './Chip.svelte';
+  import Empty from './Empty.svelte';
+  import LazyTip from './LazyTip.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Plus from '@lucide/svelte/icons/plus';
   import X from '@lucide/svelte/icons/x';
   import Check from '@lucide/svelte/icons/check';
   import { cn } from '@/lib/utils';
+  import { usd0 } from '@/lib/money';
   import { indexFor, clearFacets, facetCounts, isActive, toggleFacet, type Facet, type FacetValues, type RangeFacet, type RangeValue } from '@/lib/facets';
 
   let {
@@ -80,7 +83,7 @@
     return s.length === 0 ? '' : s.length === 1 ? optLabel(f, s[0]!) : `${optLabel(f, s[0]!)} +${s.length - 1}`;
   };
   const rangeVal = (id: string): RangeValue => (values[id] as RangeValue | undefined) ?? { min: null, max: null };
-  const money = (r: RangeFacet<T>, n: number) => (r.unit === 'usd' ? `$${Math.round(n).toLocaleString('en-US')}` : String(Math.round(n)));
+  const money = (r: RangeFacet<T>, n: number) => (r.unit === 'usd' ? usd0(n) : String(Math.round(n)));
   const rangeText = (r: RangeFacet<T>) => {
     const v = rangeVal(r.id);
     if (v.min == null && v.max == null) return '';
@@ -135,17 +138,21 @@
         {#each opts as o (o.id)}
           {@const n = counts[f.id]?.[o.id] ?? 0}
           {@const on = picked.includes(o.id)}
-          <label class={cn('hover:bg-muted flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm', !n && !on && 'opacity-50')} title={o.hint}>
-            {#if f.multiple}
-              <Checkbox checked={on} onCheckedChange={() => (values = toggleFacet(values, f, o.id))} aria-label={o.label} />
-            {:else}
-              <button type="button" class={cn('border-input flex size-4 shrink-0 items-center justify-center rounded-full border', on && 'border-primary bg-primary text-primary-foreground')} role="radio" aria-checked={on} aria-label={o.label} onclick={() => (values = toggleFacet(values, f, o.id))}>{#if on}<Check class="size-3" />{/if}</button>
-            {/if}
-            <span class="min-w-0 flex-1 truncate">{o.label}</span>
-            <span class="text-muted-foreground text-xs tabular-nums">{n}</span>
-          </label>
+          <LazyTip tip={o.hint} side="right" class="w-full">
+            {#snippet trigger({ props })}
+              <label {...props} class={cn('hover:bg-muted flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm', !n && !on && 'opacity-50')}>
+                {#if f.multiple}
+                  <Checkbox checked={on} onCheckedChange={() => (values = toggleFacet(values, f, o.id))} aria-label={o.label} />
+                {:else}
+                  <button type="button" class={cn('border-input flex size-4 shrink-0 items-center justify-center rounded-full border', on && 'border-primary bg-primary text-primary-foreground')} role="radio" aria-checked={on} aria-label={o.label} onclick={() => (values = toggleFacet(values, f, o.id))}>{#if on}<Check class="size-3" />{/if}</button>
+                {/if}
+                <span class="min-w-0 flex-1 truncate">{o.label}</span>
+                <span class="text-muted-foreground text-xs tabular-nums">{n}</span>
+              </label>
+            {/snippet}
+          </LazyTip>
         {:else}
-          <p class="text-muted-foreground m-0 px-1.5 py-2 text-xs">Nothing to pick here.</p>
+          <Empty class="py-3 text-xs">Nothing to pick here.</Empty>
         {/each}
       </div>
       {#if picked.length}

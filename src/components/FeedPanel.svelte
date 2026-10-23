@@ -10,16 +10,17 @@
   import { cleanLog, tally } from '@/lib/storelog';
   import { EVENT_KINDS, type EventKind, type FeedEvent } from '@/lib/watch';
   import * as Card from '@/components/ui/card';
-  import * as ToggleGroup from '@/components/ui/toggle-group';
-  import * as Tooltip from '@/components/ui/tooltip';
   import { Button } from '@/components/ui/button';
-  import { cn } from '@/lib/utils';
+  import { ago } from '@/lib/dates';
   import Empty from './Empty.svelte';
   import Segmented from './Segmented.svelte';
   import StoreLog from './StoreLog.svelte';
   import SwitchRow from './SwitchRow.svelte';
   import Timeline, { type TimelineEvent } from './Timeline.svelte';
   import NewItemsPill from './NewItemsPill.svelte';
+  import FilterChips from './FilterChips.svelte';
+  import HintBadge from './HintBadge.svelte';
+  import LazyTip from './LazyTip.svelte';
   import Rss from '@lucide/svelte/icons/rss';
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import Users from '@lucide/svelte/icons/users';
@@ -30,7 +31,6 @@
   import Code from '@lucide/svelte/icons/code';
   import AtSign from '@lucide/svelte/icons/at-sign';
   import Hash from '@lucide/svelte/icons/hash';
-  import { CHIP } from './FilterChips.svelte';
   import { hashParam } from '@/lib/deep-link.svelte';
 
   type View = 'activity' | 'store';
@@ -107,11 +107,6 @@
       busy = false;
     }
   }
-  const ago = (ms: number) => {
-    const m = Math.round((Date.now() - ms) / 60000);
-    return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
-  };
-  /** Same-day events share a date heading. */
 </script>
 
 <div class="grid gap-4">
@@ -133,38 +128,29 @@
       <Card.Header>
         <Card.Description>
           {unseen} unseen · last check {lastPoll ? ago(lastPoll.at) : 'never'}{#if !pollAuto}
-            <Tooltip.Root>
-              <Tooltip.Trigger> · passive, Check now only</Tooltip.Trigger>
-              <Tooltip.Content>Automatic checks are off (Watching / Settings) — nothing runs in the background</Tooltip.Content>
-            </Tooltip.Root>
+            ·
+            <LazyTip tip="Automatic checks are off (Watching / Settings) — nothing runs in the background">
+              {#snippet trigger({ props })}<button type="button" {...props} class="cursor-default">passive, Check now only</button>{/snippet}
+            </LazyTip>
           {/if}
           {#if lastPoll?.error}
-            <Tooltip.Root>
-              <Tooltip.Trigger class="text-destructive"> · some checks failed</Tooltip.Trigger>
-              <Tooltip.Content class="whitespace-pre-line">{lastPoll.error}</Tooltip.Content>
-            </Tooltip.Root>
+            <HintBadge variant="destructive" size="xs" hint={lastPoll.error}>some checks failed</HintBadge>
           {/if}
         </Card.Description>
         <Card.Action class="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" disabled={busy} onclick={pollNow}>{busy ? 'Checking…' : 'Check now'}</Button>
-          <Button variant="outline" size="sm" disabled={!unseen} onclick={() => bg({ type: 'feed:seen' })}>Mark all seen</Button>
+          <Button variant="outline" disabled={busy} onclick={pollNow}>{busy ? 'Checking…' : 'Check now'}</Button>
+          <Button variant="outline" disabled={!unseen} onclick={() => bg({ type: 'feed:seen' })}>Mark all seen</Button>
         </Card.Action>
       </Card.Header>
 
       <Card.Content class="grid gap-3">
         <div class="flex flex-wrap items-center gap-2">
-          <ToggleGroup.Root type="multiple" variant="outline" size="sm" spacing={1} class="flex-wrap" aria-label="Kinds" bind:value={() => kinds, (v) => (kinds = v as EventKind[])}>
-            {#each present as k (k.id)}
-              <Tooltip.Root>
-                <Tooltip.Trigger>
-                  {#snippet child({ props })}
-                    <ToggleGroup.Item {...props} value={k.id} class={CHIP}>{k.label} <span class="opacity-70">· {count.get(k.id) ?? 0}</span></ToggleGroup.Item>
-                  {/snippet}
-                </Tooltip.Trigger>
-                <Tooltip.Content class="max-w-72">{k.hint}</Tooltip.Content>
-              </Tooltip.Root>
-            {/each}
-          </ToggleGroup.Root>
+          <FilterChips
+            multiple
+            ariaLabel="Kinds"
+            options={present.map((k) => ({ id: k.id, label: k.label, hint: k.hint, count: count.get(k.id) ?? 0 }))}
+            bind:value={() => new Set(kinds), (v) => (kinds = [...(v as Set<EventKind>)])}
+          />
           <SwitchRow id="feed-unseen" label="Unseen only" size="sm" checked={unseenOnly} onchange={(v) => (unseenOnly = v)} class="ml-auto py-0" />
         </div>
 

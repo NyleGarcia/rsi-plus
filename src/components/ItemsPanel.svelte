@@ -1,12 +1,13 @@
 <script lang="ts">
   import { hangarUrl } from '@/lib/hangar';
-  import { CATEGORY_LABEL, line, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
+  import { CATEGORY_LABEL, line, familyLabel, fitsLabel as fitsLabelOf, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
   import { bg } from '@/lib/messages';
   import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
   import type { Catalog, PaintCatalog } from '@/lib/store';
   import { ownDollars } from '@/lib/privacy.svelte';
   import { dateStamp, downloadFile } from '@/lib/download';
+  import { LINK } from '@/lib/ui';
   import SortTh from './SortTh.svelte';
   import FilterChips from './FilterChips.svelte';
   import HintBadge from './HintBadge.svelte';
@@ -76,19 +77,9 @@
   });
 
   // ---- helpers ----
-  const fitsLabel = (r: ItemRow) => {
-    if (r.ship) return r.ship.name;
-    if (!r.fits.length) return '';
-    if (r.fits.length === 1) return r.fits[0]!.name;
-    const fams = [...new Set(r.fits.map((s) => line(s.name, ships)))];
-    return fams
-      .map((f) => {
-        const inFam = ships.filter((s) => line(s.name, ships) === f).length;
-        const hit = r.fits.filter((s) => line(s.name, ships) === f);
-        return hit.length >= inFam && inFam > 1 ? `All ${familyLabel(f, hit)}` : hit.map((s) => s.name).join(', ');
-      })
-      .join(' · ');
-  };
+  /** Fits text per row, once per hangar / catalog change (search, sort and cells read it). */
+  const fitsLabels = $derived(new Map(rows.map((r) => [r.key, fitsLabelOf(r, ships)])));
+  const fitsLabel = (r: ItemRow) => fitsLabels.get(r.key) ?? fitsLabelOf(r, ships);
   const qty = (list: ItemRow[]) => list.reduce((n, r) => n + r.count, 0);
   let collapsed = $state<Set<string>>(new Set());
   const toggle = (k: string) => {
@@ -135,10 +126,13 @@
   const groups = $derived.by((): Group[] => {
     if (groupBy === 'none') return [{ key: 'i|all', label: '', note: '', items: filtered }];
     const m = new Map<string, Group>();
+    const seen = new Map<string, Set<ItemRow>>();
     const add = (key: string, label: string, note: string, r: ItemRow) => {
       const g = m.get(key) ?? { key, label, note, items: [] };
-      if (!g.items.includes(r)) g.items.push(r);
+      const has = seen.get(key) ?? new Set();
+      if (!has.has(r)) (has.add(r), g.items.push(r));
       m.set(key, g);
+      seen.set(key, has);
     };
     for (const r of filtered) {
       if (groupBy === 'category') add(`i|${r.category}`, CATEGORY_LABEL[r.category], '', r);
@@ -163,6 +157,23 @@
     );
   });
   const groupKeys = $derived(groups.map((g) => g.key));
+  /** Rows before each group among the expanded ones, for the chunked render. */
+  const starts = $derived.by(() => {
+    let n = 0;
+    return groups.map((g) => {
+      const at = n;
+      if (!collapsed.has(g.key)) n += g.items.length;
+      return at;
+    });
+  });
+  const visibleRows = $derived(groups.reduce((n, g) => n + (collapsed.has(g.key) ? 0 : g.items.length), 0));
+  // Rows mount in chunks (40 first, then +60 a frame); a new filter / grouping starts over.
+  let budget = $derived.by(() => (void groups, 40));
+  $effect(() => {
+    if (budget >= visibleRows) return;
+    const t = setTimeout(() => (budget += 60), 16);
+    return () => clearTimeout(t);
+  });
 
   /** Category chips with counts (only categories you have). */
   const catOptions = $derived(
@@ -186,11 +197,10 @@
   ];
   /** bits-ui Select treats '' as "nothing picked", so "All items" travels as a sentinel. */
   const ALL = 'all';
-  const linkCls = 'text-primary mr-2 inline-flex items-center gap-1 no-underline hover:underline';
 </script>
 
 {#if !hangar}
-  <Card.Root><Card.Content><Empty>Load your hangar first (<a class="text-primary hover:underline" href="#hangar">Pledges</a>) — items are built from it.</Empty></Card.Content></Card.Root>
+  <Card.Root><Card.Content><Empty>Load your hangar first (<a class={LINK} href="#hangar">Pledges</a>) — items are built from it.</Empty></Card.Content></Card.Root>
 {:else}
   <div class="grid gap-4">
     {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
@@ -198,7 +208,7 @@
     <Card.Root>
       <Card.Header>
         <Card.Title>All items <span class="text-muted-foreground">({qty(rows)} across {hangar.pledges.length} pledges)</span></Card.Title>
-        <Card.Description>Every item in every pledge, same items merged. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-label="Store" /> store page · <House class="inline size-3.5 align-[-2px]" aria-label="Hangar" /> hangar page holding it (gift / melt). Ships and paints per ship: <a class="text-primary hover:underline" href="#ships">Ships & paints</a>.</Card.Description>
+        <Card.Description>Every item in every pledge, same items merged. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">Store</span> store page · <House class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">Hangar</span> hangar page holding it (gift / melt). Ships and paints per ship: <a class={LINK} href="#ships">Ships & paints</a>.</Card.Description>
       </Card.Header>
       <Card.Content class="grid gap-4">
         <div class="flex flex-wrap items-center gap-2">
@@ -237,13 +247,13 @@
               <Table.Row>
                 <SortTh key="title" bind:sort>Item</SortTh>
                 <SortTh key="category" bind:sort>Category</SortTh>
-                <SortTh key="count" bind:sort firstDir="desc">Qty</SortTh>
+                <SortTh key="count" bind:sort firstDir="desc" numeric>Qty</SortTh>
                 <SortTh key="fits" bind:sort>Ship</SortTh>
                 <SortTh key="value" bind:sort firstDir="desc">In pledges</SortTh>
-                <Table.Head>Links</Table.Head>
+                <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
               </Table.Row>
             </Table.Header>
-            {#each groups as g (g.key)}
+            {#each groups as g, gi (g.key)}
               <Table.Body>
                 {#if g.label}
                   <Table.Row class="hover:bg-transparent">
@@ -258,8 +268,8 @@
                     </Table.Head>
                   </Table.Row>
                 {/if}
-                {#if !collapsed.has(g.key)}
-                  {#each g.items as r (r.key)}
+                {#if !collapsed.has(g.key) && budget > starts[gi]!}
+                  {#each g.items.slice(0, budget - starts[gi]!) as r (r.key)}
                     {@const ps = r.category === 'paint' ? paintStatus(r, ownedIds) : null}
                     {@const store = storeUrl(r)}
                     <Table.Row>
@@ -270,16 +280,16 @@
                         {#if ps === 'no-ship'}<HintBadge variant="warning" class="m-px" hint="You don't own a ship this paint fits">no ship</HintBadge>{/if}
                       </Table.Cell>
                       <Table.Cell class="text-muted-foreground text-[11px]">{CATEGORY_LABEL[r.category]}{#if series.get(r.key) && groupBy !== 'series'}<br /><span class="text-primary">{series.get(r.key)}</span>{/if}</Table.Cell>
-                      <Table.Cell>{r.count > 1 ? `×${r.count}` : '1'}</Table.Cell>
+                      <Table.Cell class="text-right tabular-nums">{r.count > 1 ? `×${r.count}` : '1'}</Table.Cell>
                       <Table.Cell class="text-[11px] whitespace-normal">{fitsLabel(r) || '—'}</Table.Cell>
                       <Table.Cell class="text-[11px] whitespace-normal">
                         {#each r.pledges.slice(0, 3) as p, i (i)}<div>{p.name} <span class="text-muted-foreground">#{p.id}</span></div>{/each}
                         {#if r.pledges.length > 3}<div class="text-muted-foreground">+{r.pledges.length - 3} more</div>{/if}
                       </Table.Cell>
-                      <Table.Cell class="text-[11px]">
-                        {#if store}<a class={linkCls} href={store} target="_blank" rel="noopener" title="Store page"><ShoppingCart class="size-3" /> store</a>{/if}
+                      <Table.Cell class="text-right text-[11px]">
+                        {#if store}<a class="{LINK} ml-2 inline-flex items-center gap-1" href={store} target="_blank" rel="noopener" title="Store page"><ShoppingCart class="size-3" /> store</a>{/if}
                         {#each [...new Map(r.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-                          <a class={linkCls} href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
+                          <a class="{LINK} ml-2 inline-flex items-center gap-1" href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
                         {/each}
                       </Table.Cell>
                     </Table.Row>
@@ -287,6 +297,9 @@
                 {/if}
               </Table.Body>
             {/each}
+            {#if budget < visibleRows}
+              <Table.Body><Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs">… {visibleRows - budget} more loading</Table.Cell></Table.Row></Table.Body>
+            {/if}
           </Table.Root>
         {/if}
       </Card.Content>

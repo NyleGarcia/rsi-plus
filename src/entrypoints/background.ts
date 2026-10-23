@@ -235,17 +235,19 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     errors.push(`store listing: ${(e as Error).message}`);
   }
 
-  // Re-read before writing: the user may have edited watches while we polled.
+  // Re-read before writing: the user may have edited watches while we polled. Unchanged → no write (sync storage
+  // allows 120 writes/min, and every write repaints the hub's watchers).
   const cur = await getWatches();
-  await watchesItem.setValue({
+  const nextWatches = {
     ...cur,
     threads: cur.threads.map((t) => (replies.has(t.id) ? { ...t, ...replies.get(t.id)! } : t)),
     channels: cur.channels.map((c) => (lastIds.has(c.id) ? { ...c, lastThreadId: lastIds.get(c.id)! } : c)),
-  });
+  };
+  if (JSON.stringify(nextWatches) !== JSON.stringify(cur)) await watchesItem.setValue(nextWatches);
   const before = await feedItem.getValue();
   const merged = mergeEvents(before, events);
   const added = merged.filter((e) => !before.some((b) => b.key === e.key));
-  await feedItem.setValue(merged);
+  if (JSON.stringify(merged) !== JSON.stringify(before)) await feedItem.setValue(merged);
   if (s.notify)
     for (const e of added.slice(0, 5))
       browser.notifications.create(e.key, { type: 'basic', iconUrl: browser.runtime.getURL('/icon/128.png'), title: e.title, message: e.body });
@@ -300,9 +302,10 @@ function capOrgs(c: OrgCache): OrgCache {
   return Object.fromEntries(keep.map((k) => [k, c[k]!]));
 }
 
-/** Fetch citizen org pages for the given nicknames (stale/missing only unless forced), ~1 req/s. */
+/** Fetch citizen org pages for the given nicknames (stale/missing only unless forced), ~1 req/s. One cache write per call (the hub sends batches of 10). */
 async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
-  let cache = await orgCacheItem.getValue();
+  const cache = await orgCacheItem.getValue();
+  const fetched: OrgCache = {};
   const now = Date.now();
   const out: OrgCache = {};
   let first = true;
@@ -321,9 +324,10 @@ async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
     } catch (e) {
       out[key] = { at: now, orgs: hit?.orgs ?? [], error: (e as Error).message };
     }
-    cache = capOrgs({ ...(await orgCacheItem.getValue()), [key]: out[key]! });
-    await orgCacheItem.setValue(cache);
+    fetched[key] = out[key]!;
   }
+  // Re-read before writing: another batch may have landed meanwhile.
+  if (Object.keys(fetched).length) await orgCacheItem.setValue(capOrgs({ ...(await orgCacheItem.getValue()), ...fetched }));
   return out;
 }
 

@@ -26,6 +26,8 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { cn } from '@/lib/utils';
+  import { fmtDateTime } from '@/lib/dates';
+  import { LINK, LINK_QUIET } from '@/lib/ui';
   import type { Concierge } from '@/lib/concierge';
   import { sortBy, type SortState } from '@/lib/sort';
   import { listingEntries } from '@/lib/storelog';
@@ -37,13 +39,13 @@
   import Tag from './Tag.svelte';
   import TipButton from './TipButton.svelte';
   import LazyTip from './LazyTip.svelte';
+  import HintBadge from './HintBadge.svelte';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
   import FacetBar from './FacetBar.svelte';
   import SkeletonSwap from './SkeletonSwap.svelte';
   import * as Alert from '@/components/ui/alert';
-  import * as Tooltip from '@/components/ui/tooltip';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
   import { Badge } from '@/components/ui/badge';
@@ -240,15 +242,18 @@
     }
     return { have, of, cost, unpriced };
   };
-  /** What the hangar holds of a listing: the listing itself, and its pieces (a pack's parts; a single listing is its own piece). */
-  const hangarOf = (it: StoreItem): HangarMatch => {
+  /**
+   * What the hangar holds of a listing: the listing itself, and its pieces (a pack's parts; a single listing is its own
+   * piece). `own` keeps a bundle's full breakdown for the row (was recomputed per row per render).
+   */
+  const hangarOf = (it: StoreItem): HangarMatch & { own: ReturnType<typeof ownedOf> | null } => {
     const count = ownedCount(it);
     const v = values.get(it.id);
     if (v && isBundle(it)) {
       const o = ownedOf(v);
-      return { count, have: o.have, of: o.of };
+      return { count, have: o.have, of: o.of, own: o };
     }
-    return { count, have: count > 0 ? 1 : 0, of: 1 };
+    return { count, have: count > 0 ? 1 : 0, of: 1, own: null };
   };
   /** Hangar match per listing id, built once per hangar / listing change (the Hangar facet asks for it per row). */
   const hangarById = $derived(new Map(all.map((it) => [it.id, hangarOf(it)])));
@@ -299,21 +304,22 @@
   // ---- add a listing to the RSI cart (same call as Buyback / the paint planner; never retried, nothing paid) ----
   const cart = createCartLedger();
   const addOne = (sku: number) => cart.add(sku, () => addStandalone(sku, 1));
+  /** RSI's ribbons per listing id, read once per listing change (the tag scans ran per row and per pack piece on every render). */
+  const ribbonOf = (it: StoreItem) => ({ limited: isLimitedTime(it), new: isNewListing(it), best: isBestValue(it), bonus: bonusOf(it), fits: fitsOf(it), low: isLowStock(it), off: discountPct(it) });
+  const ribbonById = $derived(new Map(all.map((it) => [it.id, ribbonOf(it)])));
   /** Subscriber badge on this session: true / false / null (not logged in or not checked yet). */
   const subscriber = $derived(items?.subscriber ?? null);
 </script>
 
 {#snippet ribbons(it: StoreItem, size: 'default' | 'xs')}
-  {@const off = discountPct(it)}
-  {@const bonus = bonusOf(it)}
-  {@const fits = fitsOf(it)}
-  {#if isLimitedTime(it)}<Tag kind="limited" {size} class="shrink-0" />{/if}
-  {#if isNewListing(it)}<Tag kind="new" {size} class="shrink-0" />{/if}
-  {#if isBestValue(it)}<Tag kind="bestvalue" {size} class="shrink-0" />{/if}
-  {#if bonus}<Tag kind="bonus" value={bonus} {size} class="shrink-0" />{/if}
-  {#if fits}<Tag kind="fits" value={fits} {size} class="shrink-0" />{/if}
-  {#if isLowStock(it)}<Tag kind="lowstock" {size} class="shrink-0" />{/if}
-  {#if off}<Tag kind="discount" value={`−${off}%`} {size} class="shrink-0" />{/if}
+  {@const r = ribbonById.get(it.id) ?? ribbonOf(it)}
+  {#if r.limited}<Tag kind="limited" {size} class="shrink-0" />{/if}
+  {#if r.new}<Tag kind="new" {size} class="shrink-0" />{/if}
+  {#if r.best}<Tag kind="bestvalue" {size} class="shrink-0" />{/if}
+  {#if r.bonus}<Tag kind="bonus" value={r.bonus} {size} class="shrink-0" />{/if}
+  {#if r.fits}<Tag kind="fits" value={r.fits} {size} class="shrink-0" />{/if}
+  {#if r.low}<Tag kind="lowstock" {size} class="shrink-0" />{/if}
+  {#if r.off}<Tag kind="discount" value={`−${r.off}%`} {size} class="shrink-0" />{/if}
 {/snippet}
 
 {#snippet tile(name: string, pic: string | null, owned: number, sub: string, opts: { ship?: boolean; extra?: boolean; count?: number; small?: boolean; buy?: Sold | null } = {})}
@@ -324,12 +330,11 @@
       <div class="flex min-w-0 items-center gap-1 text-[12px] leading-4">
         {#if owned}<Check class="text-success size-3 shrink-0" aria-hidden="true" /><span class="sr-only">in your hangar:</span>{/if}
         {#if buy}
-          <a class="text-foreground truncate no-underline hover:underline" href={buy.url} target="_blank" rel="noopener" title={`${name} — open on the RSI store`}>{name}</a>
+          <a class={cn(LINK_QUIET, 'truncate')} href={buy.url} target="_blank" rel="noopener" title={`${name} — open on the RSI store`}>{name}</a>
         {:else}
-          <Tooltip.Root>
-            <Tooltip.Trigger class="cursor-default truncate text-left">{name}</Tooltip.Trigger>
-            <Tooltip.Content class="max-w-80">{name}</Tooltip.Content>
-          </Tooltip.Root>
+          <LazyTip tip={name} class="min-w-0">
+            {#snippet trigger({ props })}<button type="button" {...props} class="cursor-default truncate text-left">{name}</button>{/snippet}
+          </LazyTip>
         {/if}
         {#if opts.count && opts.count > 1}<span class="text-muted-foreground shrink-0">×{opts.count}</span>{/if}
         {#if opts.ship}<Tag kind="ship" size="xs" class="shrink-0" />{/if}
@@ -352,9 +357,8 @@
 <div class="grid gap-4">
   <Card.Root>
     <Card.Header>
-      <Card.Title>Browse</Card.Title>
       <Card.Description>
-        {#if items}{all.length} listings · prices from {new Date(items.at).toLocaleString()}{#if concierge?.store.length} · {concierge.store.length} Concierge specials from your Chairman's Club page{/if}{:else if loading}Loading the store (one request per 100 listings per category)…{:else}Paints, packs, gear, game packages, add-ons, standalone ships, the Subscribers Store — and what the store only shows Concierge members.{/if}
+        {#if items}{all.length} listings · prices from {fmtDateTime(items.at)}{#if concierge?.store.length} · {concierge.store.length} Concierge specials from your Chairman's Club page{/if}{:else if loading}Loading the store (one request per 100 listings per category)…{:else}Paints, packs, gear, game packages, add-ons, standalone ships, the Subscribers Store — and what the store only shows Concierge members.{/if}
       </Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
         <TipButton variant="outline" href="#paint-rebuy" tip="Melt paints you own and buy them back together with RSI's multi-paint discount">Paint rebuy value →</TipButton>
@@ -374,13 +378,13 @@
       </FacetBar>
 
       {#if who === 'concierge'}
-        {#if !concierge && !whoCount('concierge')}<p class="text-muted-foreground m-0 text-xs">RSI only returns Concierge-only listings to a Chairman's Club session — your level is on <a class="text-primary hover:underline" href="#wallet">Wallet</a>; non-members see nothing here, by design.</p>{/if}
+        {#if !concierge && !whoCount('concierge')}<p class="text-muted-foreground m-0 text-xs">RSI only returns Concierge-only listings to a Chairman's Club session — your level is on <a class={LINK} href="#wallet">Wallet</a>; non-members see nothing here, by design.</p>{/if}
       {:else if who === 'subscribers'}
         <div class="flex flex-wrap items-center gap-2 text-xs">
           {#if subscriber === true}<Badge variant="success">Subscriber</Badge><span class="text-muted-foreground">Your session has RSI's subscriber badge — the Subscribers Store lists for you.</span>
           {:else if subscriber === false}<Badge variant="muted">Not a subscriber</Badge><span class="text-muted-foreground">RSI hides the Subscribers Store until you subscribe; the count above is what your session gets (usually nothing).</span>
           {:else}<span class="text-muted-foreground">Log in to RSI and refresh — the Subscribers Store only lists for sessions with the subscriber badge.</span>{/if}
-          <a class="text-primary hover:underline" href="https://robertsspaceindustries.com/en/pledge/browse/extras/subscribers-store" target="_blank" rel="noopener">Open on RSI →</a>
+          <a class={LINK} href="https://robertsspaceindustries.com/en/pledge/browse/extras/subscribers-store" target="_blank" rel="noopener">Open on RSI →</a>
         </div>
       {/if}
 
@@ -390,9 +394,9 @@
           <Table.Row>
             <SortTh key="name" bind:sort>Listing</SortTh>
             <SortTh key="bundle" bind:sort firstDir="desc">Contents</SortTh>
-            <SortTh key="price" bind:sort>Price</SortTh>
-            <SortTh key="discount" bind:sort firstDir="desc">Discount</SortTh>
-            <SortTh key="owned" bind:sort firstDir="desc"><span class="sr-only">In hangar / cart</span></SortTh>
+            <SortTh key="price" bind:sort numeric>Price</SortTh>
+            <SortTh key="discount" bind:sort firstDir="desc" numeric>Discount</SortTh>
+            <SortTh key="owned" bind:sort firstDir="desc" class="text-right"><span class="sr-only">In hangar / cart</span></SortTh>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -403,7 +407,7 @@
             {@const bundle = !!v && isBundle(it)}
             {@const isOpen = !!v && open.has(it.id)}
             {@const ins = insuranceOf(it)}
-            {@const own = bundle && hangar ? ownedOf(v) : null}
+            {@const own = bundle && hangar ? (hangarById.get(it.id)?.own ?? null) : null}
             <Table.Row id={`listing-${it.id}`} class={cn(deepLink.flash === it.id && 'bg-primary/10')}>
               <Table.Cell class="w-[46%] min-w-[380px] whitespace-normal">
                 <div class="flex items-center gap-2">
@@ -416,7 +420,7 @@
                   {/if}
                   <Thumb src={it.thumb} name={it.name} width={64} height={36} />
                   <div class="grid gap-0.5">
-                    <a class="text-foreground no-underline hover:underline" href={it.url} target="_blank" rel="noopener"><strong>{it.name}</strong></a>
+                    <a class={LINK_QUIET} href={it.url} target="_blank" rel="noopener"><strong>{it.name}</strong></a>
                     <div class="flex flex-wrap items-center gap-1">
                       <span class="text-muted-foreground mr-1 text-[11px]">{it.subtitle || catLabel(it.category)}</span>
                       {#if it.vip}<Tag kind="concierge" />{/if}
@@ -432,7 +436,7 @@
               </Table.Cell>
               <Table.Cell class="align-top whitespace-nowrap">
                 {#if v}
-                  <Button variant="link" size="xs" class="text-foreground h-auto px-0 text-[12.5px]" onclick={() => toggle(it.id)} aria-expanded={isOpen} tabindex={-1}>
+                  <Button variant="link" size="xs" class="text-foreground h-auto p-0 text-[12.5px]" onclick={() => toggle(it.id)} aria-expanded={isOpen} tabindex={-1}>
                     {v.total} items
                   </Button>
                   {#if own}
@@ -462,9 +466,9 @@
                   </LazyTip>
                 {/if}
               </Table.Cell>
-              <Table.Cell class="tabular-nums align-top">{usd(it.discounted)}{#if off}<div class="text-muted-foreground text-[11px] leading-4">list {usd(it.price)}</div>{/if}</Table.Cell>
-              <Table.Cell class="align-top">{#if off}<span class="text-success">−{off}%</span><div class="text-muted-foreground text-[11px] leading-4">{usd(it.price - it.discounted)} off</div>{:else}<span class="text-muted-foreground">—</span>{/if}</Table.Cell>
-              <Table.Cell class="w-full align-top">
+              <Table.Cell class="text-right tabular-nums align-top">{usd(it.discounted)}{#if off}<div class="text-muted-foreground text-[11px] leading-4">list {usd(it.price)}</div>{/if}</Table.Cell>
+              <Table.Cell class="text-right tabular-nums align-top">{#if off}<span class="text-success">−{off}%</span><div class="text-muted-foreground text-[11px] leading-4">{usd(it.price - it.discounted)} off</div>{:else}<span class="text-muted-foreground">—</span>{/if}</Table.Cell>
+              <Table.Cell class="w-full text-right align-top">
                 <CartButton state={cart.of(it.id)} onadd={() => addOne(it.id)} name={it.name} available={it.available} hint={it.available ? 'Add to your RSI cart (nothing is paid)' : null} />
               </Table.Cell>
             </Table.Row>
@@ -485,10 +489,9 @@
                         {#if it.category === 'paints' && !sets.length && v.priced === v.priceable && v.priceable >= 2}
                           {@const tiers = paintTiers(v.separate, v.priceable)}
                           <div class="basis-full">
-                            <Tooltip.Root>
-                              <Tooltip.Trigger class="text-muted-foreground mb-0.5 block cursor-default text-left">As singles with the multi-paint discount</Tooltip.Trigger>
-                              <Tooltip.Content class="max-w-80">RSI takes 15 % off every paint line at 2 paints in the cart, 20 % at 3, 25 % at 5, 30 % at 7, 35 % at 10 — singles only; whether a pack line is discounted too, or counts toward the tier, is unverified</Tooltip.Content>
-                            </Tooltip.Root>
+                            <LazyTip tip="RSI takes 15 % off every paint line at 2 paints in the cart, 20 % at 3, 25 % at 5, 30 % at 7, 35 % at 10 — singles only; whether a pack line is discounted too, or counts toward the tier, is unverified">
+                              {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground mb-0.5 block cursor-default text-left">As singles with the multi-paint discount</button>{/snippet}
+                            </LazyTip>
                             <div class="grid w-fit grid-cols-[auto_auto_auto_auto] gap-x-3 gap-y-0.5 text-[11px] leading-4">
                               {#each tiers as t, i (i)}
                                 {@const d = it.discounted - t.cost}
@@ -501,15 +504,13 @@
                           </div>
                         {/if}
                         {#if own}
-                          <Tooltip.Root>
-                            <Tooltip.Trigger class={cn('cursor-default text-left', own.have === own.of ? 'text-success' : 'text-muted-foreground')}>In your hangar <strong class={cn('tabular-nums text-sm', own.have === own.of ? 'text-success' : 'text-foreground')}>{own.have} of {own.of}</strong></Tooltip.Trigger>
-                            <Tooltip.Content class="max-w-80">{`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside)`}</Tooltip.Content>
-                          </Tooltip.Root>
+                          <LazyTip tip={`${own.of} of the ${v.total} items can be owned (hangar, game download and UEC extras aside)`}>
+                            {#snippet trigger({ props })}<button type="button" {...props} class={cn('cursor-default text-left', own.have === own.of ? 'text-success' : 'text-muted-foreground')}>In your hangar <strong class={cn('tabular-nums text-sm', own.have === own.of ? 'text-success' : 'text-foreground')}>{own.have} of {own.of}</strong></button>{/snippet}
+                          </LazyTip>
                           {#if own.have && own.have < own.of}
-                            <Tooltip.Root>
-                              <Tooltip.Trigger class="text-muted-foreground cursor-default text-left">Missing apart <strong class="text-foreground tabular-nums text-sm">{usd(own.cost)}</strong>{#if own.unpriced}{` + ${own.unpriced} not sold apart`}{/if}</Tooltip.Trigger>
-                              <Tooltip.Content>What the pieces you don't have would cost bought one by one</Tooltip.Content>
-                            </Tooltip.Root>
+                            <LazyTip tip="What the pieces you don't have would cost bought one by one">
+                              {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-default text-left">Missing apart <strong class="text-foreground tabular-nums text-sm">{usd(own.cost)}</strong>{#if own.unpriced}{` + ${own.unpriced} not sold apart`}{/if}</button>{/snippet}
+                            </LazyTip>
                           {/if}
                         {/if}
                       </div>
@@ -529,8 +530,9 @@
                         <div class="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
                           {#if pic}<Thumb src={pic} name={part.name} width={44} height={25} />{/if}
                           <strong class="font-semibold">{part.name}</strong>
-                          <Badge variant="muted" class="h-4 px-1 text-[10px]">{pieces.length} pieces</Badge>
-                          {#if have}<Badge variant="success" class="h-4 px-1 text-[10px]">{have === pieces.length ? 'all owned' : `${have}/${pieces.length} owned`}</Badge>{/if}
+                          <HintBadge variant="muted" size="xs">{pieces.length} pieces</HintBadge>
+                          {#if have && have === pieces.length}<Tag kind="owned" size="xs" label="all owned" hint="Every piece of this set is already in your hangar" />
+                          {:else if have}<HintBadge variant="success" size="xs" hint="Pieces of this set already in your hangar">{have}/{pieces.length} owned</HintBadge>{/if}
                           <span class="text-muted-foreground ml-auto tabular-nums text-xs">{part.price != null ? `${usd(part.price)} as a set` : 'not sold apart'}</span>
                         </div>
                         <ul class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-1 p-0">

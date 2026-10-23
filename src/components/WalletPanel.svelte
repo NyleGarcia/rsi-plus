@@ -3,7 +3,9 @@
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
-  import { r2 } from '@/lib/money';
+  import { r2, usd0 } from '@/lib/money';
+  import { fmtDateTime } from '@/lib/dates';
+  import { LINK } from '@/lib/ui';
   import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, warbondInOrders, type Order, type SubPayment } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
@@ -258,11 +260,10 @@
   // Your numbers go through ownDollars / ownMoney (screenshare mode → $•••); the public funding figures (big/short) stay readable.
   const money = ownDollars;
   const signed = (n: number) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`;
-  const whole = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
-  const money0 = (n: number) => ownMoney(whole(n));
-  const big = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : whole(n));
+  const money0 = (n: number) => ownMoney(usd0(n));
+  const big = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : usd0(n));
   /** Fits a narrow bar column: $55, $2.3k, $16k. */
-  const short = (n: number) => (n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : whole(n));
+  const short = (n: number) => (n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : usd0(n));
   const fmtN = (n: number) => ownMoney(`¤${n.toLocaleString('en-US')}`);
   const RANGES: { id: FundingRange; label: string; hint: string }[] = [
     { id: 'day', label: 'Days', hint: 'last 7 days' },
@@ -325,7 +326,7 @@
 
 {#snippet bars(points: BarPoint[], fmt: (n: number) => string, height: number, seriesLabel: string)}
   {#if !points.length || Math.max(0, ...points.map((p) => p.value)) <= 0}
-    <div class="text-muted-foreground py-3 text-xs">No data for this range.</div>
+    <Empty class="py-3 text-xs">No data for this range.</Empty>
   {:else}
     {@const byKey = new Map(points.map((p) => [p.key, p]))}
     <Chart.Container config={barConfig} class="aspect-auto w-full" style={height ? `height:${height}px` : 'height:100%'} role="img" aria-label={points.map((p) => `${p.label}: ${fmt(p.value)}`).join(', ')}>
@@ -367,7 +368,7 @@
   {@const color = (s: Slice, i: number) => colors[s.key] ?? PALETTE[i % PALETTE.length]}
   {@const total = slices.reduce((s, x) => s + x.value, 0)}
   {#if !slices.length || total <= 0}
-    <div class="text-muted-foreground py-3 text-xs">Nothing to chart.</div>
+    <Empty class="py-3 text-xs">Nothing to chart.</Empty>
   {:else}
     {@const pct = (v: number) => `${((100 * v) / total).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`}
     {@const on = hot[id] ?? null}
@@ -526,7 +527,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <TipButton variant={orders ? 'outline' : 'default'} size="sm" disabled={ordersBusy} onclick={importOrders} tip="Reads your order history pages from robertsspaceindustries.com/account/billing in this browser — nothing is sent anywhere">{ordersBusy ? 'Reading…' : orders ? 'Re-import order history' : 'Import order history'}</TipButton>
           {#if ordersMsg.startsWith('No orders') || ordersMsg.startsWith('Could not')}<TipButton variant="ghost" size="sm" onclick={copyBilling} tip="Copies the billing page's markup (bill-to removed) to the clipboard, for fixing the reader when RSI changes the page">Copy billing markup</TipButton>{/if}
-          {#if orders}<span class="text-muted-foreground text-xs">{orders.orders.length} orders · read {new Date(orders.at).toLocaleString()}</span>{/if}
+          {#if orders}<span class="text-muted-foreground text-xs">{orders.orders.length} orders · read {fmtDateTime(orders.at)}</span>{/if}
           {#if ordersMsg}<span class="text-muted-foreground text-xs">{ordersMsg}</span>{/if}
         </div>
       </div>
@@ -615,9 +616,9 @@
 <div class="grid gap-4">
   <Card.Root>
     <Card.Header>
-      <Card.Title>Wallet</Card.Title>
+      <Card.Title>Credits</Card.Title>
       <Card.Description>
-        {#if credits}Credits as of {new Date(credits.at).toLocaleString()}{#if !hangar} · saved once you load the hangar{/if}
+        {#if credits}Credits as of {fmtDateTime(credits.at)}{#if !hangar} · saved once you load the hangar{/if}
         {:else}Store credit, UEC and REC from your RSI account (one request to /account/billing — stays in this browser).{/if}
       </Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
@@ -630,7 +631,7 @@
       {#if creditsDebug}
         <Alert.Root variant="warning">
           <Alert.Title>Credits box not found on any account page.</Alert.Title>
-          <Alert.Description class="text-xs">Open <a class="text-primary hover:underline" href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing</a> once with the extension on and it's picked up from there. Details: {creditsDebug}</Alert.Description>
+          <Alert.Description class="text-xs">Open <a class={LINK} href="https://robertsspaceindustries.com/account/billing" target="_blank" rel="noopener">Billing</a> once with the extension on and it's picked up from there. Details: {creditsDebug}</Alert.Description>
         </Alert.Root>
       {/if}
       <StatGrid layout="divided">
@@ -660,7 +661,6 @@
               ]}
               bind:value={() => basisPick, setBasis}
               ariaLabel="Spend basis"
-              size="sm"
             />
           {/if}
           {#if editing}
@@ -673,7 +673,7 @@
       {/if}
     </Card.Header>
     {#if !all.length}
-      <Card.Content><Empty>Load your hangar on the <a class="text-primary hover:underline" href="#hangar">Pledges</a> page first.</Empty></Card.Content>
+      <Card.Content><Empty>Load your hangar on the <a class={LINK} href="#hangar">Pledges</a> page first.</Empty></Card.Content>
     {:else}
       <Card.Content class="grid gap-4">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -770,7 +770,7 @@
       <Card.Root>
         <Card.Header>
           <Card.Title>CCU portfolio</Card.Title>
-          <Card.Description class="text-xs">Upgrades in your hangar: what you paid (melt value) vs what the same upgrade is worth at today's MSRP gap. Gifted CCUs have no melt value. Plan chains on the <a class="text-primary hover:underline" href="#ccu">CCU planner</a> tab.</Card.Description>
+          <Card.Description class="text-xs">Upgrades in your hangar: what you paid (melt value) vs what the same upgrade is worth at today's MSRP gap. Gifted CCUs have no melt value. Plan chains on the <a class={LINK} href="#ccu">CCU planner</a> tab.</Card.Description>
         </Card.Header>
         <Card.Content class="grid gap-3">
           <StatGrid>
@@ -811,10 +811,10 @@
       <Card.Title>Star Citizen funding</Card.Title>
       <Card.Description class="text-xs">
         RSI's public crowdfund counter (the numbers behind the old funding page).
-        {#if funding} Updated {new Date(funding.at).toLocaleString()}.{/if}
+        {#if funding} Updated {fmtDateTime(funding.at)}.{/if}
       </Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
-        <Segmented options={RANGES} bind:value={range} ariaLabel="Funding range" size="sm" />
+        <Segmented options={RANGES} bind:value={range} ariaLabel="Funding range" />
         <Button variant="outline" disabled={fundingBusy} onclick={() => loadFunding(true)}>{fundingBusy ? '…' : 'Refresh'}</Button>
       </Card.Action>
     </Card.Header>

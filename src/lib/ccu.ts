@@ -112,28 +112,44 @@ function skuKind(title: string): EdgeKind {
   return 'limited';
 }
 
-/** Lexicographic ranking of a path for the objective; lower wins. Waiting for a sale loses to buying today. */
-function rank(opt: PlanOptions, cost: number, cash: number, paid: number, waits: number, steps: number): number[] {
-  switch (opt.objective) {
-    case 'cash':
-      return [cash, cost, waits, steps];
-    case 'longterm':
-      return [cost + paid, waits, steps];
-    default:
-      return [cost, waits, steps];
-  }
+/** Running totals of a path (one per node in Dijkstra). */
+interface Dist {
+  cost: number;
+  cash: number;
+  paid: number;
+  waits: number;
+  steps: number;
+  prev: Step | null;
+  id: number;
+  /** Order the node was first reached: ties settle the earliest one (the old linear scan's order). */
+  seq: number;
 }
-const less = (a: number[], b: number[]) => {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return (a[i] ?? 0) < (b[i] ?? 0);
-  return false;
-};
 
-interface Graph {
+/** Lexicographic ranking of a path for the objective; true when `a` beats `b`. Waiting for a sale loses to buying today. */
+function before(objective: Objective, a: Dist, b: Dist): boolean {
+  if (objective === 'cash') {
+    if (a.cash !== b.cash) return a.cash < b.cash;
+    if (a.cost !== b.cost) return a.cost < b.cost;
+  } else if (objective === 'longterm') {
+    const x = a.cost + a.paid;
+    const y = b.cost + b.paid;
+    if (x !== y) return x < y;
+  } else if (a.cost !== b.cost) return a.cost < b.cost;
+  if (a.waits !== b.waits) return a.waits < b.waits;
+  return a.steps < b.steps;
+}
+
+/**
+ * The CCU graph for one set of options (warbond / buyback / stock / credit / gifted / exclude / planAhead — not the
+ * objective, start, target or stops). Build it once and pass it to `plan` for every start and target with those
+ * options; each node's out-edges are built on first use and reused.
+ */
+export interface PlanGraph {
   byId: Map<number, CatalogShip>;
   edges: (fromId: number) => Step[];
 }
 
-function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeStart: boolean): Graph {
+export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions): PlanGraph {
   const byId = new Map(ships.map((s) => [s.id, s]));
   const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId?: number }[] = [];
   const starts: Step[] = [];
@@ -148,13 +164,12 @@ function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeS
     }
     // Nothing sells a CCU to this hull today: with planAhead, assume a standard CCU at MSRP when it next returns.
     if (opt.planAhead && !onSale && s.msrp > 0) offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
-    if (storeStart)
-      for (const k of s.standalone) {
-        if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
-        const wb = isWarbondSku(k);
-        if (wb && !opt.warbond) continue;
-        starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
-      }
+    for (const k of s.standalone) {
+      if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
+      const wb = isWarbondSku(k);
+      if (wb && !opt.warbond) continue;
+      starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
+    }
   }
   const excluded = new Set(opt.exclude);
   const ownedFrom = new Map<number, OwnedCcu[]>();
@@ -162,8 +177,11 @@ function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeS
     if (excluded.has(o.ref) || (o.source === 'buyback' && !opt.buyback) || (o.gifted && opt.excludeGifted)) continue;
     (ownedFrom.get(o.fromId) ?? ownedFrom.set(o.fromId, []).get(o.fromId)!).push(o);
   }
+  const adj = new Map<number, Step[]>();
   const edges = (fromId: number): Step[] => {
     if (fromId === STORE_START) return starts;
+    const hit = adj.get(fromId);
+    if (hit) return hit;
     const a = byId.get(fromId);
     if (!a) return [];
     const out: Step[] = [];
@@ -184,31 +202,67 @@ function graph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions, storeS
         out.push({ fromId: a.id, toId: to.id, kind: 'buyback', cost, cash: opt.storeCredit ? 0 : cost, paid: 0, label: 'Buyback CCU', ref: o.ref });
       }
     }
+    adj.set(fromId, out);
     return out;
   };
   return { byId, edges };
 }
 
-/** Dijkstra from `startId` to `targetId` on the ranked cost. n ≈ 250 ships → simple array scan is fine. */
-function route(g: Graph, opt: PlanOptions, startId: number, targetId: number): Step[] | null {
+/** Dijkstra from `startId` to `targetId` on the ranked cost, binary heap with lazy deletion. */
+function route(g: PlanGraph, objective: Objective, startId: number, targetId: number): Step[] | null {
   if (startId === targetId) return [];
-  type D = { cost: number; cash: number; paid: number; waits: number; steps: number; prev: Step | null };
-  const dist = new Map<number, D>([[startId, { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null }]]);
-  const key = (d: D) => rank(opt, d.cost, d.cash, d.paid, d.waits, d.steps);
+  let seq = 0;
+  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null, id: startId, seq: seq++ };
+  const dist = new Map<number, Dist>([[startId, first]]);
   const done = new Set<number>();
-  for (;;) {
-    let cur: number | null = null;
-    for (const [id, d] of dist) {
-      if (done.has(id)) continue;
-      if (cur == null || less(key(d), key(dist.get(cur)!))) cur = id;
+  const lt = (a: Dist, b: Dist) => before(objective, a, b) || (!before(objective, b, a) && a.seq < b.seq);
+  const heap: Dist[] = [first];
+  const push = (d: Dist) => {
+    let i = heap.push(d) - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!lt(heap[i]!, heap[p]!)) break;
+      [heap[i], heap[p]] = [heap[p]!, heap[i]!];
+      i = p;
     }
-    if (cur == null || cur === targetId) break;
-    done.add(cur);
-    const here = dist.get(cur)!;
-    for (const e of g.edges(cur)) {
-      const next: D = { cost: here.cost + e.cost, cash: here.cash + e.cash, paid: here.paid + e.paid, waits: here.waits + (e.kind === 'future' ? 1 : 0), steps: here.steps + 1, prev: e };
+  };
+  const pop = (): Dist => {
+    const top = heap[0]!;
+    const last = heap.pop()!;
+    if (heap.length) {
+      heap[0] = last;
+      for (let i = 0; ; ) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < heap.length && lt(heap[l]!, heap[m]!)) m = l;
+        if (r < heap.length && lt(heap[r]!, heap[m]!)) m = r;
+        if (m === i) break;
+        [heap[i], heap[m]] = [heap[m]!, heap[i]!];
+        i = m;
+      }
+    }
+    return top;
+  };
+  const cand: Dist = { ...first };
+  while (heap.length) {
+    const here = pop();
+    // Stale entry: the node was settled, or reached more cheaply since this one was queued.
+    if (done.has(here.id) || dist.get(here.id) !== here) continue;
+    if (here.id === targetId) break;
+    done.add(here.id);
+    for (const e of g.edges(here.id)) {
       const old = dist.get(e.toId);
-      if (!old || less(key(next), key(old))) dist.set(e.toId, next);
+      // Compare in a scratch record; allocate only when the edge improves the node.
+      cand.cost = here.cost + e.cost;
+      cand.cash = here.cash + e.cash;
+      cand.paid = here.paid + e.paid;
+      cand.waits = here.waits + (e.kind === 'future' ? 1 : 0);
+      cand.steps = here.steps + 1;
+      if (old && !before(objective, cand, old)) continue;
+      const next: Dist = { ...cand, prev: e, id: e.toId, seq: old ? old.seq : seq++ };
+      dist.set(e.toId, next);
+      push(next);
     }
   }
   const end = dist.get(targetId);
@@ -222,10 +276,10 @@ function route(g: Graph, opt: PlanOptions, startId: number, targetId: number): S
  * Best chain from `startId` (a ship id, or `STORE_START` to buy one first) to `targetId`.
  * Stops — forced CCUs (`opt.include`) and hulls to pass through (`opt.via`) — are visited in order of the MSRP of the
  * hull they start from; null when any leg is impossible (a stop not above the previous one, not reachable…).
+ * `g`: a `planGraph` built from the same ships / owned / options, to share it across many plans.
  */
-export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, targetId: number, opt: PlanOptions = DEFAULT_PLAN_OPTIONS): Plan | null {
+export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, targetId: number, opt: PlanOptions = DEFAULT_PLAN_OPTIONS, g: PlanGraph = planGraph(ships, owned, opt)): Plan | null {
   const storeStart = startId === STORE_START;
-  const g = graph(ships, owned, opt, storeStart);
   const start = storeStart ? null : g.byId.get(startId);
   const target = g.byId.get(targetId);
   if ((!storeStart && !start) || !target || startId === targetId) return null;
@@ -244,20 +298,20 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   for (const st of stops) {
     if ('via' in st) {
       if (st.msrp < 0) return null;
-      const leg = route(g, opt, at, st.via);
+      const leg = route(g, opt.objective, at, st.via);
       if (!leg || (at !== st.via && !leg.length)) return null;
       steps.push(...leg);
       at = st.via;
       continue;
     }
     const o = st.ccu;
-    const leg = route(g, opt, at, o.fromId);
+    const leg = route(g, opt.objective, at, o.fromId);
     const edge = g.edges(o.fromId).find((e) => e.ref === o.ref);
     if (!leg || !edge) return null;
     steps.push(...leg, edge);
     at = o.toId;
   }
-  const last = route(g, opt, at, targetId);
+  const last = route(g, opt.objective, at, targetId);
   if (!last) return null;
   steps.push(...last);
   if (!steps.length) return null;
@@ -370,6 +424,13 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
   const keep = new Set(fo.keep ?? []);
   const used = new Set<number>();
   const legs: FleetLeg[] = [];
+  // One graph per (exclude, planAhead): shared by every candidate hull of a goal, and by later goals until a chain
+  // reserves more CCUs.
+  const graphs = new Map<string, PlanGraph>();
+  const graphOf = (o: PlanOptions) => {
+    const k = `${!!o.planAhead}|${[...o.exclude].sort((a, b) => a - b).join(',')}`;
+    return graphs.get(k) ?? graphs.set(k, planGraph(ships, owned, o)).get(k)!;
+  };
   for (const goal of goals) {
     const o: PlanOptions = { ...opt, include: [], via: goal.via, exclude: [...new Set([...opt.exclude, ...used])] };
     let startId = goal.fromId;
@@ -392,7 +453,7 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
     search: for (const pass of o.planAhead ? [o] : [o, { ...o, planAhead: true }]) {
       for (const group of groups) {
         for (const c of group) {
-          const p = plan(ships, owned, c, goal.targetId, pass);
+          const p = plan(ships, owned, c, goal.targetId, pass, graphOf(pass));
           if (p && (!best || better(p, best))) (best = p), (startId = c);
         }
         if (best) {

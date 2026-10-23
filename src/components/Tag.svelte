@@ -74,7 +74,7 @@
       case 'size':
         return { label: value ?? '', hint: "RSI's ship size class", variant: 'outline' };
       case 'discount':
-        return { label: value ?? 'on sale', hint: 'Below list price right now', variant: 'success' };
+        return { label: value ?? 'on sale', hint: 'Below MSRP right now', variant: 'success' };
       case 'gifted':
         return { label: 'Gifted', hint: 'No melt value — received as a gift (or a free item)', variant: 'muted' };
       case 'giftable':

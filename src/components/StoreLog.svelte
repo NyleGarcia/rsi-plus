@@ -19,16 +19,15 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { cn } from '@/lib/utils';
   import { insuranceOf, insuranceTag, isInsurance } from '@/lib/bundle';
-  import * as Tooltip from '@/components/ui/tooltip';
   import Segmented from './Segmented.svelte';
   import Thumb from './Thumb.svelte';
   import Tag from './Tag.svelte';
+  import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
   import * as Card from '@/components/ui/card';
-  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
 
   let log = $state<StoreChange[]>([]);
@@ -186,10 +185,9 @@
     </Card.Description>
     {#if log.length}
       <Card.Action class="flex flex-wrap items-center gap-2">
-        <OpenCartButton count={cart.added} />
-        <Button variant="outline" size="sm" onclick={dropAll}>{show === 'all' ? 'Dismiss all' : `Dismiss ${show === 'add' ? 'added' : 'removed'}`}</Button>
+        <OpenCartButton count={cart.added} size="default" />
+        <Button variant="outline" onclick={dropAll}>{show === 'all' ? 'Dismiss all' : `Dismiss ${show === 'add' ? 'added' : 'removed'}`}</Button>
         <Segmented
-          size="sm"
           options={[
             { id: 'all', label: `All · ${count('all')}`, hint: 'Every change' },
             { id: 'add', label: `+${totals.add} added`, hint: `${count('add')} added group${count('add') === 1 ? '' : 's'} — new in the store` },
@@ -257,20 +255,14 @@
                           {#if tags.bestvalue}<Tag kind="bestvalue" size="xs" />{/if}
                           {#if tags.lowstock}<Tag kind="lowstock" size="xs" />{/if}
                           {#if inside.length >= 2}
-                            <Tooltip.Root delayDuration={150}>
-                              <Tooltip.Trigger>
-                                {#snippet child({ props })}
-                                  <Badge {...props} variant="outline" tabindex={0} class="h-4 cursor-default px-1 text-[10px]">{inside.length} items</Badge>
-                                {/snippet}
-                              </Tooltip.Trigger>
-                              <Tooltip.Content side="bottom" align="start" class="max-w-80">
-                                <ul class="m-0 grid list-none gap-0.5 p-0 text-xs">
-                                  {#each inside as c, i (i)}
-                                    <li class="flex items-center gap-1">{c.name}{#if c.ship}<span class="opacity-70">· ship</span>{/if}</li>
-                                  {/each}
-                                </ul>
-                              </Tooltip.Content>
-                            </Tooltip.Root>
+                            {#snippet contents()}
+                              <ul class="m-0 grid list-none gap-0.5 p-0 text-xs">
+                                {#each inside as c, i (i)}
+                                  <li class="flex items-center gap-1">{c.name}{#if c.ship}<span class="opacity-70">· ship</span>{/if}</li>
+                                {/each}
+                              </ul>
+                            {/snippet}
+                            <HintBadge size="xs" side="bottom" hint={contents}>{inside.length} items</HintBadge>
                           {/if}
                           {#if owned}<Tag kind="owned" size="xs" label={owned} hint={e.kind === 'ccu' ? 'The hull this upgrades to is already in your hangar' : 'Already in your hangar'} />{/if}
                           {#if rsi}

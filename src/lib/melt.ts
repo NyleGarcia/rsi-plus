@@ -169,23 +169,32 @@ export function targetPlan(all: Pledge[], target: number, opts: DedupeOptions = 
   return { picked: list, summary: meltSummary(all, picked, opts), reached: credit >= target };
 }
 
+/** Item key → every pledge holding it (in hangar order, once per pledge), for `copiesElsewhere`. Build once per hangar. */
+export function holdersIndex(all: Pledge[]): Map<string, Pledge[]> {
+  const holders = new Map<string, Pledge[]>();
+  for (const q of all) {
+    for (const k of new Set(q.items.map((i) => itemKey(i.title)))) {
+      const list = holders.get(k);
+      if (list) list.push(q);
+      else holders.set(k, [q]);
+    }
+  }
+  return holders;
+}
+
 /**
  * For a pledge you're melting: each of its items and the *other* (unpicked) pledges that still hold a copy —
  * "melt this, you have the same item in #123". Items with no other copy are listed with an empty `in`.
  */
-export function copiesElsewhere(all: Pledge[], picked: Set<number>, p: Pledge): { title: string; in: Pledge[] }[] {
-  const holders = new Map<string, Pledge[]>();
-  for (const q of all) {
-    if (q.id === p.id || picked.has(q.id)) continue;
-    for (const k of new Set(q.items.map((i) => itemKey(i.title)))) holders.set(k, [...(holders.get(k) ?? []), q]);
-  }
+export function copiesElsewhere(index: Map<string, Pledge[]>, picked: Set<number>, p: Pledge): { title: string; in: Pledge[] }[] {
+  const holders = (k: string) => (index.get(k) ?? []).filter((q) => q.id !== p.id && !picked.has(q.id));
   const seen = new Set<string>();
   const out: { title: string; in: Pledge[] }[] = [];
   for (const i of p.items) {
     const k = itemKey(i.title);
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ title: i.title, in: holders.get(k) ?? [] });
+    out.push({ title: i.title, in: holders(k) });
   }
   return out;
 }

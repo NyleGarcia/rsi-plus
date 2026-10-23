@@ -9,6 +9,8 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Dot from '@lucide/svelte/icons/dot';
   import { cn } from '@/lib/utils';
+  import { fmtDateTime } from '@/lib/dates';
+  import LazyTip from './LazyTip.svelte';
 
   export interface TimelineEvent {
     id: string;
@@ -125,7 +127,12 @@
                   </span>
                   {#if e.meta}<span class="text-muted-foreground text-sm">{e.meta}</span>{/if}
                 </div>
-                <time class="text-muted-foreground shrink-0 pt-0.5 text-xs tabular-nums" datetime={new Date(e.at).toISOString()} title={new Date(e.at).toLocaleString()}>{when(e.at)}</time>
+                <!-- the row shows "5m" / a time of day: the exact moment is in the tip -->
+                <LazyTip tip={fmtDateTime(e.at)} class="shrink-0">
+                  {#snippet trigger({ props })}
+                    <button type="button" {...props} class="text-muted-foreground shrink-0 cursor-default pt-0.5 text-xs tabular-nums"><time datetime={new Date(e.at).toISOString()}>{when(e.at)}</time></button>
+                  {/snippet}
+                </LazyTip>
                 {#if e.detail}
                   <button type="button" data-trigger class="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 -mr-1 rounded p-1 outline-none focus-visible:ring-2" aria-expanded={open} aria-label={open ? 'Hide details' : 'Show details'} onclick={() => toggle(e.id)}>
                     <ChevronDown class={cn('size-4 transition-transform', open && 'rotate-180')} />
