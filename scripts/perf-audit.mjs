@@ -93,8 +93,18 @@ try {
   // FacetBar (2026-10): facets are popover buttons named "<Facet> filter[: picks]"; options inside are checkboxes by label.
   const facet = (name) => page.getByRole('button', { name: new RegExp(`^${name} filter`) }).first();
   const pick = async (label, facetName, option) => {
-    await facet(facetName).click();
-    await interact(label, () => page.getByRole('checkbox', { name: option }).click());
+    // Non-primary facets sit under "+ Filter" until added once.
+    if (!(await facet(facetName).count())) {
+      await page.getByRole('button', { name: /^Filter$/ }).first().click();
+      await page.getByRole('menuitem', { name: facetName }).click();
+    }
+    // Adding through the menu opens the new button's popover already; a second click would close it.
+    if ((await facet(facetName).getAttribute('aria-expanded')) !== 'true') await facet(facetName).click();
+    // Multi-select facets list checkboxes, single-select ones radios; `hideEmpty` drops options with no rows
+    // (the anonymous listing has no out-of-stock items), so a missing option is a skip, not a failure.
+    const opt = page.getByRole('checkbox', { name: option }).or(page.getByRole('radio', { name: option }));
+    if (await opt.count()) await interact(label, () => opt.first().click());
+    else console.log(`  ${label.padEnd(28)} skipped (option not offered)`);
     await page.keyboard.press('Escape');
   };
   await pick('facet Out of stock on', 'Stock', 'Out of stock');
