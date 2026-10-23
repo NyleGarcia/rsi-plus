@@ -14,6 +14,7 @@
     hint,
     variant = 'outline',
     side = 'top',
+    size = 'default',
     class: className,
     children,
     ...rest
@@ -21,9 +22,12 @@
     hint?: string | Snippet | null;
     variant?: BadgeVariant;
     side?: 'top' | 'bottom' | 'left' | 'right';
+    /** `xs` = tile-sized (counts inside titles, row corners). */
+    size?: 'default' | 'xs';
     class?: string;
     children: Snippet;
   } = $props();
+  const cls = $derived(cn(size === 'xs' && 'h-4 px-1 text-[10px]', className));
   let armed = $state(false);
   let open = $state(false);
   const arm = () => {
@@ -34,15 +38,15 @@
 </script>
 
 {#if !hint}
-  <Badge {...rest} {variant} class={className}>{@render children()}</Badge>
+  <Badge {...rest} {variant} class={cls}>{@render children()}</Badge>
 {:else if !armed}
-  <Badge {...rest} {variant} tabindex={0} class={cn('cursor-default', className)} onpointerenter={arm} onfocus={arm}>{@render children()}</Badge>
+  <Badge {...rest} {variant} tabindex={0} class={cn('cursor-default', cls)} onpointerenter={arm} onfocus={arm}>{@render children()}</Badge>
 {:else}
   <span class="inline-flex" role="presentation" onpointerleave={() => (open = false)}>
     <Tooltip.Root bind:open>
       <Tooltip.Trigger>
         {#snippet child({ props })}
-          <Badge {...props} {...rest} {variant} tabindex={0} class={cn('cursor-default', className)}>{@render children()}</Badge>
+          <Badge {...props} {...rest} {variant} tabindex={0} class={cn('cursor-default', cls)}>{@render children()}</Badge>
         {/snippet}
       </Tooltip.Trigger>
       <Tooltip.Content {side} class="max-w-80 whitespace-pre-line">

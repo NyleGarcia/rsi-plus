@@ -31,3 +31,16 @@ export function parseRsiDate(s: string | null | undefined): number {
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0)).getTime();
   return NaN;
 }
+
+// ---- one look per concept: dates in tables = date only; "loaded …" lines = date + time; feed = relative ----
+export const fmtDate = (ms: number | Date): string => new Date(ms).toLocaleDateString();
+export const fmtDateTime = (ms: number | Date): string => new Date(ms).toLocaleString();
+/** "just now", "5 min ago", "3 h ago", "2 d ago", else the date. */
+export function ago(ms: number, now = Date.now()): string {
+  const s = Math.max(0, now - ms) / 1000;
+  if (s < 45) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  if (s < 7 * 86400) return `${Math.round(s / 86400)} d ago`;
+  return fmtDate(ms);
+}

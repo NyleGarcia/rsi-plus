@@ -22,3 +22,6 @@ export function parseMoney(s: string | null | undefined): Usd {
   const n = parseFloat(s.replace(/[^0-9.,]/g, '').replace(/,/g, ''));
   return Number.isFinite(n) ? (neg ? -n : n) : 0;
 }
+
+/** Whole dollars with thousands separators: $55, $2,300. For bars, facts and ranges where cents are noise. */
+export const usd0 = (usd: Usd): string => `$${Math.round(usd).toLocaleString('en-US')}`;

@@ -89,4 +89,4 @@
   });
 </script>
 
-<HintBadge variant={spec.variant} hint={hint ?? spec.hint} class={cn(size === 'xs' && 'h-4 px-1 text-[10px]', className)}>{label ?? spec.label}</HintBadge>
+<HintBadge variant={spec.variant} hint={hint ?? spec.hint} {size} class={className}>{label ?? spec.label}</HintBadge>
