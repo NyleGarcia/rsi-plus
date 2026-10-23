@@ -136,3 +136,17 @@ describe('noteEvents', () => {
     expect(ev.every((e) => e.kind === 'friend')).toBe(true);
   });
 });
+
+describe('touchNotes forgets long-removed friends', () => {
+  it('drops removed entries older than 90 days when they carry nothing', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = 1_800_000_000_000;
+    const notes = {
+      old: { note: '', tags: [], firstSeen: 1, lastOnline: null, removedAt: now - 100 * day },
+      kept: { note: 'friend from org', tags: [], firstSeen: 1, lastOnline: null, removedAt: now - 100 * day },
+      recent: { note: '', tags: [], firstSeen: 1, lastOnline: null, removedAt: now - 10 * day },
+    };
+    const out = touchNotes(notes, [{ id: 'z', nickname: 'z', displayname: 'z', status: 'offline' } as never], now, true)!;
+    expect(Object.keys(out).sort()).toEqual(['kept', 'recent', 'z']);
+  });
+});

@@ -65,6 +65,3 @@ export function filterThreads<T extends { data?: { threads?: ThreadSummary[] } }
   return { ...json, data: { ...json.data, threads: kept } };
 }
 
-export function hasRules(r: MuteRules): boolean {
-  return r.authors.length + r.keywords.length + r.labels.length > 0;
-}

@@ -98,6 +98,8 @@ export function parseTags(s: string): string[] {
  * it get `removedAt`, and if they come back later they're treated as newly added (fresh time, party cleared).
  * Returns null when nothing changed.
  */
+/** Removed friends without a note or tags are forgotten after this long. */
+const REMOVED_KEEP = 90 * 24 * 60 * 60 * 1000;
 export function touchNotes(notes: FriendNotes, friends: Member[], now = Date.now(), complete = friends.length > 0): FriendNotes | null {
   let changed = false;
   const baseline = Object.keys(notes).length === 0;
@@ -124,6 +126,10 @@ export function touchNotes(notes: FriendNotes, friends: Member[], now = Date.now
     for (const [id, n] of Object.entries(out))
       if (!present.has(id) && !n.removedAt) {
         out[id] = { ...n, removedAt: now };
+        changed = true;
+      } else if (n.removedAt && now - n.removedAt > REMOVED_KEEP && !n.note && !n.tags.length) {
+        // Gone for months with nothing written on them: forget (notes / tags keep the entry so a re-add gets them back).
+        delete out[id];
         changed = true;
       }
   return changed ? out : null;

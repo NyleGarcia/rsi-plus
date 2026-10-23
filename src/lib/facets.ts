@@ -40,18 +40,6 @@ export function isActive(v: FacetValue | RangeValue | undefined): boolean {
 }
 export const activeCount = (values: FacetValues) => Object.values(values).filter(isActive).length;
 
-export function passesFacet<T>(row: T, facet: Facet<T>, value: FacetValue | RangeValue | undefined): boolean {
-  if (!isActive(value) || isRange(value!)) return true;
-  const ids = Array.isArray(value) ? value : [value as string];
-  const opts = ids.map((id) => facet.options.find((o) => o.id === id)).filter((o): o is FacetOption<T> => !!o);
-  return opts.length === 0 || opts.some((o) => o.test(row));
-}
-export function passesRange<T>(row: T, range: RangeFacet<T>, value: FacetValue | RangeValue | undefined): boolean {
-  if (!isActive(value) || !isRange(value!)) return true;
-  const n = range.get(row);
-  if (n == null) return false;
-  return (value.min == null || n >= value.min) && (value.max == null || n <= value.max);
-}
 
 /**
  * Membership index: for every facet option (and range), which rows pass — computed once per `rows` / `facets` change,
@@ -194,5 +182,5 @@ export const STAGE_OPTIONS = <T>(get: (r: T) => string): FacetOption<T>[] => [
   { id: 'concept', label: 'Concept', test: (r) => stageOf(get(r)) === 'concept' },
   { id: 'other', label: 'In production', hint: 'Neither flyable nor concept per RSI', test: (r) => stageOf(get(r)) === 'other' },
 ];
-export const SIZE_IDS = ['Vehicle', 'Snub', 'Small', 'Medium', 'Large', 'Capital'] as const;
+const SIZE_IDS = ['Vehicle', 'Snub', 'Small', 'Medium', 'Large', 'Capital'] as const;
 export const SIZE_OPTIONS = <T>(get: (r: T) => string): FacetOption<T>[] => SIZE_IDS.map((s) => ({ id: s.toLowerCase(), label: s, test: (r) => get(r).toLowerCase() === s.toLowerCase() }));

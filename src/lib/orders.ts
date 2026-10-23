@@ -5,6 +5,11 @@
  * `table.billing-summary` of lines (Item / Price / Qty / Discount / Total) and `.s-row` totals (Items / Additional
  * Discount / Credits used / Total before Tax / Total). The bill-to block is never read. Stays in this browser.
  */
+import { assertLoggedIn, pageCount } from './account';
+import { monthKey, monthKeys, monthsSince, parseRsiDate } from './dates';
+import { clean } from './dom';
+import { isWarbond } from './hangar';
+import { parseMoney as money, r2 } from './money';
 import { SPECTRUM_ORIGIN } from './types';
 
 export type PayKind = 'cash' | 'credit' | 'mixed' | 'free' | 'refund' | 'cancelled' | 'unknown';
@@ -39,20 +44,8 @@ export interface Order {
   kind: PayKind;
 }
 
-const MONEY = /-?\$\s?(-?\d[\d,]*(?:\.\d{1,2})?)/;
-const money = (s: string | null | undefined) => {
-  const m = s?.match(MONEY);
-  if (!m) return 0;
-  const v = Number(m[1]!.replace(/,/g, ''));
-  return (s!.includes('-$') ? -v : v) || 0;
-};
-const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 /** "Order Placed: October 22, 2026 02:10" → ms (local time; RSI prints no zone). */
-export function parseOrderDate(s: string): number {
-  const m = clean(s).match(/([A-Z][a-z]+ \d{1,2},? \d{4})(?: (\d{1,2}:\d{2}))?/);
-  if (!m) return NaN;
-  return Date.parse(`${m[1]!.replace(',', '')} ${m[2] ?? '00:00'}`);
-}
+export const parseOrderDate = (s: string): number => parseRsiDate(s);
 
 export function kindOf(o: Pick<Order, 'status' | 'payment' | 'total' | 'credits' | 'items'>): PayKind {
   const s = `${o.status} ${o.payment}`.toUpperCase();
@@ -125,14 +118,7 @@ export function parseOrders(doc: Document): Order[] {
   return out;
 }
 /** Highest page number in the pager (1 when there is none). */
-export function lastPage(doc: Document): number {
-  let last = 1;
-  for (const a of doc.querySelectorAll<HTMLAnchorElement>('.pager a[href*="page="]')) {
-    const n = Number(a.getAttribute('href')?.match(/[?&]page=(\d+)/)?.[1]);
-    if (n > last) last = n;
-  }
-  return last;
-}
+export const lastPage = (doc: Document): number => pageCount(doc) ?? 1;
 
 /** One row of a subscription's PAYMENT HISTORY table on the billing page (Date / Processor / Status / Amount). */
 export interface SubPayment {
@@ -147,7 +133,7 @@ export function parseSubPayments(doc: Document): SubPayment[] {
   for (const tr of doc.querySelectorAll('.history-wrapper table tr')) {
     const td = [...tr.querySelectorAll('td')].map((x) => clean(x.textContent));
     if (td.length < 4) continue;
-    const at = Date.parse(td[0]!.replace(',', ''));
+    const at = parseRsiDate(td[0]);
     if (!Number.isFinite(at)) continue;
     out.push({ at, amount: money(td[3]), status: td[2]! });
   }
@@ -176,6 +162,7 @@ export async function fetchOrders(signal?: AbortSignal, maxPages = 40): Promise<
       debug.push(`page ${page}: HTTP ${res.status}`);
       break;
     }
+    assertLoggedIn(res);
     const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
     if (page === 1) {
       last = lastPage(doc);
@@ -267,8 +254,6 @@ export interface OrderBucket {
   credits: number;
   count: number;
 }
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const r2 = (n: number) => Math.round(n * 100) / 100;
 const counted = (o: Order) => o.kind !== 'cancelled' && o.kind !== 'refund';
 /** Cash + credit per year, oldest first. */
 export function ordersByYear(orders: Order[]): OrderBucket[] {
@@ -286,16 +271,10 @@ export function ordersByYear(orders: Order[]): OrderBucket[] {
 }
 /** Cash + credit per calendar month over the last `months` months, zeros kept. */
 export function ordersByMonth(orders: Order[], months = 24, now = new Date()): OrderBucket[] {
-  const m = new Map<string, OrderBucket>();
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    m.set(k, { key: k, label: MONTHS[d.getMonth()]!, cash: 0, credits: 0, count: 0 });
-  }
+  const m = new Map<string, OrderBucket>(monthKeys(months, now).map((k) => [k.key, { ...k, cash: 0, credits: 0, count: 0 }]));
   for (const o of orders) {
     if (!counted(o)) continue;
-    const d = new Date(o.at);
-    const b = m.get(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    const b = m.get(monthKey(new Date(o.at)));
     if (!b) continue;
     b.cash = r2(b.cash + o.total);
     b.credits = r2(b.credits + o.credits);
@@ -307,10 +286,8 @@ export function ordersByMonth(orders: Order[], months = 24, now = new Date()): O
 export function ordersCumulative(orders: Order[], now = new Date()): { key: string; label: string; value: number }[] {
   const first = orders.filter(counted).reduce((t, o) => Math.min(t, o.at), Infinity);
   if (!Number.isFinite(first)) return [];
-  const f = new Date(first);
-  const span = (now.getFullYear() - f.getFullYear()) * 12 + (now.getMonth() - f.getMonth()) + 1;
   let acc = 0;
-  return ordersByMonth(orders, Math.max(2, span), now).map((b) => ((acc = r2(acc + b.cash)), { key: b.key, label: b.label, value: acc }));
+  return ordersByMonth(orders, monthsSince(first, now), now).map((b) => ((acc = r2(acc + b.cash)), { key: b.key, label: b.label, value: acc }));
 }
 /** Donut slices: cash vs store credit, with how many orders used each. */
 export function orderSlices(orders: Order[]): { key: string; label: string; value: number; count: number }[] {
@@ -343,7 +320,7 @@ export function warbondInOrders(orders: Order[]): { usd: number; lines: number }
   let usd = 0, lines = 0;
   for (const o of orders) {
     if (!counted(o)) continue;
-    for (const l of o.lines) if (/\b(warbond|war bond)\b/i.test(l.title)) (usd += l.total), lines++;
+    for (const l of o.lines) if (isWarbond(l.title)) (usd += l.total), lines++;
   }
   return { usd: r2(usd), lines };
 }

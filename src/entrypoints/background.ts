@@ -25,7 +25,8 @@ import {
 } from '@/lib/settings';
 import { ding } from '@/lib/sound';
 import { chainEvents } from '@/lib/ccu';
-import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, withExtraShips, type Catalog, type PaintCatalog } from '@/lib/store';
+import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
+import { sleep } from '@/lib/utils';
 import { catalogEntries, listingEntries } from '@/lib/storelog';
 import { saveStoreCopy } from '@/lib/storelog-save';
 import { threadUrl } from '@/lib/types';
@@ -33,7 +34,6 @@ import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, ty
 
 const ALARM = 'spectrumplus:poll';
 const PARTY_ALARM = 'spectrumplus:party';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default defineBackground(() => {
   // Dev only: WXT's hot reload registers content scripts from every background; under `incognito: split` the two
@@ -291,6 +291,15 @@ async function bulk(ids: string[], fn: (id: string) => Promise<unknown>): Promis
   return out;
 }
 
+/** The org cache keeps the newest entries only (one per nickname ever looked up, otherwise unbounded). */
+const ORG_CACHE_MAX = 2000;
+function capOrgs(c: OrgCache): OrgCache {
+  const keys = Object.keys(c);
+  if (keys.length <= ORG_CACHE_MAX) return c;
+  const keep = keys.sort((a, b) => (c[b]?.at ?? 0) - (c[a]?.at ?? 0)).slice(0, ORG_CACHE_MAX);
+  return Object.fromEntries(keep.map((k) => [k, c[k]!]));
+}
+
 /** Fetch citizen org pages for the given nicknames (stale/missing only unless forced), ~1 req/s. */
 async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
   let cache = await orgCacheItem.getValue();
@@ -312,7 +321,7 @@ async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
     } catch (e) {
       out[key] = { at: now, orgs: hit?.orgs ?? [], error: (e as Error).message };
     }
-    cache = { ...(await orgCacheItem.getValue()), [key]: out[key]! };
+    cache = capOrgs({ ...(await orgCacheItem.getValue()), [key]: out[key]! });
     await orgCacheItem.setValue(cache);
   }
   return out;
@@ -322,7 +331,7 @@ let catalogPromise: Promise<Catalog> | null = null;
 /** Public pledge-store catalog; cached 30 min unless `fresh`. */
 async function catalog(fresh: boolean): Promise<Catalog> {
   const cached = await catalogItem.getValue();
-  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return { ...cached, ships: withExtraShips(cached.ships) };
+  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return cached; // fetchCatalog already applied withExtraShips
   catalogPromise ??= fetchCatalog()
     .then(async (c) => {
       await catalogItem.setValue(c);

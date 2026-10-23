@@ -88,18 +88,16 @@ export interface BuybackItem {
   url: string | null;
 }
 
-const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+import { text, textNodes } from './dom';
+import { parseMoney, r2 } from './money';
+export { parseMoney };
 const val = (root: ParentNode, sel: string) => (root.querySelector(sel) as HTMLInputElement | null)?.value?.trim() ?? '';
-
-export function parseMoney(s: string): number {
-  const n = parseFloat(s.replace(/[^0-9.,-]/g, '').replace(/,/g, ''));
-  return Number.isFinite(n) ? n : 0;
-}
 
 const PREFIX = /^(add-ons|standalone ships?|combo|package|packages|ship upgrades|extras|paints|gear|subscribers?) - /i;
 export const cleanName = (s: string) => s.replace(/\s{2,}/g, ' ').replace(PREFIX, '').trim();
 
-const isWarbond = (s: string) => /\b(warbond|war bond|wb)\b/i.test(s);
+/** "Warbond" in a pledge / SKU / order-line name (RSI also abbreviates to WB). */
+export const isWarbond = (s: string) => /\b(warbond|war bond|wb)\b/i.test(s);
 
 export function parseUpgradeJson(raw: string | null | undefined): Upgrade | null {
   if (!raw) return null;
@@ -189,11 +187,7 @@ export interface Credits {
 
 /** Credits box of /account/billing (`div.credits > div.credit-line`): store credit, UEC, REC. null if absent (logged out / other page). */
 export function parseCredits(root: ParentNode): Credits | null {
-  // Text nodes joined with spaces: textContent glues neighbours ("USDUEC") and breaks the word boundaries.
-  const parts: string[] = [];
-  const walk = (n: Node) => (n.nodeType === 3 ? parts.push(n.textContent ?? '') : n.childNodes.forEach(walk));
-  walk((root as Document).body ?? root);
-  const text = parts.join(' ').replace(/\s+/g, ' ');
+  const text = textNodes(root);
   // Numbers may be split over elements ("$ 812 . 17"): grab the whole digit/space/comma/dot run, then squash it.
   const num = (re: RegExp) => {
     const m = re.exec(text);
@@ -212,10 +206,7 @@ export function parseCredits(root: ParentNode): Credits | null {
 
 /** When `parseCredits` finds nothing: what the page says near "credit" / "UEC" and any credit-ish class names. */
 export function creditsDebug(root: ParentNode): string {
-  const parts: string[] = [];
-  const walk = (n: Node) => (n.nodeType === 3 ? parts.push(n.textContent ?? '') : n.childNodes.forEach(walk));
-  walk((root as Document).body ?? root);
-  const text = parts.join(' ').replace(/\s+/g, ' ');
+  const text = textNodes(root);
   const near = (re: RegExp) => {
     const m = re.exec(text);
     return m ? `“…${text.slice(Math.max(0, m.index - 60), m.index + 120)}…”` : '(not on page)';
@@ -389,7 +380,7 @@ export function totals(list: Pledge[]): HangarTotals {
   }
   return {
     pledges: list.length,
-    value: Math.round(list.reduce((s, p) => s + p.value, 0) * 100) / 100,
+    value: r2(list.reduce((s, p) => s + p.value, 0)),
     ships: list.reduce((s, p) => s + p.ships.length, 0),
     upgrades: list.filter((p) => p.upgrade).length,
     lti: list.filter((p) => p.lti).length,

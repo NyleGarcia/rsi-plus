@@ -61,4 +61,3 @@ export function createCartLedger() {
     reset: () => (state = {}),
   };
 }
-export type CartLedger = ReturnType<typeof createCartLedger>;

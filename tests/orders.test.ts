@@ -96,3 +96,26 @@ import { warbondInOrders } from '@/lib/orders';
 it('sums warbond lines', () => {
   expect(warbondInOrders(parseOrders(doc()))).toEqual({ usd: 200, lines: 1 });
 });
+
+describe('order rows that are not the happy path', () => {
+  const row = (inner: string) => new DOMParser().parseFromString(`<ul class="orders-item"><li><div class="row dark pledge">${inner}</div></li></ul>`, 'text/html');
+  const infos = (amount: string, status = 'CLOSED') =>
+    `<div class="basic-infos"><div class="col date"><span>Order Placed:</span> May 1, 2025 10:00</div><div class="col amount"><span>Amount:</span> ${amount}</div><div class="col"><span>Order Id:</span> X1</div><div class="col"><span>Status:</span> ${status}</div><div class="col"><span>Payment:</span> PAID</div></div>`;
+  it('falls back to the Amount column when the totals block is missing', () => {
+    const o = parseOrders(row(infos('$12.00 USD')))[0]!;
+    expect(o).toMatchObject({ id: 'X1', total: 12, credits: 0, items: 0, lines: [], kind: 'cash', fulfillment: '' });
+  });
+  it('keeps the sign on refunds and classifies them', () => {
+    const o = parseOrders(row(infos('-$12.00 USD', 'REFUNDED')))[0]!;
+    expect(o.total).toBe(-12);
+    expect(o.kind).toBe('refund');
+  });
+  it('tolerates a non-numeric qty and a line without a discount', () => {
+    const o = parseOrders(row(infos('$0.00 USD') + '<table class="billing-summary"><tr><td>Thing</td><td>$3.00 USD</td><td>x</td><td></td><td>$3.00 USD</td></tr></table>'))[0]!;
+    expect(o.lines).toEqual([{ title: 'Thing', price: 3, qty: 1, discount: 0, total: 3 }]);
+    expect(o.items).toBe(3);
+  });
+  it('skips rows without an id or a date', () => {
+    expect(parseOrders(row('<div class="basic-infos"><div class="col"><span>Order Id:</span> X2</div></div>'))).toEqual([]);
+  });
+});

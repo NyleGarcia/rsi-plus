@@ -3,6 +3,7 @@
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
+  import { r2 } from '@/lib/money';
   import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, warbondInOrders, type Order, type SubPayment } from '@/lib/orders';
   import type { CatalogShip } from '@/lib/store';
   import { ccuOverview, fetchFunding, fleetValue, fundingStats, shareOfFunding, spendByPayment, spendByMonth, spendByType, spendByYear, spendLedger, spendSummary, type Funding, type FundingRange } from '@/lib/wallet';
@@ -45,8 +46,7 @@
   let ordersBusy = $state(false);
   let ordersMsg = $state('');
   $effect(() => {
-    // Orders saved by the first beta reader (no line items) are dropped: the shape changed with RSI's real markup.
-    ordersItem.getValue().then((o) => (orders = o && o.orders.every((x) => Array.isArray(x.lines)) ? o : null));
+    ordersItem.getValue().then((o) => (orders = o));
   });
   let months = $state(24);
   const orderSums = $derived(orders ? orderTotals(orders.orders) : null);
@@ -248,7 +248,7 @@
     const first = new Date(sum.since);
     const span = (new Date().getFullYear() - first.getFullYear()) * 12 + (new Date().getMonth() - first.getMonth()) + 1;
     let acc = 0;
-    return spendByMonth(all, Math.max(2, span)).map((b) => ((acc += b.value), { key: b.key, label: b.label, value: Math.round(acc * 100) / 100 }));
+    return spendByMonth(all, Math.max(2, span)).map((b) => ((acc += b.value), { key: b.key, label: b.label, value: r2(acc) }));
   });
   const last12 = $derived(spendByMonth(all, 12).map((b) => b.value));
 

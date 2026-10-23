@@ -49,7 +49,7 @@
   // ---- the exact figure: cash on every order + subscription payments, from the imported order history (Wallet → Your spend) ----
   let spend = $state<ClubSpend | null>(null);
   $effect(() => {
-    const read = (o: Awaited<ReturnType<typeof ordersItem.getValue>>) => (spend = o?.orders.length && o.orders.every((x) => Array.isArray(x.lines)) ? clubSpend(o.orders, o.subs ?? []) : null);
+    const read = (o: Awaited<ReturnType<typeof ordersItem.getValue>>) => (spend = o?.orders.length ? clubSpend(o.orders, o.subs ?? []) : null);
     ordersItem.getValue().then(read);
     return ordersItem.watch(read);
   });
