@@ -49,7 +49,20 @@ export const NO_WATCHES: Watches = { threads: [], channels: [], authors: [], fri
 export const keywordsFor = (w: Pick<Watches, 'keywords'>, channelId: string): string[] =>
   (w.keywords ?? []).filter((k) => k.channelId == null || k.channelId === channelId).map((k) => k.pattern);
 
-export type EventKind = 'replies' | 'thread' | 'dev' | 'author' | 'keyword' | 'friend' | 'store';
+/** Feed event kinds: Spectrum watches, friends (online / added / removed), friend requests, party mode, store alerts, your hangar. */
+export type EventKind = 'replies' | 'thread' | 'dev' | 'author' | 'keyword' | 'friend' | 'request' | 'party' | 'store' | 'hangar';
+export const EVENT_KINDS: { id: EventKind; label: string; hint: string }[] = [
+  { id: 'replies', label: 'Replies', hint: 'New replies on threads you watch' },
+  { id: 'thread', label: 'New thread', hint: 'New threads in channels you watch' },
+  { id: 'dev', label: 'Dev', hint: 'Developer posts in watched channels' },
+  { id: 'author', label: 'Author', hint: 'Posts by authors you watch' },
+  { id: 'keyword', label: 'Keyword', hint: 'Threads matching your keywords' },
+  { id: 'friend', label: 'Friends', hint: 'Friends coming online, added or gone' },
+  { id: 'request', label: 'Requests', hint: 'Incoming friend requests' },
+  { id: 'party', label: 'Party', hint: 'Party mode: auto-accepts and cleanup reminders' },
+  { id: 'store', label: 'Store', hint: 'Wishlist and CCU chain alerts (price, warbond, back on sale)' },
+  { id: 'hangar', label: 'Hangar', hint: 'Pledges that appeared or left your hangar on a reload' },
+];
 
 export interface FeedEvent {
   /** Stable id so re-polls don't duplicate (kind + entity + count/time). */

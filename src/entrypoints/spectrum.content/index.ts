@@ -18,6 +18,23 @@ export const listed = new Set<string>();
 let read: ReadState = {};
 let watches: Watches = NO_WATCHES;
 
+// Thread opens save the read marks debounced: the state is up to MAX_MARKS entries (~300 KB a write) and one open
+// marks twice (route + payload). Explicit actions flush at once; so does leaving the page.
+let saveTimer = 0;
+/** Marks set here and not written yet (kept when another tab writes meanwhile). */
+const pendingRead = new Set<string>();
+function saveReadSoon(id: string) {
+  pendingRead.add(id);
+  clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(flushRead, 1500);
+}
+function flushRead(): Promise<void> {
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  pendingRead.clear();
+  return readItem.setValue(read);
+}
+
 export default defineContentScript({
   matches: ['https://robertsspaceindustries.com/spectrum/*'],
   runAt: 'document_start',
@@ -28,9 +45,14 @@ export default defineContentScript({
     settingsItem.watch(async () => applySettings(await getSettings()));
     read = await readItem.getValue();
     readItem.watch((v) => {
+      const mine = read;
       read = v ?? {};
+      for (const id of pendingRead) if (mine[id]) read = { ...read, [id]: mine[id] };
       refresh();
     });
+    const flushPending = () => void (saveTimer && flushRead());
+    ctx.addEventListener(window, 'pagehide', flushPending);
+    ctx.onInvalidated(flushPending);
     watches = await getWatches();
     watchesItem.watch(async () => {
       watches = await getWatches();
@@ -149,7 +171,7 @@ function openThread(t: ThreadSummary, replies: import('@/lib/types').Reply[] | u
   syncWatched();
   if (ui.settings.readTracking) {
     read = markRead(read, t);
-    readItem.setValue(read);
+    saveReadSoon(t.id);
   }
   // Seen it: a watched thread shouldn't notify about replies you just read.
   if (watches.threads.some((w) => w.id === t.id && w.replies < t.replies_count))
@@ -187,11 +209,11 @@ export const actions = {
   isChannelWatched: (id: string) => watches.channels.some((c) => c.id === id),
   async markRead(t: ThreadSummary) {
     read = markRead(read, t);
-    await readItem.setValue(read);
+    await flushRead();
   },
   async markUnread(t: ThreadSummary) {
     read = markUnread(read, t.id);
-    await readItem.setValue(read);
+    await flushRead();
     toast(`Marked "${t.subject}" unread`);
   },
   async markAllListedRead() {
@@ -203,7 +225,7 @@ export const actions = {
       read = markRead(read, t);
       n++;
     }
-    await readItem.setValue(read);
+    await flushRead();
     toast(`Marked ${n} thread${n === 1 ? '' : 's'} read`);
   },
   async mute(nickname: string) {

@@ -5,16 +5,20 @@
   import { NO_WATCHES, type Watches } from '@/lib/watch';
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
+  import SwitchRow from './SwitchRow.svelte';
+  import Chip from './Chip.svelte';
+  import Empty from './Empty.svelte';
+  import { LINK_QUIET } from '@/lib/ui';
+  import { fmtDate } from '@/lib/dates';
+  import { cn } from '@/lib/utils';
+  import { POLL_MINUTES, clampSetting, toggleOf } from '@/lib/settings-ui';
   import * as Card from '@/components/ui/card';
   import * as Select from '@/components/ui/select';
   import * as Table from '@/components/ui/table';
-  import { Badge } from '@/components/ui/badge';
+  import * as Alert from '@/components/ui/alert';
   import { Button } from '@/components/ui/button';
-  import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
-  import { Switch } from '@/components/ui/switch';
-  import X from '@lucide/svelte/icons/x';
 
   let w = $state<Watches>(NO_WATCHES);
   let channels = $state<Channel[]>([]);
@@ -24,9 +28,11 @@
   let kwInput = $state('');
   /** Keyword scope: '' = every watched channel, else a channel id. */
   let kwChannel = $state('');
-  const ALL_CH = 'all';
+  /** Select sentinel: bits-ui treats '' as "nothing selected", and options can't be null. */
+  const ANY = '__any__';
   let pollMinutes = $state(5);
   let pollAuto = $state(true);
+  const autoPoll = toggleOf('pollAuto');
   let sort = $state<SortState<'subject' | 'replies' | 'added'>>({ key: 'added', dir: 'desc' });
   const threads = $derived(sortBy(w.threads, sort, { subject: (t) => t.subject, replies: (t) => t.replies, added: (t) => t.addedAt }));
 
@@ -41,7 +47,7 @@
 
   const unwatched = $derived(channels.filter((c) => !w.channels.some((x) => x.id === String(c.id))));
   const pickName = $derived(unwatched.find((c) => String(c.id) === pick)?.name);
-  const link = 'text-foreground hover:text-primary font-semibold no-underline';
+  const link = cn(LINK_QUIET, 'font-semibold');
 
   function addChannel() {
     const c = channels.find((x) => String(x.id) === pick);
@@ -92,28 +98,26 @@
     <Card.Header>
       <Card.Title>Threads</Card.Title>
       <Card.Description>Notified when a watched thread gets new replies. Add with ☆ on a thread row or the bar on a thread page.</Card.Description>
-      <Card.Action class="flex flex-wrap items-center gap-3">
-        <Label class="text-muted-foreground font-normal" title="Off = passive: nothing runs in the background, the Feed only updates when you press Check now">
-          <Switch checked={pollAuto} onCheckedChange={(on) => ((pollAuto = on), patchSettings({ pollAuto: on }))} />
-          Check automatically
-        </Label>
-        <Label class="text-muted-foreground font-normal">
-          every
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      <SwitchRow id="watch-pollAuto" label={autoPoll.label} hint={autoPoll.hint} checked={pollAuto} onchange={(on) => ((pollAuto = on), patchSettings({ pollAuto: on }))}>
+        <Label class="text-muted-foreground gap-1.5 font-normal">
+          {POLL_MINUTES.label}
           <Input
             type="number"
-            min="2"
-            max="120"
+            min={POLL_MINUTES.min}
+            max={POLL_MINUTES.max}
+            step="1"
             class="w-16"
             disabled={!pollAuto}
             bind:value={pollMinutes}
-            onchange={() => patchSettings({ pollMinutes: Math.max(2, Number(pollMinutes) || 5) })}
-          /> min
+            onchange={() => patchSettings({ pollMinutes: clampSetting(POLL_MINUTES, pollMinutes) })}
+          />
+          {POLL_MINUTES.unit}
         </Label>
-      </Card.Action>
-    </Card.Header>
-    <Card.Content>
+      </SwitchRow>
       {#if !w.threads.length}
-        <p class="text-muted-foreground py-6 text-center">No watched threads.</p>
+        <Empty>No watched threads.</Empty>
       {:else}
         <Table.Root>
           <Table.Header>
@@ -121,7 +125,7 @@
               <SortTh key="subject" bind:sort>Thread</SortTh>
               <SortTh key="replies" bind:sort firstDir="desc">Replies</SortTh>
               <SortTh key="added" bind:sort firstDir="desc">Since</SortTh>
-              <Table.Head></Table.Head>
+              <Table.Head><span class="sr-only">Actions</span></Table.Head>
             </Table.Row>
           </Table.Header>
           <Table.Body>
@@ -129,7 +133,7 @@
               <Table.Row>
                 <Table.Cell class="whitespace-normal"><a class={link} href={threadUrl(t.channelId, t.slug)} target="_blank" rel="noopener">{t.subject}</a></Table.Cell>
                 <Table.Cell>{t.replies}</Table.Cell>
-                <Table.Cell class="text-muted-foreground">{new Date(t.addedAt).toLocaleDateString()}</Table.Cell>
+                <Table.Cell class="text-muted-foreground">{fmtDate(t.addedAt)}</Table.Cell>
                 <Table.Cell class="text-right">
                   <Button variant="outline" size="xs" onclick={() => patchWatches((v) => ({ ...v, threads: v.threads.filter((x) => x.id !== t.id) }))}>Unwatch</Button>
                 </Table.Cell>
@@ -155,13 +159,14 @@
                 <Table.Cell><a class={link} href={channelUrl(c.id)} target="_blank" rel="noopener">{c.name}</a></Table.Cell>
                 <Table.Cell>
                   <div class="flex items-center justify-end gap-3">
-                    <Label class="text-muted-foreground font-normal">
-                      <Checkbox
-                        checked={c.allThreads}
-                        onCheckedChange={(on) => patchWatches((v) => ({ ...v, channels: v.channels.map((x) => (x.id === c.id ? { ...x, allThreads: on } : x)) }))}
-                      />
-                      All new threads
-                    </Label>
+                    <SwitchRow
+                      id={`watch-all-${c.id}`}
+                      label="All new threads"
+                      size="sm"
+                      class="text-muted-foreground items-center"
+                      checked={c.allThreads}
+                      onchange={(on) => patchWatches((v) => ({ ...v, channels: v.channels.map((x) => (x.id === c.id ? { ...x, allThreads: on } : x)) }))}
+                    />
                     <Button variant="outline" size="xs" onclick={() => patchWatches((v) => ({ ...v, channels: v.channels.filter((x) => x.id !== c.id) }))}>Unwatch</Button>
                   </div>
                 </Table.Cell>
@@ -178,8 +183,8 @@
           </Select.Content>
         </Select.Root>
         <Button variant="outline" disabled={!pick} onclick={addChannel}>Watch</Button>
-        {#if channelsError}<span class="text-destructive">{channelsError}</span>{/if}
       </div>
+      {#if channelsError}<Alert.Root variant="destructive"><Alert.Description>{channelsError}</Alert.Description></Alert.Root>{/if}
     </Card.Content>
   </Card.Root>
 
@@ -196,7 +201,7 @@
               <Table.Row>
                 <Table.Cell><code class="text-[12.5px]">{k.pattern}</code></Table.Cell>
                 <Table.Cell class="text-muted-foreground">{k.channelId == null ? 'every watched channel' : channelName(k.channelId)}</Table.Cell>
-                <Table.Cell class="text-muted-foreground">{new Date(k.addedAt).toLocaleDateString()}</Table.Cell>
+                <Table.Cell class="text-muted-foreground">{fmtDate(k.addedAt)}</Table.Cell>
                 <Table.Cell class="text-right">
                   <Button variant="outline" size="xs" onclick={() => patchWatches((v) => ({ ...v, keywords: v.keywords.filter((x) => !(x.pattern === k.pattern && x.channelId === k.channelId)) }))}>Remove</Button>
                 </Table.Cell>
@@ -207,17 +212,17 @@
       {/if}
       <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), addKeyword())}>
         <Input class="w-64" placeholder={'e.g. Polaris or /\\bwipe\\b/'} bind:value={kwInput} aria-label="Keyword or /regex/" aria-invalid={!!kwInput.trim() && !kwValid} />
-        <Select.Root type="single" value={kwChannel || ALL_CH} onValueChange={(v) => (kwChannel = v === ALL_CH ? '' : v)}>
+        <Select.Root type="single" bind:value={() => kwChannel || ANY, (v) => (kwChannel = v === ANY ? '' : v)}>
           <Select.Trigger aria-label="Where" class="min-w-56">{kwChannel ? channelName(kwChannel) : 'Every watched channel'}</Select.Trigger>
           <Select.Content class="max-h-80">
-            <Select.Item value={ALL_CH}>Every watched channel</Select.Item>
+            <Select.Item value={ANY}>Every watched channel</Select.Item>
             {#each channels as c (c.id)}<Select.Item value={String(c.id)}>{c.name}{w.channels.some((x) => x.id === String(c.id)) ? '' : ' (not watched yet — will be)'}</Select.Item>{/each}
           </Select.Content>
         </Select.Root>
         <Button type="submit" variant="outline" disabled={!kwValid}>Follow</Button>
-        {#if kwInput.trim() && !kwValid}<span class="text-destructive text-xs">Invalid regex.</span>{/if}
-        {#if !w.channels.length && !kwChannel}<span class="text-muted-foreground text-xs">No watched channels yet — pick one above or here, keywords are only seen in watched channels.</span>{/if}
       </form>
+      {#if kwInput.trim() && !kwValid}<Alert.Root variant="destructive"><Alert.Description>Invalid regex.</Alert.Description></Alert.Root>{/if}
+      {#if !w.channels.length && !kwChannel}<Empty class="py-3 text-xs">No watched channels yet — pick one above or here, keywords are only seen in watched channels.</Empty>{/if}
     </Card.Content>
   </Card.Root>
 
@@ -227,22 +232,17 @@
       <Card.Description>Their new threads and latest replies in your watched channels notify you. Add from any reply ("Watch author") or by handle.</Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-3">
-      <div class="flex flex-wrap items-center gap-2">
-        {#each w.authors as a (a.nickname)}
-          <Badge variant="secondary" class="pr-0.5">
-            {a.displayname}{a.displayname !== a.nickname ? ` @${a.nickname}` : ''}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              class="size-4 rounded-full"
-              aria-label={`Unwatch ${a.nickname}`}
-              onclick={() => patchWatches((v) => ({ ...v, authors: v.authors.filter((x) => x.nickname !== a.nickname) }))}><X /></Button
+      {#if w.authors.length}
+        <div class="flex flex-wrap items-center gap-2">
+          {#each w.authors as a (a.nickname)}
+            <Chip removeLabel={`Unwatch ${a.nickname}`} onremove={() => patchWatches((v) => ({ ...v, authors: v.authors.filter((x) => x.nickname !== a.nickname) }))}
+              >{a.displayname}{a.displayname !== a.nickname ? ` @${a.nickname}` : ''}</Chip
             >
-          </Badge>
-        {:else}
-          <span class="text-muted-foreground">None.</span>
-        {/each}
-      </div>
+          {/each}
+        </div>
+      {:else}
+        <Empty class="py-2 text-left">None.</Empty>
+      {/if}
       <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), addAuthor())}>
         <Input class="w-64" placeholder="Handle, e.g. Stamp-CIG" bind:value={authorInput} aria-label="Author handle" />
         <Button type="submit" variant="outline" disabled={!authorInput.trim()}>Watch author</Button>

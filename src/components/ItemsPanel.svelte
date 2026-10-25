@@ -1,20 +1,29 @@
 <script lang="ts">
   import { hangarUrl } from '@/lib/hangar';
-  import { CATEGORY_LABEL, line, familyLabel, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
+  import { CATEGORY_LABEL, line, familyLabel, fitsLabel as fitsLabelOf, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
   import { bg } from '@/lib/messages';
   import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { sortBy, type SortState } from '@/lib/sort';
-  import { usd, type Catalog, type PaintCatalog } from '@/lib/store';
-  import { ownUsd } from '@/lib/privacy.svelte';
+  import type { Catalog, PaintCatalog } from '@/lib/store';
+  import { ownDollars } from '@/lib/privacy.svelte';
+  import { dateStamp, downloadFile } from '@/lib/download';
+  import { LINK } from '@/lib/ui';
   import SortTh from './SortTh.svelte';
+  import FilterChips from './FilterChips.svelte';
+  import HintBadge from './HintBadge.svelte';
+  import Empty from './Empty.svelte';
+  import * as Alert from '@/components/ui/alert';
   import * as Card from '@/components/ui/card';
   import * as Table from '@/components/ui/table';
-  import * as ToggleGroup from '@/components/ui/toggle-group';
   import * as Select from '@/components/ui/select';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
   import { Input } from '@/components/ui/input';
-  import { ChevronDown, ChevronRight, House, ShoppingCart, X } from '@lucide/svelte';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import House from '@lucide/svelte/icons/house';
+  import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
+  import X from '@lucide/svelte/icons/x';
 
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
@@ -68,26 +77,10 @@
   });
 
   // ---- helpers ----
-  const fitsLabel = (r: ItemRow) => {
-    if (r.ship) return r.ship.name;
-    if (!r.fits.length) return '';
-    if (r.fits.length === 1) return r.fits[0]!.name;
-    const fams = [...new Set(r.fits.map((s) => line(s.name, ships)))];
-    return fams
-      .map((f) => {
-        const inFam = ships.filter((s) => line(s.name, ships) === f).length;
-        const hit = r.fits.filter((s) => line(s.name, ships) === f);
-        return hit.length >= inFam && inFam > 1 ? `All ${familyLabel(f, hit)}` : hit.map((s) => s.name).join(', ');
-      })
-      .join(' · ');
-  };
+  /** Fits text per row, once per hangar / catalog change (search, sort and cells read it). */
+  const fitsLabels = $derived(new Map(rows.map((r) => [r.key, fitsLabelOf(r, ships)])));
+  const fitsLabel = (r: ItemRow) => fitsLabels.get(r.key) ?? fitsLabelOf(r, ships);
   const qty = (list: ItemRow[]) => list.reduce((n, r) => n + r.count, 0);
-  function download(name: string, body: string) {
-    const url = URL.createObjectURL(new Blob([body], { type: 'text/csv' }));
-    Object.assign(document.createElement('a'), { href: url, download: name }).click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-  const stamp = () => new Date().toISOString().slice(0, 10);
   let collapsed = $state<Set<string>>(new Set());
   const toggle = (k: string) => {
     const s = new Set(collapsed);
@@ -133,10 +126,13 @@
   const groups = $derived.by((): Group[] => {
     if (groupBy === 'none') return [{ key: 'i|all', label: '', note: '', items: filtered }];
     const m = new Map<string, Group>();
+    const seen = new Map<string, Set<ItemRow>>();
     const add = (key: string, label: string, note: string, r: ItemRow) => {
       const g = m.get(key) ?? { key, label, note, items: [] };
-      if (!g.items.includes(r)) g.items.push(r);
+      const has = seen.get(key) ?? new Set();
+      if (!has.has(r)) (has.add(r), g.items.push(r));
       m.set(key, g);
+      seen.set(key, has);
     };
     for (const r of filtered) {
       if (groupBy === 'category') add(`i|${r.category}`, CATEGORY_LABEL[r.category], '', r);
@@ -151,7 +147,7 @@
           const own = fleet.filter((o) => line(o.ship.name, ships) === f);
           add(`i|f:${f}`, familyLabel(f, hulls), own.length ? `you own ${own.map((o) => o.ship.name).join(', ')}` : 'no ship owned', r);
         }
-      } else for (const p of new Map(r.pledges.map((p) => [p.id, p])).values()) add(`i|p:${p.id}`, p.name, `${ownUsd(p.value * 100)} · #${p.id}`, r);
+      } else for (const p of new Map(r.pledges.map((p) => [p.id, p])).values()) add(`i|p:${p.id}`, p.name, `${ownDollars(p.value)} · #${p.id}`, r);
     }
     const order = Object.keys(CATEGORY_LABEL);
     return [...m.values()].sort((a, b) =>
@@ -161,12 +157,28 @@
     );
   });
   const groupKeys = $derived(groups.map((g) => g.key));
+  /** Rows before each group among the expanded ones, for the chunked render. */
+  const starts = $derived.by(() => {
+    let n = 0;
+    return groups.map((g) => {
+      const at = n;
+      if (!collapsed.has(g.key)) n += g.items.length;
+      return at;
+    });
+  });
+  const visibleRows = $derived(groups.reduce((n, g) => n + (collapsed.has(g.key) ? 0 : g.items.length), 0));
+  // Rows mount in chunks (40 first, then +60 a frame); a new filter / grouping starts over.
+  let budget = $derived.by(() => (void groups, 40));
+  $effect(() => {
+    if (budget >= visibleRows) return;
+    const t = setTimeout(() => (budget += 60), 16);
+    return () => clearTimeout(t);
+  });
 
-  function toggleCat(c: Category) {
-    const s = new Set(cats);
-    s.has(c) ? s.delete(c) : s.add(c);
-    cats = s;
-  }
+  /** Category chips with counts (only categories you have). */
+  const catOptions = $derived(
+    (Object.entries(CATEGORY_LABEL) as [Category, string][]).filter(([c]) => counts.get(c)).map(([c, label]) => ({ id: c, label: `${label} · ${counts.get(c)}` })),
+  );
 
   const SHOW: { value: Show; label: string }[] = [
     { value: '', label: 'All items' },
@@ -185,37 +197,22 @@
   ];
   /** bits-ui Select treats '' as "nothing picked", so "All items" travels as a sentinel. */
   const ALL = 'all';
-  const linkCls = 'text-primary mr-2 inline-flex items-center gap-1 no-underline hover:underline';
 </script>
 
 {#if !hangar}
-  <Card.Root><Card.Content><p class="text-muted-foreground py-6 text-center">Load your hangar first (<a class="text-primary hover:underline" href="#hangar">Pledges</a>) — items are built from it.</p></Card.Content></Card.Root>
+  <Card.Root><Card.Content><Empty>Load your hangar first (<a class={LINK} href="#hangar">Pledges</a>) — items are built from it.</Empty></Card.Content></Card.Root>
 {:else}
   <div class="grid gap-4">
-    {#if error}<Card.Root><Card.Content><span class="text-destructive">{error}</span></Card.Content></Card.Root>{/if}
+    {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
 
     <Card.Root>
       <Card.Header>
         <Card.Title>All items <span class="text-muted-foreground">({qty(rows)} across {hangar.pledges.length} pledges)</span></Card.Title>
-        <Card.Description>Every item in every pledge, same items merged. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-label="Store" /> store page · <House class="inline size-3.5 align-[-2px]" aria-label="Hangar" /> hangar page holding it (gift / melt). Ships and paints per ship: <a class="text-primary hover:underline" href="#ships">Ships & paints</a>.</Card.Description>
+        <Card.Description>Every item in every pledge, same items merged. <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">Store</span> store page · <House class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">Hangar</span> hangar page holding it (gift / melt). Ships and paints per ship: <a class={LINK} href="#ships">Ships & paints</a>.</Card.Description>
       </Card.Header>
       <Card.Content class="grid gap-4">
         <div class="flex flex-wrap items-center gap-2">
-          <ToggleGroup.Root
-            type="multiple"
-            variant="outline"
-            size="sm"
-            spacing={1}
-            aria-label="Categories"
-            bind:value={() => [...cats], (v) => (cats = new Set(v as Category[]))}
-            class="flex-wrap"
-          >
-            {#each Object.entries(CATEGORY_LABEL) as [c, label] (c)}
-              {#if counts.get(c as Category)}
-                <ToggleGroup.Item value={c} class="h-6 rounded-full px-2.5 text-xs data-[state=on]:border-primary data-[state=on]:text-primary">{label} · {counts.get(c as Category)}</ToggleGroup.Item>
-              {/if}
-            {/each}
-          </ToggleGroup.Root>
+          <FilterChips options={catOptions} bind:value={cats} multiple ariaLabel="Categories" />
           {#if cats.size}<Button variant="ghost" size="xs" onclick={() => (cats = new Set())}><X /> clear</Button>{/if}
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -239,60 +236,60 @@
             <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, false)}>Expand all</Button>
             <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, true)}>Collapse all</Button>
           {/if}
-          <Button variant="outline" size="sm" disabled={!filtered.length} onclick={() => download(`rsi-items-${stamp()}.csv`, itemsCsv(filtered))}>CSV</Button>
+          <Button variant="outline" size="sm" disabled={!filtered.length} onclick={() => downloadFile(`rsi-items-${dateStamp()}.csv`, itemsCsv(filtered))}>CSV</Button>
         </div>
 
         {#if !filtered.length}
-          <p class="text-muted-foreground py-6 text-center">Nothing matches.</p>
+          <Empty>Nothing matches.</Empty>
         {:else}
           <Table.Root>
             <Table.Header>
               <Table.Row>
                 <SortTh key="title" bind:sort>Item</SortTh>
                 <SortTh key="category" bind:sort>Category</SortTh>
-                <SortTh key="count" bind:sort firstDir="desc">Qty</SortTh>
+                <SortTh key="count" bind:sort firstDir="desc" numeric>Qty</SortTh>
                 <SortTh key="fits" bind:sort>Ship</SortTh>
                 <SortTh key="value" bind:sort firstDir="desc">In pledges</SortTh>
-                <Table.Head>Links</Table.Head>
+                <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
               </Table.Row>
             </Table.Header>
-            {#each groups as g (g.key)}
+            {#each groups as g, gi (g.key)}
               <Table.Body>
                 {#if g.label}
                   <Table.Row class="hover:bg-transparent">
                     <Table.Head colspan={6} class="h-auto pt-3.5">
                       <!-- Table row group: a Collapsible can't wrap <tr>s, so this stays a disclosure button. -->
-                      <button class="focus-visible:ring-ring/50 flex w-full cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] font-normal outline-none focus-visible:ring-2" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
+                      <Button variant="ghost" size="sm" class="aria-expanded:bg-transparent h-auto w-full flex-wrap justify-start gap-2 px-1 py-1.5 text-left text-[13px] font-normal whitespace-normal" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
                         {#if collapsed.has(g.key)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
                         <strong>{g.label}</strong>
                         {#if g.note}<span class="text-muted-foreground text-[11px]">{g.note}</span>{/if}
                         <span class="text-muted-foreground text-[11px]">· {qty(g.items)} item{qty(g.items) === 1 ? '' : 's'}</span>
-                      </button>
+                      </Button>
                     </Table.Head>
                   </Table.Row>
                 {/if}
-                {#if !collapsed.has(g.key)}
-                  {#each g.items as r (r.key)}
+                {#if !collapsed.has(g.key) && budget > starts[gi]!}
+                  {#each g.items.slice(0, budget - starts[gi]!) as r (r.key)}
                     {@const ps = r.category === 'paint' ? paintStatus(r, ownedIds) : null}
                     {@const store = storeUrl(r)}
                     <Table.Row>
                       <Table.Cell class="whitespace-normal">
                         <strong>{r.title}</strong>
                         {#if r.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
-                        {#if r.fitsVia === 'pledge'}<Badge variant="secondary" class="m-px" title="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</Badge>{/if}
-                        {#if ps === 'no-ship'}<Badge variant="outline" class="border-warning/40 text-warning m-px" title="You don't own a ship this paint fits">no ship</Badge>{/if}
+                        {#if r.fitsVia === 'pledge'}<HintBadge variant="secondary" class="m-px" hint="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</HintBadge>{/if}
+                        {#if ps === 'no-ship'}<HintBadge variant="warning" class="m-px" hint="You don't own a ship this paint fits">no ship</HintBadge>{/if}
                       </Table.Cell>
                       <Table.Cell class="text-muted-foreground text-[11px]">{CATEGORY_LABEL[r.category]}{#if series.get(r.key) && groupBy !== 'series'}<br /><span class="text-primary">{series.get(r.key)}</span>{/if}</Table.Cell>
-                      <Table.Cell>{r.count > 1 ? `×${r.count}` : '1'}</Table.Cell>
+                      <Table.Cell class="text-right tabular-nums">{r.count > 1 ? `×${r.count}` : '1'}</Table.Cell>
                       <Table.Cell class="text-[11px] whitespace-normal">{fitsLabel(r) || '—'}</Table.Cell>
                       <Table.Cell class="text-[11px] whitespace-normal">
                         {#each r.pledges.slice(0, 3) as p, i (i)}<div>{p.name} <span class="text-muted-foreground">#{p.id}</span></div>{/each}
                         {#if r.pledges.length > 3}<div class="text-muted-foreground">+{r.pledges.length - 3} more</div>{/if}
                       </Table.Cell>
-                      <Table.Cell class="text-[11px]">
-                        {#if store}<a class={linkCls} href={store} target="_blank" rel="noopener" title="Store page"><ShoppingCart class="size-3" /> store</a>{/if}
+                      <Table.Cell class="text-right text-[11px]">
+                        {#if store}<a class="{LINK} ml-2 inline-flex items-center gap-1" href={store} target="_blank" rel="noopener" title="Store page"><ShoppingCart class="size-3" /> store</a>{/if}
                         {#each [...new Map(r.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
-                          <a class={linkCls} href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
+                          <a class="{LINK} ml-2 inline-flex items-center gap-1" href={hangarUrl(hangar.pledges, p.id)} target="_blank" rel="noopener" title={`Hangar page with ${p.name} (gift / melt)`}><House class="size-3" /> #{p.id}</a>
                         {/each}
                       </Table.Cell>
                     </Table.Row>
@@ -300,6 +297,9 @@
                 {/if}
               </Table.Body>
             {/each}
+            {#if budget < visibleRows}
+              <Table.Body><Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs">… {visibleRows - budget} more loading</Table.Cell></Table.Row></Table.Body>
+            {/if}
           </Table.Root>
         {/if}
       </Card.Content>

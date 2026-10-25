@@ -607,6 +607,18 @@ export interface BuybackUnknown {
   ownedForHull: { title: string; n: number }[];
 }
 
+/** Paint rows with the hull lines they fit, built once per `rows` array (and rebuilt when `ships` changes). */
+type PaintLineIndex = { ships: CatalogShip[]; list: { row: ItemRow; lines: Set<string>; lower: string }[] };
+const paintLineCache = new WeakMap<ItemRow[], PaintLineIndex>();
+function paintLineIndex(rows: ItemRow[], ships: CatalogShip[]): PaintLineIndex {
+  const hit = paintLineCache.get(rows);
+  if (hit && hit.ships === ships) return hit;
+  const list = rows.filter((r) => r.category === 'paint').map((row) => ({ row, lines: new Set(row.fits.map((s) => paintLine(s.name, ships))), lower: row.title.toLowerCase() }));
+  const idx = { ships, list };
+  paintLineCache.set(rows, idx);
+  return idx;
+}
+
 /** Describe a count-only pack: hull from its name, your hangar paints for that hull line. */
 export function packHint(b: BuybackItem, rows: ItemRow[], ships: CatalogShip[]): BuybackUnknown {
   const count = countOnly(b.contained) ?? 0;
@@ -615,8 +627,9 @@ export function packHint(b: BuybackItem, rows: ItemRow[], ships: CatalogShip[]):
   const fits = hull ? shipsFor(hull, ships) : [];
   const lines = new Set(fits.map((s) => paintLine(s.name, ships)));
   const hk = hull.toLowerCase();
-  const ownedForHull = rows
-    .filter((r) => r.category === 'paint' && (r.fits.some((s) => lines.has(paintLine(s.name, ships))) || (hk.length >= 3 && r.title.toLowerCase().startsWith(hk))))
+  const ownedForHull = paintLineIndex(rows, ships)
+    .list.filter((x) => [...x.lines].some((l) => lines.has(l)) || (hk.length >= 3 && x.lower.startsWith(hk)))
+    .map((x) => x.row)
     .map((r) => ({ title: r.title, n: r.count }))
     .sort((a, b) => a.title.localeCompare(b.title));
   return { item: b, count, hull, ownedForHull };

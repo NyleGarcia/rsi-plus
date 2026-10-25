@@ -1,34 +1,29 @@
 <script lang="ts">
+  /**
+   * Toolbar popup (300 px wide, no scrollbar at ~600 px): who you are, a door into the hub (Open RSI+ + the pages marked
+   * `popup` in lib/hub-pages), party mode, and the few switches people flip often (`quick` in lib/settings-ui). Hints
+   * and every other setting live on the hub Settings page.
+   */
   import FanNotice from '@/components/FanNotice.svelte';
   import { bg, type HubTab } from '@/lib/messages';
-  import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, type Settings } from '@/lib/settings';
+  import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, storeLogItem, type Settings } from '@/lib/settings';
+  import { cleanLog, tally } from '@/lib/storelog';
   import { partyActive, type PartyMode } from '@/lib/friends';
+  import { HUB_PAGES } from '@/lib/hub-pages';
+  import { QUICK_TOGGLES } from '@/lib/settings-ui';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
+  import HintBadge from '@/components/HintBadge.svelte';
+  import SwitchRow from '@/components/SwitchRow.svelte';
+  import TipButton from '@/components/TipButton.svelte';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
-  import { Switch } from '@/components/ui/switch';
-  import { Label } from '@/components/ui/label';
   import { cn } from '@/lib/utils';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import PartyPopper from '@lucide/svelte/icons/party-popper';
   import { privacy, setPrivacy } from '@/lib/privacy.svelte';
 
-  const NAV: { tab: HubTab; label: string }[] = [
-    { tab: 'feed', label: 'Feed' },
-    { tab: 'friends', label: 'Friends' },
-    { tab: 'hangar', label: 'Pledges' },
-    { tab: 'melt', label: 'Melt calculator' },
-    { tab: 'fleet', label: 'My ships' },
-    { tab: 'wallet', label: 'Wallet' },
-    { tab: 'store', label: 'Ship catalog' },
-    { tab: 'browse', label: 'Browse store' },
-    { tab: 'notifications', label: 'Notifications' },
-    { tab: 'ccu', label: 'CCU planner' },
-    { tab: 'paint-rebuy', label: 'Paint rebuy' },
-    { tab: 'watching', label: 'Watching' },
-    { tab: 'settings', label: 'Settings' },
-  ];
+  const SHORTCUTS = HUB_PAGES.filter((p) => p.popup);
 
   let s = $state<Settings | null>(null);
   let unseen = $state(0);
@@ -45,6 +40,10 @@
   $effect(() => {
     getSettings().then((v) => (s = v));
     feedItem.getValue().then((f) => (unseen = f.filter((e) => !e.seen).length));
+    storeLogItem.getValue().then((v) => {
+      const n = tally(cleanLog(v));
+      unseen += n.add + n.remove;
+    });
   });
 
   async function set<K extends keyof Settings>(k: K, v: Settings[K]) {
@@ -61,70 +60,52 @@
     await bg({ type: 'hub:open', tab, windowId });
     window.close();
   };
-
-  const TOGGLES: { key: keyof Settings; label: string; hint?: string }[] = [
-    { key: 'readTracking', label: 'Read tracking', hint: '"+N new" badges, read threads dimmed' },
-    { key: 'hideRead', label: 'Hide read threads', hint: 'Unless they have new replies, are pinned or watched' },
-    { key: 'devHighlight', label: 'Highlight dev posts' },
-    { key: 'keyboard', label: 'Keyboard shortcuts', hint: 'Press ? on Spectrum' },
-    { key: 'theme', label: 'Modern theme' },
-    { key: 'wide', label: 'Full-width threads' },
-    { key: 'compact', label: 'Compact replies' },
-    { key: 'pollAuto', label: 'Check watches automatically', hint: 'Off = passive: no background checks, the Feed updates only on Check now' },
-    { key: 'notify', label: 'Desktop notifications' },
-    { key: 'partySound', label: 'Ding on party auto-accept', hint: 'Short sound when party mode accepts a request' },
-    { key: 'siteBar', label: 'RSI+ bar on store & account pages' },
-  ];
 </script>
 
 <Tooltip.Provider delayDuration={300}>
-  <main class="grid w-[300px] gap-3.5 p-3.5">
+  <main class="grid w-[300px] gap-2.5 p-3">
     <header class="flex items-center justify-between gap-2">
       <h1 class="m-0 flex items-center gap-1.5 text-[17px] font-semibold">
         <span>RSI<span class="text-primary">+</span></span>
-        {#if INCOGNITO}<Badge variant="outline" class="text-muted-foreground h-[17px] rounded-md px-1.5 text-[10px]" title="Incognito: separate login, friends, hangar, reads and party mode">incognito</Badge>{/if}
+        {#if INCOGNITO}<HintBadge variant="muted" class="h-[17px] rounded-md px-1.5 text-[10px]" hint="Incognito: separate login, friends, hangar, reads and party mode">incognito</HintBadge>{/if}
       </h1>
       <Button variant="outline" size="xs" href="https://robertsspaceindustries.com/spectrum/community/SC" target="_blank" rel="noopener">Spectrum<ExternalLink aria-hidden="true" /></Button>
     </header>
     <AccountSwitch compact />
 
-    <nav class="grid grid-cols-2 gap-1.5">
-      {#each NAV as n (n.tab)}
-        <Button variant="outline" size="sm" onclick={() => open(n.tab)}>{n.label}{n.tab === 'feed' && unseen ? ` (${unseen})` : ''}</Button>
-      {/each}
+    <nav class="grid gap-1.5" aria-label="Hub pages">
+      <Button onclick={() => open('feed')}>Open RSI+</Button>
+      <div class="grid grid-cols-3 gap-1">
+        {#each SHORTCUTS as p (p.tab)}
+          <Button variant="ghost" size="sm" class="justify-start gap-1.5 px-1.5" onclick={() => open(p.tab)} aria-label={p.tab === 'feed' && unseen ? `${p.label}, ${unseen} unseen` : p.label}>
+            <p.icon aria-hidden="true" />
+            <span class="truncate">{p.short ?? p.label}</span>
+            {#if p.tab === 'feed' && unseen}<Badge variant="success-soft" class="ml-auto h-4 px-1 tabular-nums">{unseen > 99 ? '99+' : unseen}</Badge>{/if}
+          </Button>
+        {/each}
+      </div>
     </nav>
 
-    <Button
+    <TipButton
       variant="outline"
+      size="sm"
       class={cn(partyOn && 'border-warning text-warning hover:text-warning dark:border-warning')}
       onclick={toggleParty}
-      title="Auto-accept friend requests (2 h) — details & log in Friends"
+      tip="Auto-accept friend requests (2 h) — details & log in Friends"
     >
       <PartyPopper aria-hidden="true" />
       {partyOn ? `Party mode ON${party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''} — stop` : 'Start party mode (2 h)'}
-    </Button>
+    </TipButton>
 
     {#if s}
-      <section class="grid gap-0.5">
-        <div class="flex items-start gap-2.5 px-0.5 py-1.5">
-          <Switch id="set-privacy" class="mt-px" checked={privacy.on} onCheckedChange={setPrivacy} />
-          <Label for="set-privacy" class="grid flex-1 cursor-pointer gap-0.5 leading-snug font-normal">
-            <span>Screenshare mode</span>
-            <small class="text-muted-foreground text-[11px]">Hides spend, store credit and account names in the hub</small>
-          </Label>
-        </div>
-        {#each TOGGLES as t (t.key)}
-          <div class="flex items-start gap-2.5 px-0.5 py-1.5">
-            <Switch id={`set-${t.key}`} class="mt-px" checked={!!s[t.key]} onCheckedChange={(v) => set(t.key, v as never)} />
-            <Label for={`set-${t.key}`} class="grid flex-1 cursor-pointer gap-0.5 leading-snug font-normal">
-              <span>{t.label}</span>
-              {#if t.hint}<small class="text-muted-foreground text-[11px]">{t.hint}</small>{/if}
-            </Label>
-            {#if t.key === 'partySound'}<Button variant="outline" size="icon-xs" title="Play it" aria-label="Play the ding" onclick={() => bg({ type: 'sound:ding' }).catch(() => {})}>♪</Button>{/if}
-          </div>
+      <section class="grid" aria-label="Quick settings">
+        <SwitchRow id="set-privacy" size="sm" class="py-0.5" label="Screenshare mode" checked={privacy.on} onchange={setPrivacy} />
+        {#each QUICK_TOGGLES as t (t.key)}
+          <SwitchRow id={`set-${t.key}`} size="sm" class="py-0.5" label={t.label} checked={!!s[t.key]} onchange={(v) => set(t.key, v as never)} />
         {/each}
+        <Button variant="link" size="xs" class="h-auto justify-self-start p-0 pt-1" onclick={() => open('settings')}>All settings →</Button>
       </section>
     {/if}
-    <FanNotice variant="popup" class="border-t pt-3" />
+    <FanNotice variant="popup" class="border-t pt-2.5" />
   </main>
 </Tooltip.Provider>

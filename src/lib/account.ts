@@ -5,6 +5,7 @@
  */
 import { parseBuybackDetail, parseBuybackPage, parseHangarPage, type BuybackItem, type Pledge, HANGAR_PAGE, creditsDebug, parseCredits, type Credits } from './hangar';
 import { SPECTRUM_ORIGIN } from './types';
+import { sleep } from './utils';
 
 export class NotLoggedIn extends Error {
   constructor() {
@@ -12,7 +13,10 @@ export class NotLoggedIn extends Error {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** RSI bounces logged-out account pages to /connect (or the sign-in form): throw `NotLoggedIn` so every reader says the same thing. */
+export function assertLoggedIn(res: Response): void {
+  if (/\/(connect|login|sign-?in)\b/i.test(new URL(res.url).pathname)) throw new NotLoggedIn();
+}
 
 async function getPage(path: string, page: number, tries = 0): Promise<Document> {
   const res = await fetch(`${SPECTRUM_ORIGIN}${path}?page=${page}&pagesize=${HANGAR_PAGE}`, { credentials: 'include' });
@@ -21,7 +25,7 @@ async function getPage(path: string, page: number, tries = 0): Promise<Document>
     return getPage(path, page, tries + 1);
   }
   if (!res.ok) throw new Error(`${path} page ${page}: HTTP ${res.status}`);
-  if (/\/(connect|login|sign-?in)\b/.test(new URL(res.url).pathname)) throw new NotLoggedIn();
+  assertLoggedIn(res);
   const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
   // Logged-out account pages render the sign-in form instead of the list.
   if (!doc.querySelector('.list-items, article.pledge, .pledge') && doc.querySelector('form[action*="signin"], #signin, .sign-in')) throw new NotLoggedIn();
@@ -160,7 +164,7 @@ export async function loadBuybackDetails(
       await sleep(5000 * (tries + 1));
     }
     if (res?.ok) {
-      if (/\/(connect|login|sign-?in)\b/.test(new URL(res.url).pathname)) throw new NotLoggedIn();
+      assertLoggedIn(res);
       const d = parseBuybackDetail(new DOMParser().parseFromString(await res.text(), 'text/html'));
       if (d.items.length) {
         b.items = d.items;

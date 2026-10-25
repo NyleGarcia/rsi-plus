@@ -13,17 +13,27 @@
     key,
     sort = $bindable(),
     firstDir = 'asc',
+    numeric = false,
+    class: className,
     children,
-  }: { key: K; sort: SortState<K>; firstDir?: Dir; children: Snippet } = $props();
+  }: {
+    key: K;
+    sort: SortState<K>;
+    firstDir?: Dir;
+    /** Money / counts: right-aligned head (pair the cells with `class="text-right tabular-nums"`). */
+    numeric?: boolean;
+    class?: string;
+    children: Snippet;
+  } = $props();
 
   const active = $derived(sort.key === key);
 </script>
 
-<Table.Head aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+<Table.Head aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} class={cn(numeric && 'text-right', className)}>
   <Button
     variant="ghost"
     size="xs"
-    class={cn('-ml-2 font-semibold text-muted-foreground hover:text-foreground', active && 'text-foreground')}
+    class={cn('font-semibold text-muted-foreground hover:text-foreground', numeric ? '-mr-2' : '-ml-2', active && 'text-foreground')}
     onclick={() => (sort = nextSort(sort, key, firstDir))}
   >
     {@render children()}

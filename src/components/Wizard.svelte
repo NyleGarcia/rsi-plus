@@ -33,6 +33,7 @@
   import { Button } from '@/components/ui/button';
   import { Progress } from '@/components/ui/progress';
   import { Switch } from '@/components/ui/switch';
+  import { Label } from '@/components/ui/label';
   import { cn } from '@/lib/utils';
   import Check from '@lucide/svelte/icons/check';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -87,19 +88,22 @@
 
 <Card.Root size="sm" class={cn('shadow-none', on ? 'ring-primary/30' : 'bg-transparent')}>
   <Card.Header class="flex flex-wrap items-center gap-2">
-    <Card.Title class="flex items-center gap-2 text-sm font-semibold">
+    <Card.Title class="flex items-center gap-2">
       {title}
       {#if on && !finished}<span class="text-muted-foreground font-normal">step {current + 1} of {steps.length}</span>{/if}
     </Card.Title>
     <span class="flex-1"></span>
-    <label class="text-muted-foreground flex items-center gap-2 text-xs"><Switch bind:checked={on} aria-label="Guide me" /> Guide me</label>
+    <div class="flex items-center gap-2">
+      <Switch id={`wizard-guide-${storageKey}`} bind:checked={on} />
+      <Label for={`wizard-guide-${storageKey}`} class="text-muted-foreground cursor-pointer text-xs font-normal">Guide me</Label>
+    </div>
   </Card.Header>
   {#if on}
     <Card.Content class="grid gap-3">
       <Progress value={n} max={steps.length || 1} class="h-1 *:data-[slot=progress-indicator]:bg-primary" aria-hidden="true" />
       {#if finished}
         <div class="text-success flex items-center gap-2 text-sm"><PartyPopper class="size-4" /> {doneText}</div>
-        {#if onReset}<div><Button variant="outline" size="sm" onclick={onReset}>{resetLabel}</Button></div>{/if}
+        {#if onReset}<div><Button variant="ghost" size="sm" onclick={onReset}>{resetLabel}</Button></div>{/if}
       {:else}
         <ol class="m-0 grid list-none gap-1 p-0">
           {#each steps as s, i (s.id)}

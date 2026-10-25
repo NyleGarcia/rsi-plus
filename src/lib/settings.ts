@@ -94,6 +94,9 @@ export const seenRequestsItem = storage.defineItem<string[] | null>(acct('local:
 /** `complete: false` + `page` = a load that stopped part-way (refresh, error, Stop) — resumable from `page + 1`. */
 export const hangarItem = storage.defineItem<{ at: number; pledges: Pledge[]; complete?: boolean; page?: number; credits?: Credits | null; creditsAt?: number } | null>(acct('local:hangar'), { fallback: null });
 export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]; complete?: boolean; page?: number } | null>(acct('local:buyback'), { fallback: null });
+/** Order history imported from /account/billing (Wallet → Where the money went). */
+/** v2 (2026-10): orders carry `lines`, `credits`, `items`; v1 saves (first beta reader) are dropped, the user re-imports. */
+export const ordersItem = storage.defineItem<{ at: number; orders: import('./orders').Order[]; subs?: import('./orders').SubPayment[]; pages: number } | null>(acct('local:orders'), { fallback: null, version: 2, migrations: { 2: () => null } });
 /** Saved CCU chains (planner): the CCUs they use are kept out of new plans when *Exclude saved chains* is on. */
 export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuChains'), { fallback: [] });
 /** Your labels on pledges (`lib/labels.ts`): pledge id → labels. */
@@ -134,7 +137,7 @@ export const lastPollItem = storage.defineItem<{ at: number; error: string | nul
 /** Saved RSI logins for the account switcher (this context's cookie jar only — incognito has its own list). */
 export const profilesItem = storage.defineItem<Profiles>(acct('local:profiles'), { fallback: { active: null, list: [] } });
 /** Everything that belongs to one RSI account: swapped out / in with the cookies when switching profiles. */
-export const ACCOUNT_ITEMS = [readItem, watchesItem, feedItem, friendNotesItem, presenceItem, seenRequestsItem, hangarItem, buybackItem, ccuChainsItem, ccuGoalsItem, gameShipsItem, pledgeLabelsItem, partyModeItem, partyLogItem, lastPollItem] as const;
+export const ACCOUNT_ITEMS = [readItem, watchesItem, feedItem, friendNotesItem, presenceItem, seenRequestsItem, hangarItem, buybackItem, ordersItem, conciergeItem, storeItemsItem, ccuChainsItem, ccuGoalsItem, gameShipsItem, pledgeLabelsItem, partyModeItem, partyLogItem, lastPollItem] as const;
 /** Key for a profile's parked account data (`local:profileData.<id>`, incognito-prefixed like the rest). */
 export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 

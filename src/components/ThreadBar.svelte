@@ -4,6 +4,7 @@
   import { parsePath } from '@/lib/types';
   import type { Actions } from '@/entrypoints/spectrum.content/index';
   import * as api from '@/lib/api';
+  import './site-bar.css';
 
   let { actions }: { actions: Actions } = $props();
 
@@ -41,28 +42,28 @@
   ];
 </script>
 
-<div class="sp">
+<div class="sp rp">
   {#if ui.view && !collapsed}
     {@const v = ui.view}
-    <div class="bar" role="toolbar" aria-label="RSI+ thread actions">
+    <div class="bar rp-surface" role="toolbar" aria-label="RSI+ thread actions">
       <span class="logo">S+</span>
       {#if v.firstVisit}
         <span class="muted">First visit</span>
       {:else if v.newCount > 0}
         <span class="new">+{v.newCount} new since last visit</span>
-        {#if v.firstNewUrl}<a class="btn" href={v.firstNewUrl} title="n">Jump to first new</a>{/if}
+        {#if v.firstNewUrl}<a class="btn" href={v.firstNewUrl} aria-keyshortcuts="n">Jump to first new</a>{/if}
       {:else}
         <span class="muted">No new replies</span>
       {/if}
-      <button class="btn" class:on={ui.watched} onclick={() => actions.toggleWatch(v.thread)} title="w">
+      <button class="btn" class:on={ui.watched} onclick={() => actions.toggleWatch(v.thread)} aria-keyshortcuts="w">
         {ui.watched ? '★ Watching' : '☆ Watch'}
       </button>
-      <button class="btn" onclick={() => actions.markUnread(v.thread)} title="u">Mark unread</button>
+      <button class="btn" onclick={() => actions.markUnread(v.thread)} aria-keyshortcuts="u">Mark unread</button>
       <button class="x" aria-label="Collapse" onclick={() => (collapsed = true)}>×</button>
     </div>
   {:else if channelPage && !collapsed}
     {@const id = route.channelId!}
-    <div class="bar" role="toolbar" aria-label="RSI+ channel actions">
+    <div class="bar rp-surface" role="toolbar" aria-label="RSI+ channel actions">
       <span class="logo">S+</span>
       <span class="muted">{channelNames[id] ?? `Channel ${id}`}</span>
       <button
@@ -78,11 +79,11 @@
       <button class="x" aria-label="Collapse" onclick={() => (collapsed = true)}>×</button>
     </div>
   {:else if collapsed && (ui.view || channelPage)}
-    <button class="pip" onclick={() => (collapsed = false)} aria-label="Show RSI+ bar">S+</button>
+    <button class="pip rp-surface" onclick={() => (collapsed = false)} aria-label="Show RSI+ bar">S+</button>
   {/if}
 
   {#if ui.toast}
-    <div class="toast" role="status">
+    <div class="toast rp-surface" role="status">
       {ui.toast.text}
       {#if ui.toast.undo}
         <button class="link" onclick={() => (ui.toast?.undo?.(), (ui.toast = null))}>Undo</button>
@@ -91,7 +92,7 @@
   {/if}
 
   {#if ui.help}
-    <div class="help" role="dialog" aria-label="Keyboard shortcuts">
+    <div class="help rp-surface" role="dialog" aria-label="Keyboard shortcuts">
       <strong>RSI+ shortcuts</strong>
       <dl>
         {#each KEYS as [k, d]}<dt>{k}</dt><dd>{d}</dd>{/each}
@@ -102,20 +103,13 @@
 </div>
 
 <style>
-  .sp {
-    font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: #e8edf3;
-  }
+  /* Palette, surface, buttons, logo: site-bar.css (shared with SiteBar). */
   .bar,
   .toast,
   .help,
   .pip {
     position: fixed;
-    background: rgb(14 18 24 / 0.94);
-    border: 1px solid rgb(255 255 255 / 0.1);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
     backdrop-filter: blur(8px);
-    border-radius: 12px;
   }
   .bar {
     right: 18px;
@@ -126,48 +120,23 @@
     padding: 7px 8px 7px 10px;
   }
   .logo {
-    font-weight: 800;
-    color: #3cc8ff;
     letter-spacing: -0.02em;
   }
-  .muted {
-    color: #8b95a5;
-  }
   .new {
-    color: #3cc8ff;
+    color: var(--rp-accent);
     font-weight: 600;
-  }
-  .btn {
-    border: 1px solid rgb(255 255 255 / 0.12);
-    background: rgb(255 255 255 / 0.05);
-    color: inherit;
-    border-radius: 8px;
-    padding: 4px 10px;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .btn:hover {
-    background: rgb(255 255 255 / 0.12);
   }
   .btn.on {
-    color: #ffd166;
     border-color: rgb(255 209 102 / 0.4);
   }
   .x {
-    border: 0;
-    background: none;
-    color: #8b95a5;
-    font-size: 18px;
-    cursor: pointer;
     padding: 0 4px;
   }
   .pip {
     right: 18px;
     bottom: 18px;
     padding: 6px 9px;
-    color: #3cc8ff;
+    color: var(--rp-accent);
     font-weight: 800;
     cursor: pointer;
   }
@@ -184,7 +153,7 @@
   .link {
     border: 0;
     background: none;
-    color: #3cc8ff;
+    color: var(--rp-accent);
     font: inherit;
     font-weight: 700;
     cursor: pointer;
@@ -204,7 +173,7 @@
   }
   dt {
     font-family: ui-monospace, monospace;
-    color: #3cc8ff;
+    color: var(--rp-accent);
   }
   dd {
     margin: 0;

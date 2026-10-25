@@ -178,3 +178,23 @@ describe('funding extras', () => {
     expect(s.projected).toBe(2000);
   });
 });
+
+import { spendLedger } from '@/lib/wallet';
+describe('spendLedger', () => {
+  const p = (o: Partial<Pledge>): Pledge => ({ id: 1, name: 'x', value: 0, date: '', type: 'ship', items: [], ships: [], upgrade: null, lti: false, insurance: '', warbond: false, giftable: false, meltable: false, hasGame: false, upgraded: false, nickname: '', ...o });
+  it('splits new money, cash-or-credit, gifts, free and melted credit', () => {
+    const l = spendLedger(
+      [p({ value: 100, warbond: true }), p({ value: 50 }), p({ value: 25, configValue: 5 }), p({ value: 0 }), p({ value: 0, type: 'other' })],
+      [{ price: 2000, type: 'ship' }, { type: 'ship' }],
+    );
+    expect(l.newMoney).toBe(100);
+    expect(l.either).toBe(75);
+    expect(l.custom).toBe(5);
+    expect(l.gifted).toBe(1);
+    expect(l.free).toBe(1);
+    expect(l.melted).toBe(20);
+    expect(l.meltedUnknown).toBe(1);
+    expect(l.cashMin).toBe(160); // 100 + 5 + (75 − 20)
+    expect(l.cashMax).toBe(180);
+  });
+});

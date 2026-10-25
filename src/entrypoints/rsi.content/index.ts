@@ -7,6 +7,7 @@ import SiteBar from '@/components/SiteBar.svelte';
 import { pageCount } from '@/lib/account';
 import { parseCredits } from '@/lib/hangar';
 import { hangarItem } from '@/lib/settings';
+import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
 export default defineContentScript({
   matches: ['https://robertsspaceindustries.com/*'],
@@ -24,7 +25,7 @@ export default defineContentScript({
     });
     ui.mount();
     highlightPledge();
-    captureCredits();
+    captureCredits(ctx);
     ctx.addEventListener(window, 'wxt:locationchange', highlightPledge);
   },
 });
@@ -152,29 +153,53 @@ function note(text: string, ms: number): HTMLDivElement {
 /**
  * The credits box (store credit / UEC / REC) is JS-rendered — the account dropdown / sidebar — so it can appear on
  * any page, any time. Watch the DOM: whenever a node mentioning "store credit" shows up, parse it and keep the
- * numbers with the saved hangar. Also tried once on load for server-rendered account pages.
+ * numbers with the saved hangar. Also tried once on load for server-rendered account pages. Stops watching after a
+ * capture; an SPA navigation re-arms it.
  */
-function captureCredits() {
+function captureCredits(ctx: ContentScriptContext) {
   const seen = { usd: NaN, uec: NaN, rec: NaN };
-  const save = async () => {
+  /** true when the page had credits (saved or unchanged). */
+  const save = async (): Promise<boolean> => {
     const c = parseCredits(document);
-    if (!c || (c.usd === seen.usd && c.uec === seen.uec && c.rec === seen.rec)) return;
+    if (!c) return false;
+    if (c.usd === seen.usd && c.uec === seen.uec && c.rec === seen.rec) return true;
     Object.assign(seen, c);
     console.debug('[RSI+] credits', c);
     const cur = await hangarItem.getValue();
-    if (!cur) return; // nothing to attach to yet — load the hangar in RSI+ first
+    if (!cur) return true; // nothing to attach to yet — load the hangar in RSI+ first
     await hangarItem.setValue({ ...cur, credits: c, creditsAt: Date.now() });
+    return true;
   };
-  // Throttled: RSI's store app mutates the DOM constantly; scan at most once a second, and only when the page
-  // mentions "store credit" at all (one cheap string test, no per-node work).
+  // Throttled: RSI's store app mutates the DOM constantly; scan at most once a second. A credit-ish element is the
+  // cheap test; the whole page text only when there is none (≤ once a second).
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let mo: MutationObserver | null = null;
+  const disarm = () => {
+    mo?.disconnect();
+    mo = null;
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  const scan = () => {
+    if (!document.querySelector('[class*="credit" i]') && !/store credit/i.test(document.body?.textContent ?? '')) return;
+    save()
+      .then((ok) => ok && disarm())
+      .catch(() => {});
+  };
   const schedule = () => {
     if (timer) return;
     timer = setTimeout(() => {
       timer = null;
-      if (/store credit/i.test(document.body?.textContent ?? '')) save().catch(() => {});
+      scan();
     }, 1000);
   };
-  schedule();
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+  const arm = () => {
+    if (mo) return;
+    mo = new MutationObserver(schedule);
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+    schedule();
+  };
+  arm();
+  ctx.addEventListener(window, 'wxt:locationchange', arm);
+  ctx.onInvalidated(disarm);
 }

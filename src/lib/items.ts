@@ -218,6 +218,42 @@ export function inventory(pledges: Pledge[], ships: CatalogShip[]): ItemRow[] {
 const uniqueShips = (list: CatalogShip[]) => [...new Map(list.map((s) => [s.id, s])).values()];
 
 /** Display name of a hull family or line as written in the catalog ("cutlass" → "Cutlass", "100i" → "100i", "constellation mk iv" → "Constellation Mk IV"). */
+const lineCountCache = new WeakMap<CatalogShip[], Map<string, number>>();
+/** Catalog ships per hull line (`line`), built once per catalog array. */
+export function lineCounts(ships: CatalogShip[]): Map<string, number> {
+  let m = lineCountCache.get(ships);
+  if (!m) {
+    m = new Map();
+    for (const s of ships) {
+      const l = line(s.name, ships);
+      m.set(l, (m.get(l) ?? 0) + 1);
+    }
+    lineCountCache.set(ships, m);
+  }
+  return m;
+}
+
+/** Which ships an item row fits, as text: the ship, one hull, "All Cutlass" when it fits a whole line, else names. */
+export function fitsLabel(r: ItemRow, ships: CatalogShip[]): string {
+  if (r.ship) return r.ship.name;
+  if (!r.fits.length) return '';
+  if (r.fits.length === 1) return r.fits[0]!.name;
+  const counts = lineCounts(ships);
+  const byLine = new Map<string, CatalogShip[]>();
+  for (const s of r.fits) {
+    const l = line(s.name, ships);
+    const hit = byLine.get(l);
+    if (hit) hit.push(s);
+    else byLine.set(l, [s]);
+  }
+  return [...byLine]
+    .map(([f, hit]) => {
+      const inFam = counts.get(f) ?? 0;
+      return hit.length >= inFam && inFam > 1 ? `All ${familyLabel(f, hit)}` : hit.map((s) => s.name).join(', ');
+    })
+    .join(' · ');
+}
+
 export function familyLabel(fam: string, ships: CatalogShip[]): string {
   const [base = '', mk] = fam.split(' mk ');
   const suffix = mk ? ` Mk ${mk.toUpperCase()}` : '';

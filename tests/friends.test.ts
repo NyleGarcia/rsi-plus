@@ -123,3 +123,30 @@ describe('party mode', () => {
     expect(log.map((l) => l.requestId)).toEqual(['b', 'a', 'old']);
   });
 });
+
+import { noteEvents } from '../src/lib/friends';
+describe('noteEvents', () => {
+  const m = (id: string) => ({ id, nickname: `n${id}`, displayname: `D${id}` }) as never;
+  it('skips the baseline and reports added / gone friends', () => {
+    expect(noteEvents({}, { a: { note: '', tags: [], firstSeen: 5, lastOnline: null } }, [m('a')], 5)).toEqual([]);
+    const before = { a: { note: '', tags: [], firstSeen: 0, lastOnline: null }, b: { note: '', tags: [], firstSeen: 0, lastOnline: null } };
+    const after = { ...before, b: { ...before.b, removedAt: 9 }, c: { note: '', tags: [], firstSeen: 9, lastOnline: null } };
+    const ev = noteEvents(before, after, [m('a'), m('c')], 9);
+    expect(ev.map((e) => e.title).sort()).toEqual(['Dc is now your friend', 'Member b is no longer on your friends list']);
+    expect(ev.every((e) => e.kind === 'friend')).toBe(true);
+  });
+});
+
+describe('touchNotes forgets long-removed friends', () => {
+  it('drops removed entries older than 90 days when they carry nothing', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = 1_800_000_000_000;
+    const notes = {
+      old: { note: '', tags: [], firstSeen: 1, lastOnline: null, removedAt: now - 100 * day },
+      kept: { note: 'friend from org', tags: [], firstSeen: 1, lastOnline: null, removedAt: now - 100 * day },
+      recent: { note: '', tags: [], firstSeen: 1, lastOnline: null, removedAt: now - 10 * day },
+    };
+    const out = touchNotes(notes, [{ id: 'z', nickname: 'z', displayname: 'z', status: 'offline' } as never], now, true)!;
+    expect(Object.keys(out).sort()).toEqual(['kept', 'recent', 'z']);
+  });
+});

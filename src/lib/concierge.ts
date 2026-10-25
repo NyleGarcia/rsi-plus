@@ -4,6 +4,9 @@
  * packages). One request with the user's own session; stored per account in `conciergeItem`. Non-Concierge accounts get
  * `null` (the page has no status block).
  */
+import { assertLoggedIn } from './account';
+import { text } from './dom';
+import { r2 } from './money';
 import { SPECTRUM_ORIGIN } from './types';
 
 export interface ConciergeStoreItem {
@@ -47,7 +50,18 @@ export function usdToNext(c: Pick<Concierge, 'level' | 'next' | 'pct'>): number 
   return Math.max(0, Math.round(((100 - c.pct) / 100) * (nxt.usd - cur.usd)));
 }
 
-const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+/** Where a total spend sits on the ladder: the level reached, the next one and the exact gap (RSI's thresholds). */
+export function clubFromSpend(spend: number): { level: string | null; next: string | null; toGo: number | null; pct: number | null } {
+  const cur = [...TIERS].reverse().find((t) => spend >= t.usd) ?? null;
+  const next = TIERS.find((t) => spend < t.usd) ?? null;
+  const floor = cur?.usd ?? 0;
+  return {
+    level: cur?.name ?? null,
+    next: next?.name ?? null,
+    toGo: next ? r2(next.usd - spend) : null,
+    pct: next ? Math.max(0, Math.min(100, Math.round(((spend - floor) / (next.usd - floor)) * 1000) / 10)) : null,
+  };
+}
 
 export function parseConciergePage(root: ParentNode, now = Date.now()): Concierge | null {
   const level = text(root.querySelector('#js-status-level'));
@@ -76,6 +90,6 @@ export function parseConciergePage(root: ParentNode, now = Date.now()): Concierg
 export async function fetchConcierge(): Promise<Concierge | null> {
   const res = await fetch(`${SPECTRUM_ORIGIN}/account/concierge`, { credentials: 'include' });
   if (!res.ok) throw new Error(`Concierge page: HTTP ${res.status}`);
-  if (/\/(connect|sign-?in|login)\b/i.test(new URL(res.url).pathname)) throw new Error('Log in on robertsspaceindustries.com first.');
+  assertLoggedIn(res);
   return parseConciergePage(new DOMParser().parseFromString(await res.text(), 'text/html'));
 }

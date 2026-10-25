@@ -1,115 +1,98 @@
 <script lang="ts">
   import type { Component } from 'svelte';
-  import FeedPanel from '@/components/FeedPanel.svelte';
-  import WatchingPanel from '@/components/WatchingPanel.svelte';
-  import FriendsPanel from '@/components/FriendsPanel.svelte';
-  import MutesPanel from '@/components/MutesPanel.svelte';
-  import HangarPanel from '@/components/HangarPanel.svelte';
-  import WalletPanel from '@/components/WalletPanel.svelte';
-  import BuybackPanel from '@/components/BuybackPanel.svelte';
-  import ItemsPanel from '@/components/ItemsPanel.svelte';
-  import ShipsPanel from '@/components/ShipsPanel.svelte';
-  import StorePanel from '@/components/StorePanel.svelte';
-  import BrowsePanel from '@/components/BrowsePanel.svelte';
-  import StoreLog from '@/components/StoreLog.svelte';
-  import CcuPanel from '@/components/CcuPanel.svelte';
-  import SettingsPanel from '@/components/SettingsPanel.svelte';
+  import SkeletonSwap from '@/components/SkeletonSwap.svelte';
   import AccountSwitch from '@/components/AccountSwitch.svelte';
   import NavItem from './NavItem.svelte';
-  import SidebarSupport from './SidebarSupport.svelte';
-  import FanNotice from '@/components/FanNotice.svelte';
-  import SidebarFan from './SidebarFan.svelte';
+  import HubFooter from './HubFooter.svelte';
+  import ProductTour, { type TourStep } from '@/components/ProductTour.svelte';
   import * as Sidebar from '@/components/ui/sidebar';
   import * as Tooltip from '@/components/ui/tooltip';
   import { Separator } from '@/components/ui/separator';
-  import { Badge } from '@/components/ui/badge';
-  import Rss from '@lucide/svelte/icons/rss';
-  import Eye from '@lucide/svelte/icons/eye';
-  import Users from '@lucide/svelte/icons/users';
-  import VolumeX from '@lucide/svelte/icons/volume-x';
-  import Warehouse from '@lucide/svelte/icons/warehouse';
-  import Ship from '@lucide/svelte/icons/ship';
-  import Package from '@lucide/svelte/icons/package';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
-  import Wallet from '@lucide/svelte/icons/wallet';
-  import Store from '@lucide/svelte/icons/store';
-  import BellRing from '@lucide/svelte/icons/bell-ring';
-  import Route from '@lucide/svelte/icons/route';
-  import Paintbrush from '@lucide/svelte/icons/paintbrush';
-  import Calculator from '@lucide/svelte/icons/calculator';
-  import Palette from '@lucide/svelte/icons/palette';
-  import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import HintBadge from '@/components/HintBadge.svelte';
+  import TipButton from '@/components/TipButton.svelte';
   import Settings from '@lucide/svelte/icons/settings';
   import EyeOff from '@lucide/svelte/icons/eye-off';
-  import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
-  import { INCOGNITO, storeLogItem } from '@/lib/settings';
+  import { HUB_GROUPS, HUB_PAGES, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
+  import { INCOGNITO, feedItem, storeLogItem } from '@/lib/settings';
   import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
 
   type Tab = HubTab;
-  /** A sidebar entry = one hub page (`#<tab>`). No second-level tab bars: every view people switch between is its own entry. */
-  interface Item {
-    tab: Tab;
-    label: string;
-    sub: string;
-    icon: Component;
-  }
-  const GROUPS: { label: string; items: Item[] }[] = [
-    {
-      label: 'Spectrum',
-      items: [
-        { tab: 'feed', label: 'Feed', sub: 'What your watches found', icon: Rss },
-        { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
-        { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users },
-        { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
-      ],
-    },
-    {
-      label: 'Hangar',
-      items: [
-        { tab: 'hangar', label: 'Pledges', sub: 'Every pledge in your hangar', icon: Warehouse },
-        { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
-        { tab: 'fleet', label: 'My ships', sub: 'Hulls, in-game ships, insurance, compare', icon: Ship },
-        { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
-        { tab: 'items', label: 'My items', sub: 'Everything else in your pledges', icon: Package },
-        { tab: 'buyback', label: 'Buyback', sub: 'What you melted', icon: Undo2 },
-        { tab: 'wallet', label: 'Wallet', sub: "Credits, spend, Chairman's Club, funding", icon: Wallet },
-      ],
-    },
-    {
-      label: 'Store',
-      items: [
-        { tab: 'notifications', label: 'Notifications', sub: 'Store changes: what was added and removed', icon: BellRing },
-        { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, wishlist', icon: Store },
-        { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · Concierge · Subscribers', icon: LayoutGrid },
-        { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route },
-        { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
-      ],
-    },
-  ];
-  /** Settings sits in the header (gear) rather than the nav: 15 page entries + footer already fill an 800px window. */
-  const SETTINGS: Item = { tab: 'settings', label: 'Settings', sub: 'Theme, Spectrum, notifications', icon: Settings };
-  const ITEMS = [...GROUPS.flatMap((g) => g.items), SETTINGS];
-  const TABS = new Set<string>(ITEMS.map((i) => i.tab));
+  /** A sidebar entry = one hub page (`#<tab>`). No second-level tab bars: every view people switch between is its own entry.
+   *  Settings sits in the header (gear) rather than the nav: 15 page entries + footer already fill an 800px window. */
+  type Item = HubPage;
+  const ITEMS = HUB_PAGES;
 
   /** `#tab` or `#tab?key=value` (e.g. `#ccu?to=42` from Store / the RSI page button, `#browse?who=concierge`). */
   function fromHash(): Tab {
     const l = legacyHash(location.hash);
     if (l) history.replaceState(null, '', l);
     const h = location.hash.slice(1).split('?')[0] ?? '';
-    return TABS.has(h) ? (h as Tab) : 'feed';
+    return isHubTab(h) ? pageOf(h).tab : 'feed'; // pageOf folds the legacy `ships` alias
   }
   const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
 
+  const TOUR: TourStep[] = [
+    { icon: pageOf('hangar').icon, title: 'Load your hangar', description: 'Pledges reads every page of your RSI hangar into this browser — melt values, insurance, CCUs, items. Nothing leaves it.', href: '#hangar', linkLabel: 'Open Pledges' },
+    { icon: pageOf('fleet').icon, title: 'Ships, CCUs, paints', description: 'Your hulls with size and stage, every upgrade you hold with what it saves, and the paints you own per ship.', href: '#fleet', linkLabel: 'Open Ships' },
+    { icon: pageOf('store').icon, title: 'The store, filtered', description: 'Ship catalog and Browse show what RSI sells right now — warbond, limited time, new, Concierge — with your hangar matched against it.', href: '#store', linkLabel: 'Open Ship catalog' },
+    { icon: pageOf('ccu').icon, title: 'Plan upgrades', description: 'The CCU planner finds the cheapest chain to a ship using CCUs on sale and the ones you already own, then fills your RSI cart.', href: '#ccu', linkLabel: 'Open the planner' },
+    { icon: pageOf('feed').icon, title: 'Feed', description: 'Watched Spectrum threads, friends coming online, friend requests, store alerts and store changes land here. Settings has the switches.', href: '#feed', linkLabel: 'Open Feed' },
+  ];
   let tab = $state<Tab>(fromHash());
-  /** Store changes not yet dismissed — "+32 −5" on the Notifications entry. */
+
+  /**
+   * Panels load on first visit (one chunk each) instead of all fifteen up front: the hub chunk was 1.1 MB parsed on
+   * every open. The rest are fetched in idle time after the first panel paints, so switching stays instant. A loaded
+   * panel stays loaded (same component instance rules as before: Pledges / Melt share one, Paints / Fleet / Paint rebuy share one).
+   */
+  const LOADERS = {
+    feed: () => import('@/components/FeedPanel.svelte'),
+    watching: () => import('@/components/WatchingPanel.svelte'),
+    friends: () => import('@/components/FriendsPanel.svelte'),
+    hangar: () => import('@/components/HangarPanel.svelte'),
+    wallet: () => import('@/components/WalletPanel.svelte'),
+    ships: () => import('@/components/ShipsPanel.svelte'),
+    items: () => import('@/components/ItemsPanel.svelte'),
+    buyback: () => import('@/components/BuybackPanel.svelte'),
+    store: () => import('@/components/StorePanel.svelte'),
+    browse: () => import('@/components/BrowsePanel.svelte'),
+    ccus: () => import('@/components/CcusPanel.svelte'),
+    ccu: () => import('@/components/CcuPanel.svelte'),
+    settings: () => import('@/components/SettingsPanel.svelte'),
+    mutes: () => import('@/components/MutesPanel.svelte'),
+  } as const;
+  type PanelKey = keyof typeof LOADERS;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let loaded = $state<Partial<Record<PanelKey, Component<any>>>>({});
+  const panelKey = $derived<PanelKey>(
+    tab === 'melt' ? 'hangar' : tab === 'fleet' || tab === 'paint-rebuy' || tab === 'paints' ? 'ships' : tab in LOADERS ? (tab as PanelKey) : 'mutes',
+  );
+  const Panel = $derived(loaded[panelKey]);
+  const load = (k: PanelKey) => (loaded[k] ? Promise.resolve() : LOADERS[k]().then((m) => void (loaded[k] = m.default)));
+  let prefetched = false;
+  $effect(() => {
+    const k = panelKey;
+    void load(k).then(() => {
+      if (prefetched) return;
+      prefetched = true;
+      const idle = (fn: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 1500));
+      idle(() => {
+        for (const other of Object.keys(LOADERS) as PanelKey[]) if (other !== k) void load(other);
+      });
+    });
+  });
+  /** Feed entry badges: unseen events, and store changes not yet dismissed ("+32 −5"). */
   let notices = $state({ add: 0, remove: 0 });
+  let unseen = $state(0);
   $effect(() => {
     storeLogItem.getValue().then((v) => (notices = tally(cleanLog(v))));
-    return storeLogItem.watch((v) => (notices = tally(cleanLog(v))));
+    feedItem.getValue().then((f) => (unseen = (f ?? []).filter((e) => !e.seen).length));
+    const offs = [storeLogItem.watch((v) => (notices = tally(cleanLog(v)))), feedItem.watch((f) => (unseen = (f ?? []).filter((e) => !e.seen).length))];
+    return () => offs.forEach((off) => off());
   });
   let ccuTo = $state<number | null>(Number(hashParam('to')) || null);
   let ccuAhead = $state(hashParam('ahead') === '1'); // `#ccu?to=&ahead=1`: the hull isn't on sale, start with Plan ahead on
@@ -120,7 +103,7 @@
     return () => window.removeEventListener('hashchange', onHash);
   });
 
-  const current = $derived(ITEMS.find((i) => i.tab === tab)!);
+  const current = $derived(pageOf(tab));
 
   function select(it: Item) {
     const hash = `#${it.tab}`;
@@ -173,20 +156,20 @@
             RSI<span class="text-primary">+</span>
           </h1>
           {#if INCOGNITO}
-            <Badge variant="outline" class="text-muted-foreground h-[18px] rounded-md px-1.5 text-[11px] font-semibold group-data-[collapsible=icon]:hidden" title="Incognito: separate login, friends, hangar, reads and party mode">incognito</Badge>
+            <HintBadge variant="muted" class="h-[18px] rounded-md px-1.5 text-[11px] font-semibold group-data-[collapsible=icon]:hidden" hint="Incognito: separate login, friends, hangar, reads and party mode">incognito</HintBadge>
           {/if}
         </div>
       </Sidebar.Header>
       <Sidebar.Content>
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <nav aria-label="Sections" onkeydown={onKey}>
-          {#each GROUPS as g (g.label)}
+          {#each HUB_GROUPS as g (g.label)}
             <Sidebar.Group class="py-1">
               <Sidebar.GroupLabel>{g.label}</Sidebar.GroupLabel>
               <Sidebar.GroupContent>
                 <Sidebar.Menu>
                   {#each g.items as it (it.tab)}
-                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'notifications' ? notices.add + notices.remove : 0} badge={it.tab === 'notifications' ? [notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} onselect={() => select(it)} />
+                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'feed' ? unseen + notices.add + notices.remove : 0} badge={it.tab === 'feed' ? [unseen ? { text: String(unseen), tone: 'info' as const } : null, notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} onselect={() => select(it)} />
                   {/each}
                 </Sidebar.Menu>
               </Sidebar.GroupContent>
@@ -194,10 +177,6 @@
           {/each}
         </nav>
       </Sidebar.Content>
-      <Sidebar.Footer>
-        <SidebarSupport />
-        <SidebarFan />
-      </Sidebar.Footer>
       <Sidebar.Rail />
     </Sidebar.Root>
 
@@ -209,64 +188,51 @@
           <h2 id="hub-title" class="m-0 truncate text-base font-semibold">{current.label}</h2>
           <span class="text-muted-foreground truncate text-xs">{current.sub}</span>
         </div>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button {...props} variant={privacy.on ? 'outline' : 'ghost'} size={privacy.on ? 'sm' : 'icon-sm'} class={cn(privacy.on && 'border-warning/60 text-warning hover:text-warning')} aria-pressed={privacy.on} onclick={togglePrivacy}>
-                <EyeOff aria-hidden="true" />{#if privacy.on}Screenshare{/if}
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>{privacy.on ? 'Screenshare mode on — spend, credit and account names hidden. Click to show them.' : 'Screenshare mode: hide spend, store credit, buyback prices, spend charts and account names'}</Tooltip.Content>
-        </Tooltip.Root>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <Button {...props} id="nav-settings" variant="ghost" size="icon-sm" class={cn(tab === 'settings' && 'bg-accent text-primary')} aria-pressed={tab === 'settings'} aria-controls="panel" onclick={() => select(SETTINGS)}>
-                <Settings aria-hidden="true" />
-              </Button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>Settings — theme, Spectrum, notifications</Tooltip.Content>
-        </Tooltip.Root>
+        <!-- One size in both states so the header doesn't jump; the state is the tone + aria-pressed, the words are in the tip. -->
+        <TipButton
+          variant={privacy.on ? 'outline' : 'ghost'}
+          size="icon-sm"
+          class={cn(privacy.on && 'border-warning/60 text-warning hover:text-warning')}
+          aria-label="Screenshare mode"
+          aria-pressed={privacy.on}
+          onclick={togglePrivacy}
+          tip={privacy.on ? 'Screenshare mode on — spend, credit and account names hidden. Click to show them.' : 'Screenshare mode: hide spend, store credit, buyback prices, spend charts and account names'}
+        >
+          <EyeOff aria-hidden="true" />
+        </TipButton>
+        <ProductTour steps={TOUR} />
+        <TipButton
+          id="nav-settings"
+          variant="ghost"
+          size="icon-sm"
+          class={cn(tab === 'settings' && 'bg-accent text-primary')}
+          aria-label={SETTINGS_PAGE.label}
+          aria-pressed={tab === 'settings'}
+          aria-controls="panel"
+          onclick={() => select(SETTINGS_PAGE)}
+          tip={`${SETTINGS_PAGE.label} — ${SETTINGS_PAGE.sub.toLowerCase()}`}
+        >
+          <Settings aria-hidden="true" />
+        </TipButton>
         <AccountSwitch />
       </header>
 
       <main id="panel" class="mx-auto w-full max-w-[1800px] min-w-0 p-6 pb-12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-sm:px-3" aria-labelledby="hub-title" tabindex="-1">
-        {#if tab === 'feed'}
-          <FeedPanel />
-        {:else if tab === 'watching'}
-          <WatchingPanel />
-        {:else if tab === 'friends'}
-          <FriendsPanel />
-        {:else if tab === 'hangar' || tab === 'melt'}
+        {#if !Panel}
+          <SkeletonSwap ready={false} lines={8} lineHeight={44} label="Page"><div></div></SkeletonSwap>
+        {:else if panelKey === 'hangar'}
           <!-- One instance for both pages: the melt ticks and filters survive switching between them. -->
-          <HangarPanel pane={tab === 'melt' ? 'melt' : 'pledges'} />
-        {:else if tab === 'wallet'}
-          <WalletPanel />
-        {:else if tab === 'paints' || tab === 'fleet' || tab === 'paint-rebuy'}
-          <ShipsPanel view={tab === 'fleet' ? 'ships' : tab === 'paint-rebuy' ? 'bundle' : 'paints'} />
-        {:else if tab === 'items'}
-          <ItemsPanel />
-        {:else if tab === 'buyback'}
-          <BuybackPanel />
-        {:else if tab === 'store'}
-          <StorePanel />
-        {:else if tab === 'browse'}
-          <BrowsePanel />
-        {:else if tab === 'notifications'}
-          <StoreLog />
-        {:else if tab === 'ccu'}
-          <CcuPanel initialTo={ccuTo} initialAhead={ccuAhead} />
-        {:else if tab === 'settings'}
-          <SettingsPanel />
+          <Panel pane={tab === 'melt' ? 'melt' : 'pledges'} />
+        {:else if panelKey === 'ships'}
+          <Panel view={tab === 'fleet' ? 'ships' : tab === 'paint-rebuy' ? 'bundle' : 'paints'} />
+        {:else if panelKey === 'ccu'}
+          <Panel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else}
-          <MutesPanel />
+          <Panel />
         {/if}
-        <!-- Fankit: the notice goes in an always-visible nav area and/or the home page. The sidebar footer covers every
-             page on desktop; on mobile the sidebar is a sheet, so the footer stays under every page there. -->
-        <FanNotice variant="footer" class={tab === 'feed' ? 'mt-10' : 'mt-10 sm:hidden'} />
       </main>
+      <!-- Fankit: notice in an always-visible nav area (sidebar, short) and/or the home page — the footer carries the full one on every page. -->
+      <HubFooter />
     </Sidebar.Inset>
   </Sidebar.Provider>
 </Tooltip.Provider>

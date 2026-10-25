@@ -1,6 +1,6 @@
 import * as api from '@/lib/api';
 import { normThread } from '@/lib/capture';
-import { appendLog, blankNote, markRemoved, partyActive, partyEvent, partyTargets, requestEvents, touchNotes, type PartyLogEntry } from '@/lib/friends';
+import { appendLog, blankNote, markRemoved, noteEvents, partyActive, partyEvent, partyTargets, requestEvents, touchNotes, type PartyLogEntry } from '@/lib/friends';
 import { respond, type BgRequest, type BgResponses, type BulkResult, type HubTab } from '@/lib/messages';
 import { citizenOrgsUrl, ORG_TTL, parseCitizenOrgs, type OrgCache } from '@/lib/orgs';
 import {
@@ -25,7 +25,8 @@ import {
 } from '@/lib/settings';
 import { ding } from '@/lib/sound';
 import { chainEvents } from '@/lib/ccu';
-import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, withExtraShips, type Catalog, type PaintCatalog } from '@/lib/store';
+import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
+import { sleep } from '@/lib/utils';
 import { catalogEntries, listingEntries } from '@/lib/storelog';
 import { saveStoreCopy } from '@/lib/storelog-save';
 import { threadUrl } from '@/lib/types';
@@ -33,7 +34,6 @@ import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, ty
 
 const ALARM = 'spectrumplus:poll';
 const PARTY_ALARM = 'spectrumplus:party';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default defineBackground(() => {
   // Dev only: WXT's hot reload registers content scripts from every background; under `incognito: split` the two
@@ -199,6 +199,7 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     await presenceItem.setValue(Object.fromEntries(f.friends.map((m) => [m.id, m.presence?.status ?? 'offline'])));
     const notes = await snapshot(f, now);
     events.push(...requestEvents(await seenRequestsItem.getValue(), f.requests, f.me.id, now));
+    events.push(...pendingFriendEvents.splice(0));
     await seenRequestsItem.setValue(f.requests.filter((r) => r.target_member_id === f.me.id).map((r) => r.id));
     const party = partyEvent(notes, new Set(f.friends.map((m) => m.id)), s.partyRemindHours, now);
     if (party) events.push(party);
@@ -234,17 +235,19 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     errors.push(`store listing: ${(e as Error).message}`);
   }
 
-  // Re-read before writing: the user may have edited watches while we polled.
+  // Re-read before writing: the user may have edited watches while we polled. Unchanged → no write (sync storage
+  // allows 120 writes/min, and every write repaints the hub's watchers).
   const cur = await getWatches();
-  await watchesItem.setValue({
+  const nextWatches = {
     ...cur,
     threads: cur.threads.map((t) => (replies.has(t.id) ? { ...t, ...replies.get(t.id)! } : t)),
     channels: cur.channels.map((c) => (lastIds.has(c.id) ? { ...c, lastThreadId: lastIds.get(c.id)! } : c)),
-  });
+  };
+  if (JSON.stringify(nextWatches) !== JSON.stringify(cur)) await watchesItem.setValue(nextWatches);
   const before = await feedItem.getValue();
   const merged = mergeEvents(before, events);
   const added = merged.filter((e) => !before.some((b) => b.key === e.key));
-  await feedItem.setValue(merged);
+  if (JSON.stringify(merged) !== JSON.stringify(before)) await feedItem.setValue(merged);
   if (s.notify)
     for (const e of added.slice(0, 5))
       browser.notifications.create(e.key, { type: 'basic', iconUrl: browser.runtime.getURL('/icon/128.png'), title: e.title, message: e.body });
@@ -266,9 +269,15 @@ async function friends(): Promise<api.FriendsData> {
 async function snapshot(f: api.FriendsData, now: number) {
   const notes = await friendNotesItem.getValue();
   const touched = touchNotes(notes, f.friends, now, f.friends.length > 0);
-  if (touched) await friendNotesItem.setValue(touched);
+  if (touched) {
+    await friendNotesItem.setValue(touched);
+    // Friends added / gone become feed events; the next poll (or this one) merges them.
+    pendingFriendEvents.push(...noteEvents(notes, touched, f.friends, now));
+  }
   return touched ?? notes;
 }
+/** Feed events found while snapshotting the friend list outside a poll (hub reads); drained by the next poll. */
+const pendingFriendEvents: FeedEvent[] = [];
 
 async function bulk(ids: string[], fn: (id: string) => Promise<unknown>): Promise<BulkResult> {
   const out: BulkResult = { done: [], failed: [] };
@@ -284,9 +293,19 @@ async function bulk(ids: string[], fn: (id: string) => Promise<unknown>): Promis
   return out;
 }
 
-/** Fetch citizen org pages for the given nicknames (stale/missing only unless forced), ~1 req/s. */
+/** The org cache keeps the newest entries only (one per nickname ever looked up, otherwise unbounded). */
+const ORG_CACHE_MAX = 2000;
+function capOrgs(c: OrgCache): OrgCache {
+  const keys = Object.keys(c);
+  if (keys.length <= ORG_CACHE_MAX) return c;
+  const keep = keys.sort((a, b) => (c[b]?.at ?? 0) - (c[a]?.at ?? 0)).slice(0, ORG_CACHE_MAX);
+  return Object.fromEntries(keep.map((k) => [k, c[k]!]));
+}
+
+/** Fetch citizen org pages for the given nicknames (stale/missing only unless forced), ~1 req/s. One cache write per call (the hub sends batches of 10). */
 async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
-  let cache = await orgCacheItem.getValue();
+  const cache = await orgCacheItem.getValue();
+  const fetched: OrgCache = {};
   const now = Date.now();
   const out: OrgCache = {};
   let first = true;
@@ -305,9 +324,10 @@ async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
     } catch (e) {
       out[key] = { at: now, orgs: hit?.orgs ?? [], error: (e as Error).message };
     }
-    cache = { ...(await orgCacheItem.getValue()), [key]: out[key]! };
-    await orgCacheItem.setValue(cache);
+    fetched[key] = out[key]!;
   }
+  // Re-read before writing: another batch may have landed meanwhile.
+  if (Object.keys(fetched).length) await orgCacheItem.setValue(capOrgs({ ...(await orgCacheItem.getValue()), ...fetched }));
   return out;
 }
 
@@ -315,7 +335,7 @@ let catalogPromise: Promise<Catalog> | null = null;
 /** Public pledge-store catalog; cached 30 min unless `fresh`. */
 async function catalog(fresh: boolean): Promise<Catalog> {
   const cached = await catalogItem.getValue();
-  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return { ...cached, ships: withExtraShips(cached.ships) };
+  if (!fresh && cached && Date.now() - cached.at < 30 * 60_000) return cached; // fetchCatalog already applied withExtraShips
   catalogPromise ??= fetchCatalog()
     .then(async (c) => {
       await catalogItem.setValue(c);
@@ -386,7 +406,7 @@ async function doPartyTick() {
     await friendNotesItem.setValue(next);
     const ev: FeedEvent = {
       key: `party-accept:${accepted.map((e) => e.requestId).join(',')}`,
-      kind: 'friend',
+      kind: 'party',
       title: `Party mode: accepted ${accepted.length} friend request${accepted.length === 1 ? '' : 's'}`,
       body: accepted.map((e) => e.displayname).join(', '),
       url: 'hub.html#friends',

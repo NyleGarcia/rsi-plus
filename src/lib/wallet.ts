@@ -6,6 +6,10 @@
  * `data.funds` (lifetime, cents), `data.fans` (citizens), `data.chart[key] = {gross (cents), axis}` for the last 7
  * periods. Keys are `YYYY-MM-DD`, `YYYY-WW` or `YYYY-MM`.
  */
+import { MONTHS, monthKey, monthKeys } from './dates';
+import { r2 } from './money';
+import { isGifted } from './pledge-facets';
+import { dateValue } from './sort';
 import type { OwnedCcu } from './ccu';
 import type { Pledge, PledgeType } from './hangar';
 import { matchShip, type CatalogShip } from './store';
@@ -37,7 +41,6 @@ interface Raw {
   data?: { funds?: number | string; fans?: number | string; chart?: Record<string, { gross: string | number; axis?: string }> };
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function pointLabel(key: string, range: FundingRange): string {
   const parts = key.split('-');
@@ -77,12 +80,11 @@ export interface Bucket {
   count: number;
 }
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Melt value per year of the pledge's "Created" date; unparseable dates land in "?". Oldest first. */
 export function spendByYear(pledges: Pledge[]): Bucket[] {
   const years = bucket(pledges, (p) => {
-    const t = Date.parse(p.date);
+    const t = dateValue(p.date);
     return Number.isNaN(t) ? '?' : String(new Date(t).getFullYear());
   });
   return [...years.filter((b) => b.key !== '?'), ...years.filter((b) => b.key === '?')];
@@ -90,17 +92,11 @@ export function spendByYear(pledges: Pledge[]): Bucket[] {
 
 /** Melt value per calendar month (`YYYY-MM`) over the last `months` months, every month present (zeros kept). */
 export function spendByMonth(pledges: Pledge[], months = 24, now = new Date()): Bucket[] {
-  const keys: string[] = [];
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  }
-  const m = new Map(keys.map((k) => [k, { key: k, label: MONTHS[Number(k.slice(5)) - 1] ?? k, value: 0, count: 0 }]));
+  const m = new Map(monthKeys(months, now).map((k) => [k.key, { ...k, value: 0, count: 0 }]));
   for (const p of pledges) {
-    const t = Date.parse(p.date);
+    const t = dateValue(p.date);
     if (Number.isNaN(t)) continue;
-    const d = new Date(t);
-    const b = m.get(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    const b = m.get(monthKey(new Date(t)));
     if (!b) continue;
     b.value = r2(b.value + p.value);
     b.count++;
@@ -157,7 +153,7 @@ export interface SpendSummary {
 }
 
 export function spendSummary(pledges: Pledge[], now = Date.now()): SpendSummary {
-  const dates = pledges.map((p) => Date.parse(p.date)).filter((t) => !Number.isNaN(t));
+  const dates = pledges.map((p) => dateValue(p.date)).filter((t) => !Number.isNaN(t));
   const since = dates.length ? Math.min(...dates) : null;
   const value = r2(pledges.reduce((s, p) => s + p.value, 0));
   const years = since ? Math.max(0.1, Math.round(((now - since) / 31557600000) * 10) / 10) : 0;
@@ -292,4 +288,53 @@ export function fundingStats(f: Funding, now = new Date()): FundingStats {
   const average = done.length ? r2(done.reduce((n, p) => n + p.usd, 0) / done.length) : 0;
   const best = done.reduce<FundingPoint | null>((b, p) => (!b || p.usd > b.usd ? p : b), null);
   return { average, best, projected: current ? r2(current.usd / periodElapsed(f.range, now)) : 0 };
+}
+
+// ---- Where the money went: what the hangar can and cannot tell ----
+
+export interface SpendLedger {
+  /** Warbond pledges: paid with new money for sure (cents-free USD like the rest of the hangar). */
+  newMoney: number;
+  newMoneyCount: number;
+  /** Standard pledges: cash or store credit — RSI's hangar does not say which. */
+  either: number;
+  eitherCount: number;
+  /** Paid customization on top of pledges (`configValue`) — cash. */
+  custom: number;
+  /** Pledges with no melt value that are not flair: received as gifts (or free). */
+  gifted: number;
+  /** $0 flair / hangar / subscriber items. */
+  free: number;
+  /** Melt value sitting in buyback whose price was read — store credit you got back and may have spent again. */
+  melted: number;
+  meltedCount: number;
+  /** Buyback entries without a price yet. */
+  meltedUnknown: number;
+  /** Cash you paid at least (standard pledges could all have been bought with melted credit) and at most. */
+  cashMin: number;
+  cashMax: number;
+}
+
+export function spendLedger(pledges: Pledge[], buyback: { price?: number; type: PledgeType }[] = []): SpendLedger {
+  const wb = pledges.filter((p) => p.value > 0 && p.warbond);
+  const std = pledges.filter((p) => p.value > 0 && !p.warbond);
+  const newMoney = r2(wb.reduce((s, p) => s + p.value, 0));
+  const either = r2(std.reduce((s, p) => s + p.value, 0));
+  const custom = r2(pledges.reduce((s, p) => s + (p.configValue ?? 0), 0));
+  const priced = buyback.filter((b) => b.price != null);
+  const melted = r2(priced.reduce((s, b) => s + (b.price ?? 0) / 100, 0));
+  return {
+    newMoney,
+    newMoneyCount: wb.length,
+    either,
+    eitherCount: std.length,
+    custom,
+    gifted: pledges.filter(isGifted).length,
+    free: pledges.filter((p) => p.value === 0 && !isGifted(p)).length,
+    melted,
+    meltedCount: priced.length,
+    meltedUnknown: buyback.length - priced.length,
+    cashMin: r2(newMoney + custom + Math.max(0, either - melted)),
+    cashMax: r2(newMoney + custom + either),
+  };
 }

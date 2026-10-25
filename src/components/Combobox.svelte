@@ -21,8 +21,9 @@
    */
   import * as Popover from '@/components/ui/popover';
   import * as Command from '@/components/ui/command';
-  import { buttonVariants } from '@/components/ui/button';
+  import { Button, buttonVariants } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
+  import HintBadge from './HintBadge.svelte';
   import X from '@lucide/svelte/icons/x';
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 
@@ -100,6 +101,7 @@
 {#snippet marked(text: string)}{#each mark(text) as p, j (j)}{#if p.hit}<mark class="bg-transparent font-semibold text-primary">{p.t}</mark>{:else}{p.t}{/if}{/each}{/snippet}
 
 <Popover.Root bind:open={() => open, setOpen}>
+  <div class="relative flex min-w-0">
   <Popover.Trigger {disabled}>
     {#snippet child({ props })}
       <button
@@ -116,6 +118,7 @@
           buttonVariants({ variant: 'outline' }),
           'h-auto min-h-8 w-full min-w-0 justify-start gap-1.5 px-2.5 py-1.5 text-left font-normal',
           !selected && 'text-muted-foreground',
+          clearable && selected && !disabled && 'pr-12',
         )}
       >
         <span class="min-w-0 flex-1 truncate">
@@ -125,21 +128,14 @@
             {placeholder}
           {/if}
         </span>
-        {#if clearable && selected && !disabled}
-          <span
-            class="text-muted-foreground hover:text-foreground -my-1 inline-flex rounded p-0.5"
-            role="button"
-            tabindex="-1"
-            aria-label="Clear"
-            onpointerdown={(e) => e.stopPropagation()}
-            onclick={(e) => (e.stopPropagation(), pick(null))}
-            onkeydown={(e) => e.stopPropagation()}><X class="size-3.5" /></span
-          >
-        {/if}
         <ChevronsUpDown class="text-muted-foreground size-3.5 opacity-70" aria-hidden="true" />
       </button>
     {/snippet}
   </Popover.Trigger>
+  {#if clearable && selected && !disabled}
+    <Button variant="ghost" size="icon-xs" class="text-muted-foreground hover:text-foreground absolute top-1/2 right-7 size-5 -translate-y-1/2" aria-label="Clear" onclick={() => pick(null)}><X class="size-3.5" /></Button>
+  {/if}
+  </div>
   <Popover.Content align="start" class="w-(--bits-popover-anchor-width) min-w-[300px] gap-0 p-0">
     <Command.Root shouldFilter={false} bind:value={highlighted} label={ariaLabel}>
       <Command.Input bind:value={q} placeholder="Type to search…" aria-label={ariaLabel} autocomplete="off" spellcheck="false" />
@@ -160,7 +156,7 @@
                 <span class="grid min-w-0 flex-1 gap-0.5">
                   <span class="flex min-w-0 items-center gap-1.5">
                     <span class={cn('min-w-0 truncate', o.value === value && 'font-semibold')}>{@render marked(o.label)}</span>
-                    {#if o.tag}<span class="border-warning/40 text-warning shrink-0 rounded-full border px-1.5 text-[10px] leading-4 whitespace-nowrap" title={o.tagHint}>{o.tag}</span>{/if}
+                    {#if o.tag}<HintBadge variant="warning" hint={o.tagHint} class="h-4 shrink-0 px-1.5 text-[10px]">{o.tag}</HintBadge>{/if}
                   </span>
                   {#if o.sublabel}<span class="text-muted-foreground truncate text-xs">{@render marked(o.sublabel)}</span>{/if}
                 </span>

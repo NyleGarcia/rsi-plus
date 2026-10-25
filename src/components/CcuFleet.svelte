@@ -7,17 +7,27 @@
    */
   import { planFleet, STORE_START, type Goal, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
   import { ccuGoalsItem } from '@/lib/settings';
-  import { lastSale, usd, type CatalogShip, type SaleHistory } from '@/lib/store';
+  import { usd, type CatalogShip, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
+  import { transient } from '@/lib/flash.svelte';
+  import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
   import ShipSelect from './ShipSelect.svelte';
   import Segmented from './Segmented.svelte';
   import Stat from './Stat.svelte';
+  import StatGrid from './StatGrid.svelte';
+  import Chip from './Chip.svelte';
+  import HintBadge from './HintBadge.svelte';
+  import LazyTip from './LazyTip.svelte';
+  import SwitchRow from './SwitchRow.svelte';
+  import TipButton from './TipButton.svelte';
+  import Tag from './Tag.svelte';
+  import * as Alert from '@/components/ui/alert';
   import * as Table from '@/components/ui/table';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
-  import { Checkbox } from '@/components/ui/checkbox';
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
+  import { fmtDate } from '@/lib/dates';
   import ArrowDown from '@lucide/svelte/icons/arrow-down';
   import ArrowUp from '@lucide/svelte/icons/arrow-up';
   import Plus from '@lucide/svelte/icons/plus';
@@ -77,7 +87,7 @@
   });
 
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
-  const name = (id: number | null) => (id == null ? 'Auto' : id === STORE_START ? 'Store' : (byId.get(id)?.name ?? `#${id}`));
+  const name = (id: number | null) => shipName(byId, id);
   const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer: [...new Set([...prefer, ...labelPrefer])] }));
   const payNow = $derived(fleet.total - fleet.later);
   /** Every CCU the plan waits for, cheapest first: hull, which goal, planned cost, when last seen on sale. */
@@ -86,10 +96,7 @@
       .flatMap((l, i) => (l.plan?.steps ?? []).filter((s) => s.kind === 'future').map((s) => ({ s, goal: i + 1 })))
       .sort((a, b) => a.s.cost - b.s.cost),
   );
-  const seen = (id: number) => {
-    const t = lastSale(sales, id);
-    return t ? `last on sale ${new Date(t).toLocaleDateString()}` : 'not seen on sale yet';
-  };
+  const seen = (id: number) => lastSaleLabel(sales, id);
 
   // ---- editing goals ----
   let addTo = $state<number | null>(null);
@@ -98,7 +105,6 @@
   const wantable = $derived(wantOwned ? ships : ships.filter((s) => !mine.some((m) => m.id === s.id)));
   /** One-shot pickers (stops, keep): bound here and cleared after each pick so they read empty again. */
   let picks = $state<Record<string, number | null>>({});
-  const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   function addGoal(id: number | null) {
     if (id == null) return;
     goals = [...goals, { id: uid(), fromId: null, targetId: id, via: [], storeStart: false, lti: 'any' }];
@@ -129,14 +135,14 @@
 
   // ---- save ----
   let planName = $state('');
-  let savedMsg = $state('');
+  const savedMsg = transient(3000);
   async function savePlan() {
-    const group = planName.trim() || `Fleet plan ${new Date().toLocaleDateString()}`;
+    const group = planName.trim() || `Fleet plan ${fmtDate(Date.now())}`;
     const now = Date.now();
     const made: SavedChain[] = fleet.legs
       .filter((l) => l.plan && l.startId != null)
       .map((l, i) => ({
-        id: `${now.toString(36)}${i}${Math.random().toString(36).slice(2, 5)}`,
+        id: `${uid()}${i}`,
         name: `${name(l.startId)} → ${name(l.goal.targetId)}`,
         group,
         at: now,
@@ -149,8 +155,7 @@
       }));
     // Saving under an existing plan name replaces that plan's chains.
     await persist([...chains.filter((c) => c.group !== group), ...made]);
-    savedMsg = `Saved “${group}” · ${made.length} chain${made.length === 1 ? '' : 's'}`;
-    setTimeout(() => (savedMsg = ''), 3000);
+    savedMsg.show(`Saved “${group}” · ${made.length} chain${made.length === 1 ? '' : 's'}`);
   }
 </script>
 
@@ -190,13 +195,15 @@
           {/if}
           <span class="text-muted-foreground ml-2 text-xs">Stops</span>
           {#each g.via as v (v)}
-            <Badge variant="secondary" class="gap-1 pr-0.5">{name(v)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Remove stop ${name(v)}`} onclick={() => edit(i, { via: g.via.filter((x) => x !== v) })}><X /></Button></Badge>
+            <Chip removeLabel={`Remove stop ${name(v)}`} onremove={() => edit(i, { via: g.via.filter((x) => x !== v) })}>{name(v)}</Chip>
           {/each}
           <div class="w-[190px]"><ShipSelect ships={sortedShips} bind:value={() => picks[`via${g.id}`] ?? null, (v) => (picks[`via${g.id}`] = v)} price={false} onpick={(id) => (id != null && !g.via.includes(id) && edit(i, { via: [...g.via, id] }), (picks[`via${g.id}`] = null))} ariaLabel={`Add a stop for ${name(g.targetId)}`} placeholder="+ ship to fly on the way" /></div>
         </div>
         {#if srcOf(g) !== 'store'}
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-muted-foreground text-xs" title="A CCU keeps the pledge's insurance: upgrade an LTI copy to end with an LTI ship">Insurance</span>
+            <LazyTip tip="A CCU keeps the pledge's insurance: upgrade an LTI copy to end with an LTI ship">
+              {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help text-xs">Insurance</button>{/snippet}
+            </LazyTip>
             <Segmented
               options={[
                 { id: 'any', label: 'Any', hint: 'Any copy; a non-LTI copy is used first so LTI copies stay free for LTI goals' },
@@ -209,28 +216,37 @@
               size="sm"
             />
             {#if srcOf(g) === 'auto'}
-              <label class={cn('text-muted-foreground flex items-center gap-2 text-xs', g.lti === 'only' && 'opacity-50')} title="This goal may start by buying a standalone ship on sale instead of upgrading one of yours">
-                <Checkbox checked={!!g.storeStart && g.lti !== 'only'} disabled={g.lti === 'only'} onCheckedChange={(v) => edit(i, { storeStart: !!v })} /> may start from a store ship
-              </label>
+              <SwitchRow
+                id={`fleet-store-${g.id}`}
+                size="sm"
+                class={cn('text-xs', g.lti === 'only' && 'opacity-50')}
+                label="May start from a store ship"
+                hint="Buy a standalone ship on sale instead of upgrading one of yours"
+                checked={!!g.storeStart && g.lti !== 'only'}
+                disabled={g.lti === 'only'}
+                onchange={(v) => edit(i, { storeStart: v })}
+              />
             {/if}
           </div>
         {/if}
         {#if leg}
           {#if !leg.plan}
-            <span class="text-destructive text-xs">No chain, even planning ahead — {leg.auto ? `no free ${g.lti === 'only' ? 'LTI ' : ''}hull of yours is cheaper than the target` : 'not reachable from that source'}, or a stop is not between source and target.</span>
+            <Alert.Root variant="destructive"><Alert.Description class="text-xs">No chain, even planning ahead — {leg.auto ? `no free ${g.lti === 'only' ? 'LTI ' : ''}hull of yours is cheaper than the target` : 'not reachable from that source'}, or a stop is not between source and target.</Alert.Description></Alert.Root>
           {:else}
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
-              {#if leg.auto}<Badge variant="outline" class="text-primary">auto: {name(leg.startId)}</Badge>{/if}
-              {#if leg.lti}<Badge variant="outline" class="border-warning/40 text-warning" title="Upgrades a copy on an LTI pledge — the target keeps LTI">LTI</Badge>{:else if g.lti === 'prefer' && leg.startId !== STORE_START}<Badge variant="outline" class="text-muted-foreground" title="No free LTI copy gets there — a non-LTI copy is used">no LTI copy</Badge>{/if}
-              {#if leg.ahead}<Badge variant="outline" class="border-warning/40 text-warning" title="Nothing on sale today gets there — planned through CCUs at MSRP, bought when they return">planned ahead</Badge>{/if}
+              {#if leg.auto}<Badge variant="info">auto: {name(leg.startId)}</Badge>{/if}
+              {#if leg.lti}<Tag kind="insurance" value="LTI" hint="Upgrades a copy on an LTI pledge — the target keeps LTI" />{:else if g.lti === 'prefer' && leg.startId !== STORE_START}<HintBadge variant="muted" hint="No free LTI copy gets there — a non-LTI copy is used">no LTI copy</HintBadge>{/if}
+              {#if leg.ahead}<HintBadge variant="warning" hint="Nothing on sale today gets there — planned through CCUs at MSRP, bought when they return">planned ahead</HintBadge>{/if}
               <span class="text-muted-foreground">{name(leg.startId)}</span>
               {#each leg.plan.steps as s, k (k)}
                 <span class="text-muted-foreground">→</span>
-                <span class={cn(s.kind === 'future' && 'text-warning', s.kind === 'owned' && 'text-success', g.via.includes(s.toId) && 'font-semibold')} title={`${s.label} · ${s.cost ? usd(s.cost) : 'free'}`}>{name(s.toId)}{s.kind === 'future' ? ' ⏳' : ''}</span>
+                <LazyTip tip={`${s.label} · ${s.cost ? usd(s.cost) : 'free'}`}>
+                  {#snippet trigger({ props })}<button type="button" {...props} class={cn('cursor-help', s.kind === 'future' && 'text-warning', s.kind === 'owned' && 'text-success', g.via.includes(s.toId) && 'font-semibold')}>{name(s.toId)}{s.kind === 'future' ? ' ⏳' : ''}</button>{/snippet}
+                </LazyTip>
               {/each}
               <span class="flex-1"></span>
               <span class="tabular-nums">{usd(leg.plan.total - leg.plan.later)} now{leg.plan.later ? ` · ${usd(leg.plan.later)} later` : ''} · <span class={cn(leg.plan.savings > 0 && 'text-success')}>{usd(leg.plan.savings)} saved</span></span>
-              <Button variant="outline" size="xs" onclick={() => leg.startId != null && onopen(leg.startId, g.targetId, g.via)} title="Open this chain in the single planner to verify it with RSI and add it to the cart">Open</Button>
+              <TipButton variant="outline" size="xs" onclick={() => leg.startId != null && onopen(leg.startId, g.targetId, g.via)} tip="Open this chain in the single planner to verify it with RSI and add it to the cart">Open</TipButton>
             </div>
           {/if}
         {/if}
@@ -238,52 +254,58 @@
     {/each}
     <div class="flex flex-wrap items-center gap-2">
       <div class="w-[260px]"><ShipSelect ships={wantable} mine={wantOwned ? mine : []} saleTag bind:value={addTo} onpick={addGoal} ariaLabel="Add a goal ship" placeholder="+ Add a ship you want…" /></div>
-      <label class="text-muted-foreground flex items-center gap-2 text-xs" title="List the ships already in your hangar too (another copy, or a goal you already reached)"><Checkbox bind:checked={wantOwned} /> include ships I own</label>
+      <SwitchRow id="fleet-want-owned" size="sm" class="text-xs" label="Include ships I own" hint="List the ships already in your hangar too (another copy, or a goal you already reached)" checked={wantOwned} onchange={(v) => (wantOwned = v)} />
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">Never auto-upgrade</span>
       {#each keep as k (k)}
-        <Badge variant="secondary" class="gap-1 pr-0.5">{name(k)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Allow ${name(k)}`} onclick={() => (keep = keep.filter((x) => x !== k))}><X /></Button></Badge>
+        <Chip removeLabel={`Allow ${name(k)}`} onremove={() => (keep = keep.filter((x) => x !== k))}>{name(k)}</Chip>
       {/each}
       <div class="w-[220px]"><ShipSelect ships={keepable} mine={keepable} onlyMine bind:value={() => picks.keep ?? null, (v) => (picks.keep = v)} price={false} onpick={(id) => (id != null && addKeep(id), (picks.keep = null))} ariaLabel="Ship to keep" placeholder="+ ship to keep flying" /></div>
       {#if keep.length}<Button variant="ghost" size="xs" onclick={() => (keep = [])}><X /> Clear all</Button>{/if}
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
-      <span class="text-muted-foreground" title="Auto upgrades one of these first whenever it gets to the target — cheap LTI tokens, ships you don't fly">Prefer to upgrade</span>
+      <LazyTip tip="Auto upgrades one of these first whenever it gets to the target — cheap LTI tokens, ships you don't fly">
+        {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help">Prefer to upgrade</button>{/snippet}
+      </LazyTip>
       {#each prefer as k (k)}
-        <Badge variant="secondary" class="text-success gap-1 pr-0.5">{name(k)}<Button variant="ghost" size="icon-xs" class="size-4" aria-label={`Stop preferring ${name(k)}`} onclick={() => (prefer = prefer.filter((x) => x !== k))}><X /></Button></Badge>
+        <Chip variant="success-soft" removeLabel={`Stop preferring ${name(k)}`} onremove={() => (prefer = prefer.filter((x) => x !== k))}>{name(k)}</Chip>
       {/each}
       <div class="w-[220px]"><ShipSelect ships={preferable} mine={preferable} onlyMine bind:value={() => picks.prefer ?? null, (v) => (picks.prefer = v)} price={false} onpick={(id) => (id != null && addPrefer([id]), (picks.prefer = null))} ariaLabel="Ship to upgrade first" placeholder="+ ship to upgrade first" /></div>
-      {#if ltiToAdd.length}<Button variant="outline" size="xs" onclick={() => addPrefer(ltiToAdd)} title={ltiToAdd.map((id) => name(id)).join(', ')}><Plus /> my LTI hulls ({ltiToAdd.length})</Button>{/if}
+      {#if ltiToAdd.length}<TipButton variant="outline" size="xs" onclick={() => addPrefer(ltiToAdd)} tip={ltiToAdd.map((id) => name(id)).join(', ')}><Plus /> my LTI hulls ({ltiToAdd.length})</TipButton>{/if}
       {#if prefer.length}<Button variant="ghost" size="xs" onclick={() => (prefer = [])}><X /> Clear all</Button>{/if}
-      {#if labelPrefer.length}<span class="text-muted-foreground" title="Pledges you labelled LTI token / CCU fodder on the Pledges page">+ from labels: {labelPrefer.map((id) => name(id)).join(', ')}</span>{/if}
+      {#if labelPrefer.length}
+        <LazyTip tip="Pledges you labelled LTI token / CCU fodder on the Pledges page">
+          {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help text-left">+ from labels: {labelPrefer.map((id) => name(id)).join(', ')}</button>{/snippet}
+        </LazyTip>
+      {/if}
     </div>
     <span class="text-muted-foreground text-xs">{hulls.reduce((n, h) => n + h.count, 0)} hull copies in your hangar · each starts at most one chain · Auto tries preferred hulls first, never the kept ones{keptByLabel ? ` · ${keptByLabel} pledge${keptByLabel === 1 ? '' : 's'} labelled Keep left out` : ''}</span>
   </fieldset>
 
   {#if goals.length}
-    <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
+    <StatGrid>
       <Stat value={usd(payNow)} label="to pay now" />
       {#if fleet.waits}<Stat value={usd(fleet.later)} label={`later · ${fleet.waits} CCU${fleet.waits === 1 ? '' : 's'} wait for a sale`} tone="accent" />{/if}
       <Stat value={usd(fleet.cash)} label="new money" />
       {#if fleet.paid}<Stat value={ownUsd(fleet.paid)} label="already paid (owned CCUs)" />{/if}
       <Stat value={usd(fleet.savings)} label="saved vs MSRP" valueTone={fleet.savings > 0 ? 'ok' : fleet.savings < 0 ? 'err' : null} />
       <Stat value={`${goals.length - fleet.failed} / ${goals.length}`} label="goals with a chain" valueTone={fleet.failed ? 'warn' : 'ok'} />
-    </div>
+    </StatGrid>
 
     {#if waiting.length}
       <div class="grid gap-1.5">
         <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Waiting for a sale · the Feed alerts once the plan is saved</span>
         <Table.Root>
           <Table.Header>
-            <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Goal</Table.Head><Table.Head>Planned</Table.Head><Table.Head>History</Table.Head></Table.Row>
+            <Table.Row><Table.Head>CCU</Table.Head><Table.Head>Goal</Table.Head><Table.Head class="text-right">Planned</Table.Head><Table.Head>History</Table.Head></Table.Row>
           </Table.Header>
           <Table.Body>
             {#each waiting as w, i (i)}
               <Table.Row>
                 <Table.Cell><span class="text-muted-foreground">{name(w.s.fromId)} →</span> <strong>{name(w.s.toId)}</strong></Table.Cell>
                 <Table.Cell>#{w.goal} {name(goals[w.goal - 1]?.targetId ?? null)}</Table.Cell>
-                <Table.Cell class="tabular-nums">{usd(w.s.cost)}</Table.Cell>
+                <Table.Cell class="text-right tabular-nums">{usd(w.s.cost)}</Table.Cell>
                 <Table.Cell class="text-muted-foreground text-[11px]">{seen(w.s.toId)}</Table.Cell>
               </Table.Row>
             {/each}
@@ -293,10 +315,10 @@
     {/if}
 
     <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), savePlan())}>
-      <Input class="h-7 w-56" placeholder="Plan name (optional)" bind:value={planName} aria-label="Plan name" />
+      <Input class="w-56" placeholder="Plan name (optional)" bind:value={planName} aria-label="Plan name" />
       <Button size="sm" type="submit" disabled={fleet.failed === goals.length}><Plus /> Save plan</Button>
       <span class="text-muted-foreground text-[11px]">One saved chain per goal; saving again under the same name replaces them. Saved chains keep their CCUs out of new plans.</span>
-      {#if savedMsg}<span class="text-success text-[11px]">{savedMsg}</span>{/if}
+      {#if savedMsg.text}<span class="text-success text-[11px]">{savedMsg.text}</span>{/if}
     </form>
   {/if}
 </div>
