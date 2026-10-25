@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.6.0...v0.7.0) (2026-10-25)
+
+
+### Features
+
+* **concierge:** exact Chairman's Club spend and distance to the next level from the order history (orders cash + subscription payments − refunds); subscription payment table in the reader ([5bd2dd0](https://github.com/NyleGarcia/rsi-plus/commit/5bd2dd027050ddd1697edb28b6bad377aa1bab3d))
+* **feed:** one Feed page — Activity (watches, friends added/gone, requests, party, store alerts, hangar changes) + Store changes view; kind chips, unseen switch, day headings; nav + popup badges ([650a7dd](https://github.com/NyleGarcia/rsi-plus/commit/650a7dd9ae7057ffa034d249e33b3bbfce67d809))
+* **filters:** facet bars with live counts on Pledges, Ships, Ship catalog and Browse; RSI ribbons (Limited time, New, Best value, Bonus, Fits, Low stock) and stage / size / gifted tags; new CCUs page (hangar + buyback upgrades, saving vs MSRP gap, chain use) ([834e8e0](https://github.com/NyleGarcia/rsi-plus/commit/834e8e0df9d367708abb96b03c062526377b1c45))
+* **filters:** FacetBar as a filter-button toolbar — option lists with counts, range sliders, + Filter menu, active chips with Clear all (adds ui/slider) ([bb7eea7](https://github.com/NyleGarcia/rsi-plus/commit/bb7eea7259c4cad06afa4190fcf75f8e0b19e722))
+* **hub:** dedicated footer on every page (fankit notice, version, links, coffee + referral under More); sidebar keeps the short fankit line ([2e85d8d](https://github.com/NyleGarcia/rsi-plus/commit/2e85d8d82d09040118f03ae3d000b5541a64835b))
+* **hub:** referral blurb in the footer (50,000 UEC after a game package) ([f24364e](https://github.com/NyleGarcia/rsi-plus/commit/f24364e7f4915d60f28c31ffc5a3c34409908430))
+* **ui:** 21st.dev ports — Stat count-up/trend/context + divided StatGrid, Timeline for the Feed, SkeletonSwap on catalog/browse, NewItemsPill, first-run ProductTour ([08ab976](https://github.com/NyleGarcia/rsi-plus/commit/08ab976b3211db5bacc43c09f6abba9270d08ea6))
+* **ui:** facet engine + FacetBar, store ribbons/stock level and ship size in the data, new Tag kinds, sidebar regrouped (Hangar / Store / Plan) with a CCUs page stub ([8427441](https://github.com/NyleGarcia/rsi-plus/commit/84274410cef66138c5f867215a91c41fb6244fc9))
+* **ui:** shared pieces for the audit pass — SortTh numeric/class, HintBadge xs, FilterChips hint + count, usd0, fmtDate/fmtDateTime/ago, LINK classes ([3a2f4a8](https://github.com/NyleGarcia/rsi-plus/commit/3a2f4a866d962a68bb564268d9f402cddeb04397))
+* wallet order history, Feed, facet filters, CCUs page, audit pass (0.7.0) ([522a58d](https://github.com/NyleGarcia/rsi-plus/commit/522a58d03b16b1c29d3d84d6b0137f396f72c93f))
+* **wallet:** one spend card — Order history / Hangar basis switch for heroes and charts; Where the money went + Order history as widgets; order chart buckets ([795d08d](https://github.com/NyleGarcia/rsi-plus/commit/795d08d500d98ce4db5b486b51d2808e44f425c9))
+* **wallet:** order history reader built on RSI's real billing markup — orders with lines, cash vs store credit vs discounts, per-year table, 100 a page; fixture + tests ([d4c3387](https://github.com/NyleGarcia/rsi-plus/commit/d4c338758d49072a4be06a7a349556c3d9dadcf2))
+* **wallet:** where the money went — hangar spend ledger (new money / cash-or-credit / melted / gifted / cash estimate) + order-history import with billing capture; perf: indexed facet counts, lazy tooltips ([e3c1031](https://github.com/NyleGarcia/rsi-plus/commit/e3c10315da49e95256a3b22852898b01b69e18d0))
+
+
+### Bug Fixes
+
+* **catalog:** discount column says what it is — Under MSRP badge with the MSRP and the cheapest live offer on hover ([f8d4f4b](https://github.com/NyleGarcia/rsi-plus/commit/f8d4f4b45d2504b794850035c7de9c89cf6fa28e))
+* **catalog:** Under MSRP is its own column; Plan CCU in an actions column ([fc0d639](https://github.com/NyleGarcia/rsi-plus/commit/fc0d639048f5409637e23eb932e9a1a4bbf9e080))
+* **wallet:** buyback is a stock, credit used is turnover — relabel Sitting in buyback / Store credit cycled; cash estimate hints say credit can cycle ([f9e3a9a](https://github.com/NyleGarcia/rsi-plus/commit/f9e3a9a2e3b3e6b4d6a542c083dee384cf3edd2c))
+* **wallet:** derive the spend ledger after the pledge list; changelog ([04738ec](https://github.com/NyleGarcia/rsi-plus/commit/04738ecf59319ef14f8201127fc8326e27223772))
+* **wallet:** warbond new-money from order lines when imported (hangar names drop Warbond); $0 pledges stat shows gifts + flair ([a546e19](https://github.com/NyleGarcia/rsi-plus/commit/a546e19fb1f5cbdea0aa22c2e97ce7e7eef23c86))
+
+
+### Performance Improvements
+
+* **hangar:** stable row keys across Group switch, lazy label editor + row tooltips (LazyTip), chunked by-ship render; Browse/Paint rebuy row tooltips lazy ([4e4d403](https://github.com/NyleGarcia/rsi-plus/commit/4e4d4035ff549c9664d17eacf4eef8a6c462033f))
+
 ## [0.6.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.5.0...v0.6.0) (2026-10-22)
 
 
