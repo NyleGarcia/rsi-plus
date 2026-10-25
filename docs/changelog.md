@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-10-22
+updated: 2026-10-25
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.7.0 — 2026-10-25
 - **Audit pass: consistent and faster everywhere.** Three read-only audits (UI conventions, performance, library code) and one fix pass across every page:
   - *Faster*: the hub loads one page's code at a time instead of all fifteen (hub chunk 1.1 MB → 66 KB; the others fetch in idle time). The CCU fleet planner shares one upgrade graph across hulls and goals with a heap-based route (same results, about half the time). Every remaining per-row tooltip mounts on first hover (Friends, Store, Paint rebuy, Feed chips, Segmented hints). Buyback, My items, Paints by ship and Friends render in chunks and compute per-row work (ownership, store links, paint fits) once. Pledges keeps its rows when a filter is cleared instead of rebuilding all 500. Melt "copies elsewhere" uses one index. Browse computes ribbons and ownership once per listing. The RSI credit watcher checks a cheap selector and disconnects after a capture; Spectrum read marks are written debounced; the background writes the feed, watches and org cache only when they changed.
   - *Consistent*: money and count columns are right-aligned with tabular digits; the actions column is last with a screen-reader head; booleans are switches with the explanation as a hint; destructive clears go through the two-click confirm; links, dates and whole-dollar figures come from shared helpers; "Warbond" and "MSRP" wording everywhere (no "WB", no "list price"); errors are alerts; empty states are the shared one; page titles no longer repeat the sidebar label; icon-only header buttons have labels.
