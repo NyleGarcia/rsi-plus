@@ -61,7 +61,7 @@
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import X from '@lucide/svelte/icons/x';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
-  import { shipLines, xplorCsv, xplorRows } from '@/lib/export';
+  import { shipLines, starOrgRows, xplorCsv, xplorRows } from '@/lib/export';
   import { applyFacets, stageOf, type FacetValues } from '@/lib/facets';
   import { shipFacets, shipRanges, SHIP_PRIMARY } from '@/lib/pledge-facets';
   import FacetBar from './FacetBar.svelte';
@@ -174,6 +174,8 @@
     if (kind === 'json') download(`hangarxplor-shiplist-${stamp()}.json`, JSON.stringify(rows, null, 2), 'application/json');
     else download(`hangarxplor-shiplist-${stamp()}.csv`, xplorCsv(rows));
   }
+  /** StarOrg Tools preset: the same rows plus insurance, `acquired`, and the ships you have only in the game, without `pledge_date`. */
+  const exportStarOrg = () => download(`starorg-fleet-${stamp()}.json`, JSON.stringify(starOrgRows(hangar?.pledges ?? [], game, ships), null, 2), 'application/json');
   let copiedNames = $state(false);
   async function copyNames() {
     await navigator.clipboard.writeText(shipLines(fleetRows()));
@@ -501,6 +503,10 @@
                     <DropdownMenu.Separator />
                     <DropdownMenu.Item onSelect={copyNames}>
                       <div class="grid"><span class="font-semibold">{copiedNames ? 'Copied ✓' : 'Copy ship names'}</span><span class="text-muted-foreground text-xs">One "Maker Ship" per hull, for tools that take a plain list</span></div>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item onSelect={exportStarOrg}>
+                      <div class="grid"><span class="font-semibold">JSON for StarOrg Tools</span><span class="text-muted-foreground text-xs">Import this on starorg.tools → Hangar</span></div>
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu.Root>

@@ -1,7 +1,7 @@
 ---
 title: Architecture
 tags: [architecture]
-updated: 2026-10-20
+updated: 2026-10-29
 ---
 # Architecture
 
@@ -184,7 +184,8 @@ Every store thumbnail in the hub (paints by ship, My ships, compare, Store, Pain
 - Why that shape: it is what FleetYards' importer reads (`app/lib/hangar_importer.rb` matches `item[:name]` against name / rsi_name / slug, `ship_name` → custom name, plus its own `hangar_xplor_mapping` for renamed hulls), what myfleet.gg (StarShip42 FleetView's successor) and Starjump / hangar.link import, and what the Hangar Transfer Format of Open Hangar extends.
 - `shipCode(name, maker)`: HangarXPLOR's `ship-codes.json` vendored as `src/lib/data/ship-codes.ts` (305 hulls; exact name, else the name without "Mk N" — `Constellation Mk IV Andromeda` → `RSI_Constellation_Andromeda`); unknown hulls get `MAKERCODE_Name_With_Underscores` like HangarXPLOR's own fallback, maker code from the table (else the maker's first word upper-cased).
 - `xplorCsv(rows)`: HangarXPLOR's CSV columns `Manufacturer,Ship,Lti,Warbond,ID,Pledge,Cost,Date`, text fields quoted with `"` doubled. `shipLines(rows)`: `Maker Ship` per hull for plain-list tools.
-- UI: **My ships → Export fleet** menu (JSON, CSV, copy names) for the whole hangar; **Pledges → Fleet JSON (HangarXPLOR)** for the pledges currently shown (respects filters, like CSV / JSON there).
+- UI: **My ships → Export fleet** menu (JSON, CSV, copy names, JSON for StarOrg Tools) for the whole hangar; **Pledges → Fleet JSON (HangarXPLOR)** for the pledges currently shown (respects filters, like CSV / JSON there).
+- Every row also carries `insurance` (`Pledge.insurance` as listed: `LTI`, `120 mo`, `6 mo`, …) when the pledge lists one; the key is left out otherwise, and other importers ignore it. `starOrgRows(pledges, game, ships)` is the StarOrg Tools preset behind *JSON for StarOrg Tools* (downloads `starorg-fleet-YYYY-MM-DD.json`, imported on starorg.tools → Hangar): the `xplorRows` rows marked `acquired: 'pledge'`, plus one row per in-game copy of each `GameShip` marked `acquired: 'game'`, with `pledge_id` empty, `pledge_name` `In-game (bought)` or `In-game (earned)`, `pledge_cost` `$0.00 USD`, no LTI or warbond, and the code and maker from the catalog ship through `shipCode()`. An in-game ship whose id the catalog no longer lists is left out. No row in the preset carries `pledge_date`: StarOrg gets the hulls, not the purchase timeline. The rows are sorted the same way as `xplorRows`.
 
 ### Insurance & credits
 - `parseInsurance(text)`: "Lifetime Insurance"/LTI → `LTI`, "N Month/Year Insurance" → `N mo` (longest wins); stored as `Pledge.insurance`; `ItemRow.insurance` / `OwnedShip.insurance` collect distinct terms per hull. Store listings carry no insurance (not in the search API, ship pages are JS-rendered), so the Store tab shows your hangar's insurance for ships you own.
