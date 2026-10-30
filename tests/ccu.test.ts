@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, planGraph, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -291,6 +291,31 @@ describe('plan ahead (long-term goals)', () => {
     expect(legExclude(f, 1, [])).toEqual([99]);
     expect(legExclude(f, 0, [5])).toEqual([5]);
     expect(plan(ships, owned, 1, 3, o({ exclude: legExclude(f, 1, []) }))!.steps).toEqual(f.legs[1]!.plan!.steps);
+  });
+
+  it('fleet plan: Open on a goal keeps its exclusions to the single planner, so the fleet plans the same afterwards', () => {
+    const owned = [own(1, 3, 99)];
+    const goals = [
+      { id: 'a', fromId: 1, targetId: 4, via: [] },
+      { id: 'b', fromId: 1, targetId: 3, via: [] },
+    ];
+    const fo = { hulls: [{ id: 1, count: 2 }] };
+    const user = o({});
+    const f = planFleet(ships, owned, goals, user, fo);
+    // Open goal b: the single planner shows b's leg (goal a took CCU 99)…
+    const leg = { startId: 1, targetId: 3, exclude: legExclude(f, 1, user.exclude) };
+    expect(plannerExclude(user.exclude, [], true, 1, 3, leg)).toEqual([99]);
+    expect(plan(ships, owned, 1, 3, o({ exclude: plannerExclude(user.exclude, [], true, 1, 3, leg) }))!.steps).toEqual(f.legs[1]!.plan!.steps);
+    // …another route on screen drops the leg's exclusions…
+    expect(plannerExclude([5], [], true, 1, 4, leg)).toEqual([5]);
+    // …and the user's options the fleet shares are untouched: back on the fleet, goal a still uses its own CCU.
+    expect(user.exclude).toEqual([]);
+    expect(planFleet(ships, owned, goals, user, fo).legs.map((l) => l.plan!.steps)).toEqual(f.legs.map((l) => l.plan!.steps));
+    // No leg: saved chains reserve their CCUs unless the switch is off or the chain is this route's own.
+    const saved: SavedChain = { id: 's', name: 'x', at: 0, startId: 2, targetId: 4, steps: [{ ...f.legs[0]!.plan!.steps[0]! }], total: 0, cash: 0, opt: o({}) };
+    expect(plannerExclude([], [saved], true, 1, 4, null)).toEqual([99]);
+    expect(plannerExclude([], [saved], false, 1, 4, null)).toEqual([]);
+    expect(plannerExclude([], [saved], true, 2, 4, null)).toEqual([]);
   });
 
   it('fleet plan: auto upgrades a preferred hull (LTI token) first, even when another saves more', () => {
