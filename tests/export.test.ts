@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { shipCode, shipLines, starOrgRows, stripMaker, xplorCsv, xplorRows } from '@/lib/export';
 import type { Pledge } from '@/lib/hangar';
 import type { GameShip } from '@/lib/items';
-import type { CatalogShip } from '@/lib/store';
+import { withExtraShips, type CatalogShip } from '@/lib/store';
 
 const ship = (id: number, name: string, manufacturer: string): CatalogShip => ({ id, name, manufacturer, focus: '', msrp: 0, flyable: '', link: '', thumb: null, standalone: [], ccu: [] });
 const ships = [ship(1, 'Avenger Titan', 'Aegis Dynamics'), ship(2, 'Constellation Mk IV Andromeda', 'Roberts Space Industries'), ship(3, 'Cutlass Black', 'Drake Interplanetary'), ship(4, 'L-21 Wolf', 'Kruger Intergalactic')];
@@ -76,5 +77,44 @@ describe('fleet export (StarOrg Tools preset)', () => {
   });
   it('skips in-game ships the catalog no longer lists, and empty counts', () => {
     expect(starOrgRows([], [game(99, 'bought', 1, 'Gone Ship'), game(4, 'earned', 0)], ships)).toEqual([]);
+  });
+});
+
+// Catalog-drift guard: RSI's real hull list (tests/fixtures/catalog.json, regenerate with `node scripts/dump-catalog.mjs`,
+// then `npx vitest run -u tests/export.test.ts` to accept new codes). One synthetic pledge per hull must give one row
+// per hull, each with a ship_code, in the same order however the input is ordered. StarOrg matches on these codes.
+// The catalog goes through `withExtraShips` as `fetchCatalog()`'s does, so the concept hulls RSI never lists
+// (Kraken, Javelin, Idris-M…) are covered too.
+describe('fleet export (catalog-drift fixture)', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/catalog.json', import.meta.url), 'utf8')) as { id: number; name: string; manufacturer: string }[];
+  const catalog = withExtraShips(fixture.map((c) => ship(c.id, c.name, c.manufacturer)));
+  const pledges = catalog.map((c) => pledge(c.id, [c.name]));
+  const rows = xplorRows(pledges, catalog);
+
+  it('one row per catalog hull, each named after its own hull and carrying a ship_code', () => {
+    expect(fixture.length).toBeGreaterThan(200);
+    expect(rows).toHaveLength(catalog.length);
+    const byId = new Map(catalog.map((c) => [String(c.id), c]));
+    for (const r of rows) {
+      const c = byId.get(r.pledge_id)!;
+      expect(r.name, `pledge ${r.pledge_id}`).toBe(c.name);
+      expect(r.manufacturer_name).toBe(c.manufacturer);
+      expect(r.ship_code, c.name).toMatch(/^[A-Za-z0-9_]+$/);
+    }
+  });
+  it('no two catalog hulls share a ship_code', () => {
+    const codes = rows.map((r) => r.ship_code);
+    expect(new Set(codes).size, codes.filter((c, i) => codes.indexOf(c) !== i).join(', ')).toBe(codes.length);
+  });
+  it('is stable across runs and input order', () => {
+    expect(xplorRows([...pledges].reverse(), [...catalog].reverse())).toEqual(rows);
+    expect(rows.map((r) => `${r.ship_code}\t${r.manufacturer_code}\t${r.name}`)).toMatchSnapshot();
+  });
+  it('the StarOrg preset gives the same codes, for pledged and in-game hulls', () => {
+    const pledged = starOrgRows(pledges, [], catalog);
+    expect(pledged.map((r) => [r.pledge_id, r.ship_code])).toEqual(rows.map((r) => [r.pledge_id, r.ship_code]));
+    const game = starOrgRows([], catalog.map((c) => ({ id: c.id, name: c.name, how: 'bought' as const, count: 1 })), catalog);
+    expect(game).toHaveLength(catalog.length);
+    expect(new Set(game.map((r) => `${r.name}\t${r.ship_code}`))).toEqual(new Set(rows.map((r) => `${r.name}\t${r.ship_code}`)));
   });
 });
