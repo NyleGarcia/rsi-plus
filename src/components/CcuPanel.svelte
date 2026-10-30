@@ -3,7 +3,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, ownedShips, plan, planGraph, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, reservedRefs, STORE_START, type Objective, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
@@ -127,11 +127,12 @@
 
   /** Which saved chain holds each CCU ref. */
   const reservedBy = $derived(new Map(chains.flatMap((c) => reservedRefs([c]).map((r) => [r, c] as const))));
+  const startId = $derived(mode === 'store' ? STORE_START : fromId);
+  // A chain saved for this very route keeps its CCUs: saving must not re-plan the chain on screen without them.
   const effective = $derived<PlanOptions>({
     ...opt,
-    exclude: excludeSaved ? [...new Set([...opt.exclude, ...reservedBy.keys()])] : opt.exclude,
+    exclude: excludeSaved ? excludeReserved(opt.exclude, chains, (c) => c.startId === startId && c.targetId === toId) : opt.exclude,
   });
-  const startId = $derived(mode === 'store' ? STORE_START : fromId);
   /** Chain with today's sales; when there is none (target not on sale — Orion, Arrastra…) plan ahead without asking. */
   // Graphs for the current options, kept while only the source / target change (the ahead one is built on demand).
   const graphNow = $derived(planGraph(ships, ccus.owned, effective));
@@ -274,20 +275,24 @@
     await ccuGoalsItem.setValue({ ...v, goals: [...v.goals, goal] });
     addedToFleet.show('Added');
   }
-  /** A fleet goal → the single planner (same options; verify + cart live there). */
-  function openGoal(start: number, target: number, via: number[]) {
+  /**
+   * A fleet goal → the single planner (same options; verify + cart live there). `exclude` is what the fleet planned
+   * that leg with (saved chains, the goals above it), so the chain shown is the leg's, not one using their CCUs.
+   */
+  function openGoal(start: number, target: number, via: number[], exclude: number[]) {
     mode = start === STORE_START ? 'store' : mine.some((s) => s.id === start) ? 'hangar' : 'any';
     fromId = start === STORE_START ? null : start;
     toId = target;
     opt.via = [...via];
     opt.include = [];
+    opt.exclude = [...exclude];
+    excludeSaved = false;
     planner = 'one';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   /** What the same chain settings cost today (other saved chains' CCUs excluded, this one's own allowed). */
   function now(c: SavedChain) {
-    const others = reservedRefs(chains.filter((x) => x.id !== c.id));
-    return plan(ships, ccus.owned, c.startId, c.targetId, { ...c.opt, exclude: [...new Set([...c.opt.exclude, ...others])] });
+    return plan(ships, ccus.owned, c.startId, c.targetId, { ...c.opt, exclude: excludeReserved(c.opt.exclude, chains, (x) => x.id === c.id) });
   }
   /** Saved chains (grouped) with today's price, planned once per change instead of per render. */
   const savedRows = $derived([...chains].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '')).map((c) => ({ c, p: now(c) })));
@@ -417,7 +422,7 @@
       </fieldset>
 
       {#if planner === 'fleet'}
-        <CcuFleet {ships} {mine} {hulls} {labelPrefer} keptByLabel={keepIds.size} lti={ltiHulls} owned={ccus.owned} opt={effective} {sales} {chains} {persist} onopen={openGoal} />
+        <CcuFleet {ships} {mine} {hulls} {labelPrefer} keptByLabel={keepIds.size} lti={ltiHulls} owned={ccus.owned} {opt} {excludeSaved} {sales} {chains} {persist} onopen={openGoal} />
       {:else}
       <div class="flex flex-wrap gap-4">
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">

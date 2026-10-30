@@ -477,6 +477,19 @@ export function reservedRefs(chains: { steps: Step[] }[]): number[] {
 }
 
 /**
+ * `exclude` plus the CCUs held by saved chains that aren't `own`. `own` picks the chains of the plan on screen (the
+ * route just saved, the fleet plan being edited): their CCUs stay usable, so saving a plan doesn't re-plan it without them.
+ */
+export function excludeReserved(exclude: number[], chains: SavedChain[], own: (c: SavedChain) => boolean): number[] {
+  return [...new Set([...exclude, ...reservedRefs(chains.filter((c) => !own(c)))])];
+}
+
+/** The exclusions fleet leg `i` was planned with — `exclude` plus the CCUs the goals above it took — to re-plan it alone. */
+export function legExclude(fleet: FleetPlan, i: number, exclude: number[]): number[] {
+  return [...new Set([...exclude, ...reservedRefs(fleet.legs.slice(0, i).flatMap((l) => (l.plan ? [l.plan] : [])))])];
+}
+
+/**
  * Saved chains with `future` steps are long-term goals: when the store starts selling a CCU to one of those hulls
  * (any SKU, in stock), one feed event per chain step + SKU — "X → Y is on sale now, $N (planned $M)". The feed's
  * key dedup keeps it to one alert per SKU appearance; the event opens the CCU planner.
