@@ -14,6 +14,9 @@
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { BUYBACK_GROUP_BY, buybackGroups, type BuybackGroupBy } from '@/lib/buyback-groups';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import LoadStatus from './LoadStatus.svelte';
@@ -181,10 +184,49 @@
       { name: (i) => i.name, type: (i) => i.type, date: (i) => dateValue(i.date) },
     ),
   );
-  // Rows mount in chunks (40 first, then +60 a frame) so a long buyback list doesn't block the first paint.
-  let budget = $derived.by(() => (void shown, 40));
+  /** Group by (type / ship / none), remembered on this device. */
+  const PREFS = 'rsiplus:buyback';
+  let groupBy = $state<BuybackGroupBy>(
+    (() => {
+      try {
+        const v = (JSON.parse(localStorage.getItem(PREFS) ?? '{}') as { groupBy?: BuybackGroupBy }).groupBy;
+        return BUYBACK_GROUP_BY.some((o) => o.value === v) ? v! : 'none';
+      } catch {
+        return 'none';
+      }
+    })(),
+  );
   $effect(() => {
-    if (budget >= shown.length) return;
+    try {
+      localStorage.setItem(PREFS, JSON.stringify({ groupBy }));
+    } catch {
+      /* no persistence — fine */
+    }
+  });
+  const groups = $derived(buybackGroups(shown, groupBy, ships));
+  const groupKeys = $derived(groups.map((g) => g.key));
+  let collapsed = $state<Set<string>>(new Set());
+  const toggle = (k: string) => {
+    const next = new Set(collapsed);
+    if (!next.delete(k)) next.add(k);
+    collapsed = next;
+  };
+  const setAll = (keys: string[], close: boolean) => (collapsed = close ? new Set([...collapsed, ...keys]) : new Set([...collapsed].filter((k) => !keys.includes(k))));
+  /** Rows before each group among the expanded ones, for the chunked render. */
+  const starts = $derived.by(() => {
+    let n = 0;
+    return groups.map((g) => {
+      const at = n;
+      if (!collapsed.has(g.key)) n += g.items.length;
+      return at;
+    });
+  });
+  const visibleRows = $derived(groups.reduce((n, g) => n + (collapsed.has(g.key) ? 0 : g.items.length), 0));
+  // Rows mount in chunks (40 first, then +60 a frame) so a long buyback list doesn't block the first paint; a new
+  // filter or grouping starts over.
+  let budget = $derived.by(() => (void groups, 40));
+  $effect(() => {
+    if (budget >= visibleRows) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
@@ -192,6 +234,65 @@
 
 {#snippet cartBtn(sku: number, qty = 1)}
   <CartButton state={cart.of(sku)} onadd={() => addOne(sku, qty)} busy={cart.busy} {qty} />
+{/snippet}
+
+{#snippet row(b: BuybackItem)}
+  <Table.Row>
+    <Table.Cell class="whitespace-normal">
+      <strong>{b.name}</strong>
+      {#if b.items}<div class="text-muted-foreground text-xs">{b.items.length} item{b.items.length === 1 ? '' : 's'}</div>
+      {:else if b.contained}<div class="text-muted-foreground text-xs">{b.contained}</div>{/if}
+    </Table.Cell>
+    <Table.Cell>{b.type}</Table.Cell>
+    {@const melted = parseRsiDate(b.date)}
+    <Table.Cell class="text-muted-foreground text-xs">{Number.isNaN(melted) ? b.date : fmtDate(melted)}</Table.Cell>
+    <Table.Cell class="whitespace-normal text-xs">
+      {@const h = ownFor(b)}
+      {#if !hangarPledges.length}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
+      {:else if h.hint}
+        <HintBadge variant={h.owned ? 'success' : h.hint.ownedForHull.length ? 'warning' : 'muted'} hint="The list page only says how many items — use “Load contents & prices” to read this entry's page">{h.owned ? 'likely all in hangar' : 'contents not loaded'} · {h.hint.count} items</HintBadge>
+        {#if h.hint.hull}
+          <div class="mt-1">{#if h.hint.ownedForHull.length}<span class="text-muted-foreground">You own {h.hint.ownedForHull.length} {h.hint.hull} paint{h.hint.ownedForHull.length === 1 ? '' : 's'}{h.hint.ownedForHull.length >= h.hint.count ? ' (at least as many as the pack holds)' : ''}:</span> {h.hint.ownedForHull.map((p) => `${p.title}${p.n > 1 ? ` ×${p.n}` : ''}`).join(', ')}{:else}<span class="text-destructive">No {h.hint.hull} paints in your hangar.</span>{/if}</div>
+        {/if}
+      {:else if h.parts.length === 1 && h.parts[0]!.need === 1}
+        {@const sl = storeLink(b, h.parts[0]!.title)}
+        <div class="flex flex-wrap items-center gap-2">
+          {#if h.parts[0]!.n}<Tag kind="owned" count={h.parts[0]!.n} />{:else}<Badge variant="muted">not in hangar</Badge>{/if}
+          {#if sl}
+            <a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">store page{#if sl.price != null} · {usd(sl.price)}{/if}</a>
+            {@render cartBtn(sl.sku)}
+          {/if}
+        </div>
+      {:else}
+        {@const lack = h.parts.filter((p) => p.n < p.need)}
+        {@const have = h.parts.filter((p) => p.n >= p.need)}
+        <Badge variant={h.owned ? 'success' : h.any ? 'warning' : 'muted'}>{h.owned ? 'all in hangar' : h.any ? `${h.parts.length - lack.length} of ${h.parts.length} in hangar` : 'not in hangar'}</Badge>
+        <ul class="m-0 mt-1.5 grid list-none gap-0.5 p-0">
+          {#each lack as p (p.title)}
+            {@const sl = storeLink(b, p.title)}
+            <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
+          {/each}
+          {#each have as p (p.title)}
+            <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
+          {/each}
+        </ul>
+        {@const missingOnStore = lack.map((p) => ({ p, sl: storeLink(b, p.title) })).filter((x) => x.sl?.price != null)}
+        {#if missingOnStore.length}
+          {@const sum = missingOnStore.reduce((a, x) => a + x.sl!.price! * Math.max(1, x.p.need - x.p.n), 0)}
+          <div class="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 pt-1.5">
+            <span>Missing on the store: <strong class="text-foreground">{usd(sum)}</strong> ({missingOnStore.length} of {lack.length}){#if b.price != null} · buy back: <strong class="text-foreground">{ownUsd(b.price)}</strong>{#if missingOnStore.length === lack.length} → <span class={b.price < sum ? 'text-success' : 'text-warning'}>{b.price < sum ? 'buy-back is cheaper' : 'store is cheaper'}</span>{/if}{/if}</span>
+            <TipButton variant="outline" size="xs" disabled={cart.busy} onclick={() => addMissing(missingOnStore.map((x) => ({ sku: x.sl!.sku, qty: Math.max(1, x.p.need - x.p.n) })))} tip="Adds every missing item the store sells to your RSI cart, one after another. Nothing is paid.">
+              <ShoppingCart /> Add all missing to cart
+            </TipButton>
+          </div>
+        {/if}
+      {/if}
+    </Table.Cell>
+    <Table.Cell class="text-right">
+      {#if b.url}<Button variant="outline" size="xs" href={b.url} target="_blank" rel="noopener">Buy back</Button>{/if}
+      {#if b.price != null}<div class="mt-1 text-xs whitespace-nowrap"><strong>{ownUsd(b.price)}</strong>{#if b.listPrice && b.listPrice > b.price}<span class="text-muted-foreground"> was {ownUsd(b.listPrice)} · −{Math.round(100 - (100 * b.price) / b.listPrice)}%</span>{/if}</div>{/if}
+    </Table.Cell>
+  </Table.Row>
 {/snippet}
 
 <Card.Root>
@@ -235,6 +336,16 @@
             <Select.Item value="unknown" label={`Contents not loaded · ${ownCount('unknown')}`} />
           </Select.Content>
         </Select.Root>
+        <Select.Root type="single" bind:value={() => groupBy, (v) => (groupBy = v as BuybackGroupBy)}>
+          <Select.Trigger aria-label="Group by">{BUYBACK_GROUP_BY.find((o) => o.value === groupBy)?.label}</Select.Trigger>
+          <Select.Content>
+            {#each BUYBACK_GROUP_BY as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
+          </Select.Content>
+        </Select.Root>
+        {#if groupBy !== 'none'}
+          <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, false)}>Expand all</Button>
+          <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, true)}>Collapse all</Button>
+        {/if}
         <SwitchRow id="buyback-only-store" size="sm" label="Only entries the store sells today" checked={onlyStore} onchange={(v) => (onlyStore = v)} />
         <span class="text-muted-foreground text-sm">{shown.length} shown · buyback CCUs can be used by the CCU planner</span>
         <span class="flex-1"></span>
@@ -251,67 +362,30 @@
             <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
           </Table.Row>
         </Table.Header>
+        {#each groups as g, gi (g.key)}
+          <Table.Body>
+            {#if g.label}
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head colspan={5} class="h-auto pt-3.5">
+                  <!-- Table row group: a Collapsible can't wrap <tr>s, so this stays a disclosure button. -->
+                  <Button variant="ghost" size="sm" class="aria-expanded:bg-transparent h-auto w-full flex-wrap justify-start gap-2 px-1 py-1.5 text-left text-[13px] font-normal whitespace-normal" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
+                    {#if collapsed.has(g.key)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
+                    <strong>{g.label}</strong>
+                    <span class="text-muted-foreground text-[11px]">· {g.items.length} entr{g.items.length === 1 ? 'y' : 'ies'}</span>
+                  </Button>
+                </Table.Head>
+              </Table.Row>
+            {/if}
+            {#if !collapsed.has(g.key) && budget > starts[gi]!}
+              {#each g.items.slice(0, budget - starts[gi]!) as b (rowKey.get(b))}
+                {@render row(b)}
+              {/each}
+            {/if}
+          </Table.Body>
+        {/each}
         <Table.Body>
-          {#each shown.slice(0, budget) as b (rowKey.get(b))}
-            <Table.Row>
-              <Table.Cell class="whitespace-normal">
-                <strong>{b.name}</strong>
-                {#if b.items}<div class="text-muted-foreground text-xs">{b.items.length} item{b.items.length === 1 ? '' : 's'}</div>
-                {:else if b.contained}<div class="text-muted-foreground text-xs">{b.contained}</div>{/if}
-              </Table.Cell>
-              <Table.Cell>{b.type}</Table.Cell>
-              {@const melted = parseRsiDate(b.date)}
-              <Table.Cell class="text-muted-foreground text-xs">{Number.isNaN(melted) ? b.date : fmtDate(melted)}</Table.Cell>
-              <Table.Cell class="whitespace-normal text-xs">
-                {@const h = ownFor(b)}
-                {#if !hangarPledges.length}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
-                {:else if h.hint}
-                  <HintBadge variant={h.owned ? 'success' : h.hint.ownedForHull.length ? 'warning' : 'muted'} hint="The list page only says how many items — use “Load contents & prices” to read this entry's page">{h.owned ? 'likely all in hangar' : 'contents not loaded'} · {h.hint.count} items</HintBadge>
-                  {#if h.hint.hull}
-                    <div class="mt-1">{#if h.hint.ownedForHull.length}<span class="text-muted-foreground">You own {h.hint.ownedForHull.length} {h.hint.hull} paint{h.hint.ownedForHull.length === 1 ? '' : 's'}{h.hint.ownedForHull.length >= h.hint.count ? ' (at least as many as the pack holds)' : ''}:</span> {h.hint.ownedForHull.map((p) => `${p.title}${p.n > 1 ? ` ×${p.n}` : ''}`).join(', ')}{:else}<span class="text-destructive">No {h.hint.hull} paints in your hangar.</span>{/if}</div>
-                  {/if}
-                {:else if h.parts.length === 1 && h.parts[0]!.need === 1}
-                  {@const sl = storeLink(b, h.parts[0]!.title)}
-                  <div class="flex flex-wrap items-center gap-2">
-                    {#if h.parts[0]!.n}<Tag kind="owned" count={h.parts[0]!.n} />{:else}<Badge variant="muted">not in hangar</Badge>{/if}
-                    {#if sl}
-                      <a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">store page{#if sl.price != null} · {usd(sl.price)}{/if}</a>
-                      {@render cartBtn(sl.sku)}
-                    {/if}
-                  </div>
-                {:else}
-                  {@const lack = h.parts.filter((p) => p.n < p.need)}
-                  {@const have = h.parts.filter((p) => p.n >= p.need)}
-                  <Badge variant={h.owned ? 'success' : h.any ? 'warning' : 'muted'}>{h.owned ? 'all in hangar' : h.any ? `${h.parts.length - lack.length} of ${h.parts.length} in hangar` : 'not in hangar'}</Badge>
-                  <ul class="m-0 mt-1.5 grid list-none gap-0.5 p-0">
-                    {#each lack as p (p.title)}
-                      {@const sl = storeLink(b, p.title)}
-                      <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
-                    {/each}
-                    {#each have as p (p.title)}
-                      <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
-                    {/each}
-                  </ul>
-                  {@const missingOnStore = lack.map((p) => ({ p, sl: storeLink(b, p.title) })).filter((x) => x.sl?.price != null)}
-                  {#if missingOnStore.length}
-                    {@const sum = missingOnStore.reduce((a, x) => a + x.sl!.price! * Math.max(1, x.p.need - x.p.n), 0)}
-                    <div class="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 pt-1.5">
-                      <span>Missing on the store: <strong class="text-foreground">{usd(sum)}</strong> ({missingOnStore.length} of {lack.length}){#if b.price != null} · buy back: <strong class="text-foreground">{ownUsd(b.price)}</strong>{#if missingOnStore.length === lack.length} → <span class={b.price < sum ? 'text-success' : 'text-warning'}>{b.price < sum ? 'buy-back is cheaper' : 'store is cheaper'}</span>{/if}{/if}</span>
-                      <TipButton variant="outline" size="xs" disabled={cart.busy} onclick={() => addMissing(missingOnStore.map((x) => ({ sku: x.sl!.sku, qty: Math.max(1, x.p.need - x.p.n) })))} tip="Adds every missing item the store sells to your RSI cart, one after another. Nothing is paid.">
-                        <ShoppingCart /> Add all missing to cart
-                      </TipButton>
-                    </div>
-                  {/if}
-                {/if}
-              </Table.Cell>
-              <Table.Cell class="text-right">
-                {#if b.url}<Button variant="outline" size="xs" href={b.url} target="_blank" rel="noopener">Buy back</Button>{/if}
-                {#if b.price != null}<div class="mt-1 text-xs whitespace-nowrap"><strong>{ownUsd(b.price)}</strong>{#if b.listPrice && b.listPrice > b.price}<span class="text-muted-foreground"> was {ownUsd(b.listPrice)} · −{Math.round(100 - (100 * b.price) / b.listPrice)}%</span>{/if}</div>{/if}
-              </Table.Cell>
-            </Table.Row>
-          {/each}
-          {#if budget < shown.length}
-            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+          {#if budget < visibleRows}
+            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {visibleRows - budget} more loading</Table.Cell></Table.Row>
           {/if}
           {#if !shown.length}<Empty colspan={5}>Nothing matches.</Empty>{/if}
         </Table.Body>
