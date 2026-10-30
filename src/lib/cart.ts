@@ -214,6 +214,33 @@ export async function addStandalone(skuId: number, qty = 1): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// A planned set of store lines vs what RSI's cart holds. RSI's `add` adds to what is already there, so the cart read
+// back — not a page's in-memory ledger, which a tab switch or reload wipes — decides what still needs adding.
+
+export interface PlannedLine {
+  skuId: number;
+  qty: number;
+}
+
+/** Quantity per SKU in a cart (a SKU can sit on several lines). */
+export function cartQtys(lines: readonly { skuId: number; qty: number }[]): Map<number, number> {
+  const m = new Map<number, number>();
+  for (const l of lines) m.set(l.skuId, (m.get(l.skuId) ?? 0) + l.qty);
+  return m;
+}
+
+/** What to add so the cart holds each planned line: `want − got` per SKU, lines already there skipped. */
+export function cartShortfall(plan: readonly PlannedLine[], cart: readonly { skuId: number; qty: number }[]): PlannedLine[] {
+  const got = cartQtys(cart);
+  return plan.map((p) => ({ skuId: p.skuId, qty: p.qty - (got.get(p.skuId) ?? 0) })).filter((p) => p.qty > 0);
+}
+
+/** Per planned line: `missing` (fewer than planned), `over` (more — you would pay for extra copies) or `ok` (exact). */
+export function cartLineStatus(want: number, got: number): 'ok' | 'missing' | 'over' {
+  return got < want ? 'missing' : got > want ? 'over' : 'ok';
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Reading the cart back (RSI's `MiniCartWidgetQuery`, from the store bundle 2026-10 — trimmed to what we show)
 
 export interface CartLine {

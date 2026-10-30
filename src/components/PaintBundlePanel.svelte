@@ -6,7 +6,7 @@
    * the store also sells as a pack can be rebought as the pack (one listing) or as singles (each counts toward the tier).
    */
   import Wizard, { type WizardStep } from './Wizard.svelte';
-  import { addStandalone, CART_URL, CartError, readCart, type CartSnapshot } from '@/lib/cart';
+  import { addStandalone, CART_URL, CartError, cartLineStatus, cartQtys, cartShortfall, readCart, type CartSnapshot } from '@/lib/cart';
   import { cartErrorLabel, createCartLedger, type CartState } from '@/lib/cart-ui.svelte';
   import { HANGAR_PAGE, hangarUrl, type BuybackItem, type Pledge } from '@/lib/hangar';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
@@ -374,10 +374,36 @@
     for (const w of wanted) m.set(w.id, { paint: w, qty: (m.get(w.id)?.qty ?? 0) + 1 });
     return [...m.values()];
   });
-  /** Every line in order, one at a time (RSI's polite gap), stopping at the first failure; lines already in are skipped. */
-  const addAll = () => cart.addAll(cartLines.map((l) => ({ key: l.paint.id, task: () => addStandalone(l.paint.id, l.qty) })));
-  const cartBusy = $derived(cart.busy);
-  const added = $derived(cartLines.filter((l) => cart.of(l.paint.id)?.st === 'added').length);
+  /** Last read of RSI's cart for adding (the ledger lives only while this panel is mounted; the cart is the truth). */
+  let seenCart = $state<CartSnapshot | null>(null);
+  let topUpReading = $state(false);
+  // Seed from the real cart on mount, so coming back from another tab doesn't offer to add the plan a second time.
+  readCart().then((s) => (seenCart ??= s), () => {});
+  /** Reads the cart first, then adds only what's short per paint (RSI's `add` stacks on what's there), in order, one at a
+   *  time (RSI's polite gap), stopping at the first failure. */
+  async function addAll() {
+    topUpReading = true;
+    cartReadErr = '';
+    try {
+      seenCart = await readCart();
+    } catch (e) {
+      cartReadErr = e instanceof CartError ? `${cartErrorLabel(e.code)} — ${e.message}` : (e as Error).message;
+      return;
+    } finally {
+      topUpReading = false;
+    }
+    const short = new Map(cartShortfall(cartLines.map((l) => ({ skuId: l.paint.id, qty: l.qty })), seenCart.lines).map((p) => [p.skuId, p.qty]));
+    cart.reset();
+    await cart.addAll(cartLines.filter((l) => short.has(l.paint.id)).map((l) => ({ key: l.paint.id, task: () => addStandalone(l.paint.id, short.get(l.paint.id)!) })));
+  }
+  const cartBusy = $derived(cart.busy || topUpReading);
+  /** Paints the last read showed fully in the cart. */
+  const seenFull = $derived.by(() => {
+    if (!seenCart) return new Set<number>();
+    const got = cartQtys(seenCart.lines);
+    return new Set(cartLines.filter((l) => (got.get(l.paint.id) ?? 0) >= l.qty).map((l) => l.paint.id));
+  });
+  const added = $derived(cartLines.filter((l) => cart.of(l.paint.id)?.st === 'added' || seenFull.has(l.paint.id)).length);
 
   // ---- melt checklist: a snapshot of what to melt, ticked by hand or by vanishing from a reloaded hangar ----
   interface MeltItem {
@@ -526,7 +552,7 @@
     cartReading = true;
     cartReadErr = '';
     try {
-      rsiCart = await readCart();
+      rsiCart = seenCart = await readCart();
     } catch (e) {
       cartReadErr = e instanceof CartError ? `${cartErrorLabel(e.code)} — ${e.message}` : (e as Error).message;
     } finally {
@@ -535,20 +561,28 @@
   }
   const check = $derived.by(() => {
     if (!rsiCart) return null;
-    const inCart = new Map<number, { qty: number; line: CartSnapshot['lines'][number] }>();
-    for (const l of rsiCart.lines) inCart.set(l.skuId, { qty: (inCart.get(l.skuId)?.qty ?? 0) + l.qty, line: l });
+    const lines = rsiCart.lines;
+    const qtys = cartQtys(lines);
     const rows = cartLines.map((p) => {
-      const got = inCart.get(p.paint.id);
-      return { paint: p.paint, want: p.qty, got: got?.qty ?? 0, line: got?.line ?? null, ok: (got?.qty ?? 0) >= p.qty };
+      const got = qtys.get(p.paint.id) ?? 0;
+      const status = cartLineStatus(p.qty, got);
+      return { paint: p.paint, want: p.qty, got, line: lines.filter((l) => l.skuId === p.paint.id).at(-1) ?? null, status, ok: status === 'ok' };
     });
     const planned = new Set(cartLines.map((p) => p.paint.id));
-    const extra = rsiCart.lines.filter((l) => !planned.has(l.skuId));
-    const missing = rows.filter((r) => !r.ok);
+    const extra = lines.filter((l) => !planned.has(l.skuId));
+    const missing = rows.filter((r) => r.status === 'missing');
+    /** More copies than planned: you would pay for them, so the cart isn't safe to melt against either. */
+    const over = rows.filter((r) => r.status === 'over');
     const paintLines = rsiCart.lines.filter((l) => planned.has(l.skuId));
     const listSum = paintLines.reduce((a, l) => a + l.unit * l.qty, 0);
     const paySum = paintLines.reduce((a, l) => a + l.unitDiscounted * l.qty, 0);
-    return { rows, extra, missing, ok: rows.length > 0 && !missing.length, listSum, paySum, rate: listSum ? 1 - paySum / listSum : 0 };
+    return { rows, extra, missing, over, ok: rows.length > 0 && !missing.length && !over.length, listSum, paySum, rate: listSum ? 1 - paySum / listSum : 0 };
   });
+  /** What's wrong with a read-back that isn't ok: lines missing, and lines with more copies than planned. */
+  const checkProblem = (c: { rows: unknown[]; missing: unknown[]; over: unknown[] }) =>
+    [c.missing.length ? `${c.missing.length} of ${c.rows.length} planned lines are missing from the cart` : '', c.over.length ? `${c.over.length} hold${c.over.length === 1 ? 's' : ''} more copies than planned — remove the extras on RSI` : '']
+      .filter(Boolean)
+      .join('; ') + '.';
   const firstError = $derived(cartLines.map((l) => cart.of(l.paint.id)).find((c): c is Extract<CartState, { st: 'error' }> => c?.st === 'error'));
   const pct = (r: number) => `${Math.round(r * 100)}%`;
 
@@ -597,7 +631,7 @@
         title: 'Confirm the cart with RSI',
         done: planning ? chosen > 0 && confirmedOk : true,
         hint: "Reads your RSI cart back: every planned paint must be in it, and you see RSI's real multi-paint discount. Only then is melting safe.",
-        warn: check && !check.ok ? `${check.missing.length} of ${check.rows.length} planned lines are missing from the cart.` : cartReadErr || undefined,
+        warn: check && !check.ok ? checkProblem(check) : cartReadErr || undefined,
         action: cartLines.length ? { label: cartReading ? 'Reading cart…' : rsiCart ? 'Re-check cart' : 'Confirm cart', onclick: confirmCart, disabled: cartReading, busy: cartReading } : undefined,
       },
       {
@@ -983,8 +1017,8 @@
       <Card.Root size="sm" class={cn('shadow-none', check.ok ? 'ring-success/50' : 'ring-destructive/50')}>
         <Card.Header>
           <Card.Title class="flex items-center gap-1.5">
-            {#if check.ok}<Badge variant="success-soft"><Check />all in</Badge>{:else if check.rows.length}<Badge variant="destructive"><X />missing</Badge>{/if}
-            {check.ok ? `All ${check.rows.length} planned lines are in your RSI cart — safe to melt.` : check.rows.length ? `${check.missing.length} of ${check.rows.length} planned lines missing from the cart — don't melt yet.` : 'Nothing planned to check.'}
+            {#if check.ok}<Badge variant="success-soft"><Check />all in</Badge>{:else if check.rows.length}<Badge variant="destructive"><X />{check.missing.length ? 'missing' : 'too many'}</Badge>{/if}
+            {check.ok ? `All ${check.rows.length} planned lines are in your RSI cart — safe to melt.` : check.rows.length ? `${checkProblem(check).slice(0, -1)} — don't melt yet.` : 'Nothing planned to check.'}
           </Card.Title>
           <Card.Description class="text-xs">read {fmtDateTime(rsiCart.at)} · {rsiCart.qty} items · RSI total {usd(rsiCart.total)}{rsiCart.subTotal !== rsiCart.total ? ` (subtotal ${usd(rsiCart.subTotal)})` : ''}</Card.Description>
         </Card.Header>
@@ -1003,10 +1037,10 @@
             <Table.Body>
               {#each check.rows as r (r.paint.id)}
                 <Table.Row class={cn(r.ok && 'text-muted-foreground')}>
-                  <Table.Cell class={r.ok ? 'text-success' : 'text-destructive'}>{#if r.ok}<Check class="size-3.5" aria-hidden="true" /><span class="sr-only">in cart</span>{:else}<X class="size-3.5" aria-hidden="true" /><span class="sr-only">missing</span>{/if}</Table.Cell>
+                  <Table.Cell class={r.ok ? 'text-success' : 'text-destructive'}>{#if r.ok}<Check class="size-3.5" aria-hidden="true" /><span class="sr-only">in cart</span>{:else}<X class="size-3.5" aria-hidden="true" /><span class="sr-only">{r.status === 'over' ? 'more than planned' : 'missing'}</span>{/if}</Table.Cell>
                   <Table.Cell class="whitespace-normal">{@render pic(r.paint.thumb, r.paint.name, 40, 22)}{r.paint.name}</Table.Cell>
                   <Table.Cell class="text-right tabular-nums">×{r.want}</Table.Cell>
-                  <Table.Cell class="text-right tabular-nums">{r.got ? `×${r.got}` : '—'}</Table.Cell>
+                  <Table.Cell class="text-right tabular-nums">{r.got ? `×${r.got}` : '—'}{#if r.status === 'over'} <Badge variant="warning">too many</Badge>{/if}</Table.Cell>
                   <Table.Cell class="text-right tabular-nums">{r.line ? (r.line.unitDiscounted !== r.line.unit ? `${usd(r.line.unitDiscounted)} (MSRP ${usd(r.line.unit)})` : usd(r.line.unit)) : ''}</Table.Cell>
                   <Table.Cell class="text-muted-foreground whitespace-normal">{r.line ? [r.line.discount, ...r.line.discounts].filter(Boolean).join(' · ') || '—' : ''}</Table.Cell>
                 </Table.Row>
