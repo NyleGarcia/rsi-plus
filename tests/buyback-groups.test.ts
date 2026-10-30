@@ -24,6 +24,16 @@ describe('buyback hull lines', () => {
   it('a count-only pack under the hull in its name', () => expect(buybackLines(pack, ships)).toEqual(['perseus']));
   it('a combo under every ship it holds', () => expect(buybackLines(combo, ships).sort()).toEqual(['avenger', 'cutlass']));
   it('nothing for an entry naming no hull', () => expect(buybackLines(poster, ships)).toEqual([]));
+  it('a vehicle item is its own hull; a decoration naming a hull is not matched', () => {
+    const b = bb({ type: 'combo', items: [{ title: 'Cutlass Black', kind: 'Vehicle' }, { title: 'Carrack Model', kind: 'Hangar decoration' }] });
+    expect(buybackLines(b, ships)).toEqual(['cutlass']);
+  });
+  it('a CCU with an unknown target id uses its target name; with neither it stays unknown, never the source', () => {
+    const byName = bb({ type: 'upgrade', name: 'Upgrade - Cutlass Black to Carrack', upgrade: { fromId: 1, fromName: 'Cutlass Black', toId: 999, toName: 'Carrack' } });
+    expect(buybackLines(byName, ships)).toEqual(['carrack']);
+    const unread = bb({ type: 'upgrade', name: 'Upgrade - Cutlass Black to Carrack', upgrade: { fromId: 1, fromName: 'Cutlass Black', toId: null, toName: '' } });
+    expect(buybackLines(unread, ships)).toEqual([]);
+  });
 });
 
 describe('buyback groups', () => {

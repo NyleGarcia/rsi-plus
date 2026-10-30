@@ -366,7 +366,7 @@
           <Table.Body>
             {#if g.label}
               <Table.Row class="hover:bg-transparent">
-                <Table.Head colspan={5} class="h-auto pt-3.5">
+                <Table.Head colspan={5} scope="rowgroup" class="h-auto pt-3.5">
                   <!-- Table row group: a Collapsible can't wrap <tr>s, so this stays a disclosure button. -->
                   <Button variant="ghost" size="sm" class="aria-expanded:bg-transparent h-auto w-full flex-wrap justify-start gap-2 px-1 py-1.5 text-left text-[13px] font-normal whitespace-normal" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
                     {#if collapsed.has(g.key)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
