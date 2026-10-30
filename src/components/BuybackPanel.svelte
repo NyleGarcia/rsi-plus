@@ -4,6 +4,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import type { BuybackItem, PledgeType } from '@/lib/hangar';
   import { buybackItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { bg } from '@/lib/messages';
   import { itemKey } from '@/lib/melt';
   import { Badge } from '@/components/ui/badge';
   import { storePaintIndex } from '@/lib/items';
@@ -27,7 +28,6 @@
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
   import Empty from './Empty.svelte';
-  import SwitchRow from './SwitchRow.svelte';
   import * as Alert from '@/components/ui/alert';
   import { LINK } from '@/lib/ui';
   import { fmtDate, parseRsiDate } from '@/lib/dates';
@@ -41,6 +41,7 @@
   let data = $state<Saved | null>(null);
   let loading = $state<{ page: number; count: number; pages?: number } | null>(null);
   let error = $state('');
+  let catalogError = $state('');
   let q = $state('');
   let type = $state<PledgeType | 'all'>('all');
   type Col = 'name' | 'type' | 'date';
@@ -96,11 +97,23 @@
 
   $effect(() => {
     buybackItem.getValue().then((v) => (data = v)).catch((e) => (error = `Couldn't read saved buyback: ${(e as Error).message}`));
-    catalogItem.getValue().then((c) => (ships = c?.ships ?? [])).catch(() => {});
-    paintCatalogItem.getValue().then((p) => (paints = p?.paints ?? [])).catch(() => {});
+    catalogItem.getValue().then((c) => c?.ships?.length && (ships = c.ships)).catch(() => {});
+    paintCatalogItem.getValue().then((p) => p?.paints?.length && (paints = p.paints)).catch(() => {});
+    // The cache may be empty (Store pages never opened): the background loads the catalog when it has none, as on
+    // My items / Hangar. Without it no entry can be matched to a ship (Group: ship) or a store page.
+    bg({ type: 'catalog:get' })
+      .then((c) => (ships = c?.ships ?? ships))
+      .catch((e) => (catalogError = `Store catalog: ${(e as Error).message} (needed to match entries to ships and store pages)`));
+    bg({ type: 'paints:get' })
+      .then((p) => (paints = p?.paints ?? paints))
+      .catch(() => {}); // store links are a bonus
     hangarItem.getValue().then((h) => (hangarPledges = h?.pledges ?? [])).catch(() => {});
-    const offH = hangarItem.watch((h) => (hangarPledges = h?.pledges ?? []));
-    return () => (ctrl?.abort(), offH());
+    const offs = [
+      hangarItem.watch((h) => (hangarPledges = h?.pledges ?? [])),
+      catalogItem.watch((c) => c?.ships?.length && (ships = c.ships)),
+      paintCatalogItem.watch((p) => p?.paints?.length && (paints = p.paints)),
+    ];
+    return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
   async function save(v: Saved) {
@@ -175,30 +188,43 @@
     for (const b of all) seen.set(b.id, (seen.get(b.id) ?? 0) + 1);
     return new Map(all.map((b, i) => [b, (seen.get(b.id) ?? 0) > 1 || !b.id ? `${b.id}:${i}` : String(b.id)]));
   });
-  let onlyStore = $state(false);
+  /** Buyback prefs on this device: Group by and the store filter. */
+  const PREFS = 'rsiplus:buyback';
+  const saved = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ groupBy: BuybackGroupBy; store: StoreFilter }>;
+    } catch {
+      return {};
+    }
+  })();
+  type StoreFilter = 'any' | 'sold' | 'unsold';
+  const STORE_FILTER: { value: StoreFilter; label: string }[] = [
+    { value: 'any', label: 'Store: any' },
+    { value: 'sold', label: 'Store sells it today' },
+    { value: 'unsold', label: "Store doesn't sell it today" },
+  ];
+  let store = $state<StoreFilter>(STORE_FILTER.some((o) => o.value === saved.store) ? saved.store! : 'any');
+  /**
+   * Store status per entry: sold = the store sells at least one of its contents today; unsold = its contents are known
+   * and the store sells none of them (only buy-back gets them); unknown = a CCU (the planner's job) or contents not
+   * loaded yet — those match neither store filter.
+   */
+  const storeStatus = (b: BuybackItem): 'sold' | 'unsold' | 'unknown' =>
+    storeFor(b).length ? 'sold' : b.type === 'upgrade' || b.upgrade || !buybackContents(b).length ? 'unknown' : 'unsold';
+  const unknownStore = $derived(store === 'any' ? 0 : all.filter((b) => storeStatus(b) === 'unknown').length);
   const types = $derived([...new Set(all.map((i) => i.type))]);
   const shown = $derived(
     sortBy(
-      all.filter((i) => (type === 'all' || i.type === type) && (!onlyStore || storeFor(i).length > 0) && (own === 'all' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
+      all.filter((i) => (type === 'all' || i.type === type) && (store === 'any' || storeStatus(i) === store) && (own === 'all' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
       sort,
       { name: (i) => i.name, type: (i) => i.type, date: (i) => dateValue(i.date) },
     ),
   );
-  /** Group by (type / ship / none), remembered on this device. */
-  const PREFS = 'rsiplus:buyback';
-  let groupBy = $state<BuybackGroupBy>(
-    (() => {
-      try {
-        const v = (JSON.parse(localStorage.getItem(PREFS) ?? '{}') as { groupBy?: BuybackGroupBy }).groupBy;
-        return BUYBACK_GROUP_BY.some((o) => o.value === v) ? v! : 'none';
-      } catch {
-        return 'none';
-      }
-    })(),
-  );
+  /** Group by (type / ship / none). */
+  let groupBy = $state<BuybackGroupBy>(BUYBACK_GROUP_BY.some((o) => o.value === saved.groupBy) ? saved.groupBy! : 'none');
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ groupBy }));
+      localStorage.setItem(PREFS, JSON.stringify({ groupBy, store }));
     } catch {
       /* no persistence — fine */
     }
@@ -316,6 +342,7 @@
   </Card.Header>
   <Card.Content class="grid gap-4">
     {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
+    {#if catalogError}<Alert.Root variant="warning"><Alert.Description>{catalogError}</Alert.Description></Alert.Root>{/if}
     {#if all.length}
       <div class="flex flex-wrap items-center gap-2">
         <Input class="w-56" placeholder="Search" bind:value={q} aria-label="Search buyback" />
@@ -346,8 +373,13 @@
           <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, false)}>Expand all</Button>
           <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, true)}>Collapse all</Button>
         {/if}
-        <SwitchRow id="buyback-only-store" size="sm" label="Only entries the store sells today" checked={onlyStore} onchange={(v) => (onlyStore = v)} />
-        <span class="text-muted-foreground text-sm">{shown.length} shown · buyback CCUs can be used by the CCU planner</span>
+        <Select.Root type="single" bind:value={() => store, (v) => (store = v as StoreFilter)}>
+          <Select.Trigger aria-label="Store">{STORE_FILTER.find((o) => o.value === store)?.label}</Select.Trigger>
+          <Select.Content>
+            {#each STORE_FILTER as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
+          </Select.Content>
+        </Select.Root>
+        <span class="text-muted-foreground text-sm">{shown.length} shown{#if unknownStore} · {unknownStore} left out (CCUs or contents not loaded){/if} · buyback CCUs can be used by the CCU planner</span>
         <span class="flex-1"></span>
         <TipButton variant="ghost" size="xs" onclick={copyMarkup} tip="Copies the raw HTML of the first two buyback entries (as RSI serves them) to the clipboard, for fixing the parser when contents or dates come out wrong">Copy page markup</TipButton>
         {#if debugMsg}<span class="text-muted-foreground text-xs">{debugMsg}</span>{/if}
