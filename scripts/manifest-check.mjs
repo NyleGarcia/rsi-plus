@@ -4,21 +4,19 @@
 // (asked for when the user presses Connect), no CSP loosening (unsafe-eval / remote script sources), no http:// or
 // third-party URLs anywhere. Adding a permission is a deliberate change: extend the allowlist here in the same commit
 // (and say why in wxt.config.ts). docs/ci.md.
-//   --dev   also accept the dev StarOrg host, which only a development-mode build declares (never a store zip).
 import { readFileSync } from 'node:fs';
 
 const PERMISSIONS = new Set(['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', 'offscreen', 'identity']);
 const HOSTS = new Set(['https://robertsspaceindustries.com/*']);
 const args = process.argv.slice(2);
-const dev = args.includes('--dev');
-const files = args.filter((a) => a !== '--dev');
+const files = args;
 /** Optional hosts: requested at runtime by Settings → Integrations → StarOrg Tools → Connect, dropped on Disconnect. */
-const OPTIONAL_HOSTS = new Set(['https://starorg.tools/*', ...(dev ? ['https://dev.starorg.tools/*'] : [])]);
+const OPTIONAL_HOSTS = new Set(['https://starorg.tools/*', 'https://dev.starorg.tools/*']);
 const BAD_CSP = /unsafe-eval|wasm-unsafe-eval|http:|https:\/\/(?!robertsspaceindustries\.com)/;
 const isHost = (p) => p.includes('/') || p === '<all_urls>';
 
 if (!files.length) {
-  console.error('usage: node scripts/manifest-check.mjs [--dev] <manifest.json>...');
+  console.error('usage: node scripts/manifest-check.mjs <manifest.json>...');
   process.exit(2);
 }
 

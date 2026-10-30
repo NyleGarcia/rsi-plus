@@ -21,8 +21,11 @@ export const SETTING_TOGGLES: SettingToggle[] = [
   { key: 'notifyAllFriends', label: 'Notify for every friend coming online', hint: 'Otherwise only friends marked with the bell' },
   { key: 'partySound', label: 'Ding on party auto-accept', hint: 'Short sound when party mode accepts a request' },
   { key: 'siteBar', label: 'RSI+ bar on store & account pages' },
+  { key: 'accountSwitcher', label: 'Account switcher', hint: 'Save RSI logins and swap between them from the hub header and the popup' },
 ];
 export const QUICK_TOGGLES = SETTING_TOGGLES.filter((t) => t.quick);
+/** Settings → Integrations: the opt-in switch that shows the StarOrg Tools card and the *JSON for StarOrg Tools* export. */
+export const STARORG_SWITCH: SettingToggle = { key: 'starorg', label: 'StarOrg Tools', hint: 'Show the StarOrg Tools export and sync. Off: hidden, and RSI+ sends nothing to StarOrg Tools' };
 /** The StarOrg Tools card's switches (Settings → Integrations) — kept out of `SETTING_TOGGLES`, which is the Spectrum / site card. */
 export const STARORG_TOGGLES: SettingToggle[] = [
   { key: 'starorgAutoSync', label: 'Auto-sync', hint: 'Send after every full hangar load; once a week, re-read your hangar from RSI and send it if your ships changed (not in passive mode)' },
@@ -50,4 +53,4 @@ export const POLL_MINUTES: NumberSetting = { key: 'pollMinutes', label: 'every',
 export const PARTY_REMIND: NumberSetting = { key: 'partyRemindHours', label: 'Party reminder after', unit: 'h (0 = never)', min: 0, max: 720, fallback: 0 };
 export const clampSetting = (n: NumberSetting, raw: unknown) => Math.max(n.min, Number(raw) || n.fallback);
 /** One toggle's wording by key (pages that show a single switch outside the Settings list). */
-export const toggleOf = (key: keyof Settings): SettingToggle => [...SETTING_TOGGLES, ...STARORG_TOGGLES].find((t) => t.key === key) ?? { key, label: String(key) };
+export const toggleOf = (key: keyof Settings): SettingToggle => [...SETTING_TOGGLES, STARORG_SWITCH, ...STARORG_TOGGLES].find((t) => t.key === key) ?? { key, label: String(key) };

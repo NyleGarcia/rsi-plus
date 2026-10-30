@@ -5,7 +5,8 @@ const who = vi.hoisted(() => ({ member: null as { nickname: string; displayname:
 vi.mock('@/lib/api', () => ({ identify: async () => ({ member: who.member }) }));
 
 import { captureProfile, forgetProfile, switchTo, toSaved, toSet, type SavedCookie } from '@/lib/accounts';
-import { hangarItem, profilesItem, readItem } from '@/lib/settings';
+import { DEFAULTS, getSettings, hangarItem, keepAccountSwitcher, patchSettings, profilesItem, readItem } from '@/lib/settings';
+import { storage } from '#imports';
 
 const raw = (over: Partial<Parameters<typeof toSaved>[0]> = {}) =>
   ({
@@ -102,5 +103,27 @@ describe('profiles', () => {
 
     await forgetProfile(a.id);
     expect((await profilesItem.getValue())).toEqual({ active: null, list: [expect.objectContaining({ handle: 'bob' })] });
+  });
+});
+
+describe('account switcher opt-in', () => {
+  beforeEach(() => fakeBrowser.reset());
+  const saved = { active: null, list: [{ id: 'p1', handle: 'zedwil', displayname: 'zed', cookies: [], savedAt: 1 }] };
+  it('is off by default', async () => {
+    expect(DEFAULTS.accountSwitcher).toBe(false);
+    await keepAccountSwitcher();
+    expect((await getSettings()).accountSwitcher).toBe(false);
+  });
+  it('turns on after an update for someone with saved logins (either context)', async () => {
+    await storage.setItem('local:incognito.profiles', saved);
+    await keepAccountSwitcher();
+    expect((await getSettings()).accountSwitcher).toBe(true);
+  });
+  it('runs once per device: a later choice to turn it off sticks', async () => {
+    await storage.setItem('local:profiles', saved);
+    await keepAccountSwitcher();
+    await patchSettings({ accountSwitcher: false });
+    await keepAccountSwitcher();
+    expect((await getSettings()).accountSwitcher).toBe(false);
   });
 });

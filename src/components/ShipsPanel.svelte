@@ -20,7 +20,7 @@
     type PaintGroup,
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem, storeItemsItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, gameShipsItem, getSettings, hangarItem, paintCatalogItem, pledgeLabelsItem, settingsItem, storeItemsItem } from '@/lib/settings';
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { isExtra, isInsurance } from '@/lib/bundle';
@@ -174,6 +174,12 @@
     if (kind === 'json') download(`hangarxplor-shiplist-${stamp()}.json`, JSON.stringify(rows, null, 2), 'application/json');
     else download(`hangarxplor-shiplist-${stamp()}.csv`, xplorCsv(rows));
   }
+  /** Settings → Integrations → *StarOrg Tools* (opt-in): shows the StarOrg export below. */
+  let starorgOn = $state(false);
+  $effect(() => {
+    getSettings().then((v) => (starorgOn = v.starorg));
+    return settingsItem.watch(() => getSettings().then((v) => (starorgOn = v.starorg)));
+  });
   /** StarOrg Tools preset: the same rows plus insurance, `acquired`, and the ships you have only in the game, without `pledge_date`. */
   const exportStarOrg = () => download(`starorg-fleet-${stamp()}.json`, JSON.stringify(starOrgRows(hangar?.pledges ?? [], game, ships), null, 2), 'application/json');
   let copiedNames = $state(false);
@@ -504,10 +510,12 @@
                     <DropdownMenu.Item onSelect={copyNames}>
                       <div class="grid"><span class="font-semibold">{copiedNames ? 'Copied ✓' : 'Copy ship names'}</span><span class="text-muted-foreground text-xs">One "Maker Ship" per hull, for tools that take a plain list</span></div>
                     </DropdownMenu.Item>
-                    <DropdownMenu.Separator />
-                    <DropdownMenu.Item onSelect={exportStarOrg}>
-                      <div class="grid"><span class="font-semibold">JSON for StarOrg Tools</span><span class="text-muted-foreground text-xs">Import this on starorg.tools → Hangar</span></div>
-                    </DropdownMenu.Item>
+                    {#if starorgOn}
+                      <DropdownMenu.Separator />
+                      <DropdownMenu.Item onSelect={exportStarOrg}>
+                        <div class="grid"><span class="font-semibold">JSON for StarOrg Tools</span><span class="text-muted-foreground text-xs">Import this on starorg.tools → Hangar</span></div>
+                      </DropdownMenu.Item>
+                    {/if}
                   </DropdownMenu.Content>
                 </DropdownMenu.Root>
               </Card.Action>

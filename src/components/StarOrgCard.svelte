@@ -1,10 +1,11 @@
 <script lang="ts">
   /**
    * Settings → Integrations → StarOrg Tools: connect / disconnect, who StarOrg knows you as, the last send, *Send
-   * hangar now*, and the Auto-sync / Send pledge values switches. Every network call is in `lib/starorg.ts` and runs
-   * only while connected.
+   * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync / Send pledge values switches.
+   * Shown only while the *StarOrg Tools* switch above it is on. Every network call is in `lib/starorg.ts` and runs only
+   * while connected.
    */
-  import { connect, currentAuth, disconnect, requestCostAccess, sendHangar, status, STARORG_ORIGIN, type StarOrgAuth, type StarOrgSync } from '@/lib/starorg';
+  import { connect, currentAuth, disconnect, originOf, usableAuth, requestCostAccess, sendHangar, status, STARORG_TARGETS, type StarOrgAuth, type StarOrgSync, type StarOrgTarget } from '@/lib/starorg';
   import { catalogItem, getSettings, patchSettings, settingsItem, starorgItem, starorgSyncItem, type Settings } from '@/lib/settings';
   import { STARORG_TOGGLES } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
@@ -13,6 +14,7 @@
   import { LINK } from '@/lib/ui';
   import { Button } from '@/components/ui/button';
   import * as Alert from '@/components/ui/alert';
+  import * as Select from '@/components/ui/select';
   import SwitchRow from './SwitchRow.svelte';
   import ConfirmButton from './ConfirmButton.svelte';
   import HintBadge from './HintBadge.svelte';
@@ -32,7 +34,7 @@
     starorgSyncItem.getValue().then((v) => (sync = v));
     getSettings().then((v) => (s = v));
     const offs = [
-      starorgItem.watch((v) => (auth = v && v.expiresAt > Date.now() ? v : null)),
+      starorgItem.watch((v) => (auth = usableAuth(v) ? v : null)),
       starorgSyncItem.watch((v) => (sync = v)),
       settingsItem.watch(() => getSettings().then((v) => (s = v))),
     ];
@@ -83,8 +85,12 @@
       busy = null;
     }
   }
+  const targets = Object.entries(STARORG_TARGETS).map(([id, t]) => ({ id: id as StarOrgTarget, label: t.label }));
+  /** The site shown: the connected token's, else the setting. */
+  const origin = $derived(auth?.origin ?? originOf(s?.starorgTarget ?? 'prod'));
+  const targetLabel = $derived(targets.find((t) => originOf(t.id) === origin)?.label ?? origin);
   // connect() asks for the host permission first, synchronously inside this click (browsers need the gesture).
-  const onConnect = () => run('connect', connect);
+  const onConnect = () => run('connect', () => connect(s?.starorgTarget ?? 'prod'));
   const onDisconnect = () => run('disconnect', disconnect);
   const onSend = () =>
     run('send', async () => {
@@ -104,14 +110,25 @@
         <Button size="sm" onclick={onSend} disabled={busy !== null}>{busy === 'send' ? 'Sending…' : 'Send hangar now'}</Button>
         <ConfirmButton size="sm" variant="outline" onconfirm={onDisconnect} disabled={busy !== null}>Disconnect</ConfirmButton>
       {:else}
-        <Button size="sm" onclick={onConnect} disabled={busy !== null}>{busy === 'connect' ? 'Connecting…' : 'Connect'}</Button>
+        <Button size="sm" onclick={onConnect} disabled={busy !== null || !s}>{busy === 'connect' ? 'Connecting…' : 'Connect'}</Button>
       {/if}
     </div>
   </div>
 
   <p class="text-muted-foreground text-xs">
-    Optional: connect <a class={LINK} href={STARORG_ORIGIN} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (hull, nickname, LTI / warbond / insurance, pledge id and pledge name; pledge values only if you turn that on). Off until you press Connect; nothing else ever leaves RSI.
+    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (hull, nickname, LTI / warbond / insurance, pledge id and pledge name; pledge values only if you turn that on). Off until you press Connect; nothing else ever leaves RSI.
   </p>
+
+  <div class="flex flex-wrap items-center gap-2 text-sm">
+    <span id="starorg-site" class="text-muted-foreground">Site</span>
+    <Select.Root type="single" value={s?.starorgTarget ?? 'prod'} onValueChange={(v) => v && set('starorgTarget', v as StarOrgTarget)} disabled={!!auth || busy !== null || !s}>
+      <Select.Trigger size="sm" class="min-w-44" aria-labelledby="starorg-site">{targetLabel}</Select.Trigger>
+      <Select.Content>
+        {#each targets as t (t.id)}<Select.Item value={t.id} label={t.label}>{t.label}</Select.Item>{/each}
+      </Select.Content>
+    </Select.Root>
+    {#if auth}<span class="text-muted-foreground text-xs">Disconnect to switch sites.</span>{/if}
+  </div>
 
   {#if auth}
     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">

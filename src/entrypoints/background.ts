@@ -7,6 +7,7 @@ import {
   feedItem,
   friendNotesItem,
   getSettings,
+  keepAccountSwitcher,
   getWatches,
   lastPollItem,
   orgCacheItem,
@@ -26,6 +27,7 @@ import {
   starorgItem,
 } from '@/lib/settings';
 import { afterLoad, isNewLoad, scheduleStarOrg, STARORG_ALARM, weeklySync } from '@/lib/starorg-auto';
+import { disconnectAll } from '@/lib/starorg';
 import { loadHangar } from '@/lib/account';
 import { readHangarOffscreen } from '@/lib/offscreen';
 import { ding } from '@/lib/sound';
@@ -55,9 +57,17 @@ export default defineBackground(() => {
     respond(handle(msg, sender.tab?.windowId)).then(sendResponse);
     return true; // async response
   });
-  browser.runtime.onInstalled.addListener(() => schedule());
+  browser.runtime.onInstalled.addListener(({ reason }) => {
+    schedule();
+    // The account switcher is opt-in now: keep it on for anyone updating with saved logins.
+    if (reason === 'update') keepAccountSwitcher().catch((e) => console.warn('[RSI+] account switcher', e));
+  });
   browser.runtime.onStartup.addListener(() => schedule());
-  settingsItem.watch(() => schedule());
+  settingsItem.watch((next, prev) => {
+    schedule();
+    // StarOrg Tools switched off (here, in the other context or on another synced device): disconnect everywhere.
+    if (prev?.starorg && !next?.starorg) disconnectAll().catch((e) => console.warn('[RSI+] starorg disconnect', e));
+  });
   // Connect / Disconnect / a 401 add or remove the weekly StarOrg check.
   starorgItem.watch(() => scheduleStarOrg().catch((e) => console.warn('[RSI+] starorg alarm', e)));
   feedItem.watch((f) => updateBadge(f ?? []));

@@ -11,6 +11,7 @@ import {
   currentAuth,
   DATA_COLLECTION,
   disconnect,
+  disconnectAll,
   FINANCIAL,
   MAX_SYNC_ROWS,
   MISMATCH,
@@ -19,8 +20,8 @@ import {
   push,
   s256,
   sendHangar,
+  hostsOf,
   STARORG_HOSTS,
-  STARORG_ORIGIN,
   SYNC_FORMAT,
   type SyncPayload,
 } from '@/lib/starorg';
@@ -41,16 +42,19 @@ const game: GameShip[] = [{ id: 3, name: 'Cutlass Black', how: 'bought', count: 
 const pledges = [pledge(7, ['Aegis Avenger Titan'], { lti: true, insurance: 'LTI', nickname: 'Bessie' }), pledge(8, ['Cutlass Black'], { value: 110 })];
 const NOW = new Date('2026-10-29T18:04:00.123Z');
 const payload = (sendCost = false): SyncPayload => buildPayload(pledges, game, ships, { sendCost, rsiHandle: 'zedwil', client: 'rsi-plus/0.6.0', now: NOW });
-const AUTH = { token: 'tok-123', expiresAt: Date.now() + 86_400_000, user: { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true } };
+const STARORG_ORIGIN = 'https://starorg.tools';
+const DEV_ORIGIN = 'https://dev.starorg.tools';
+const AUTH = { token: 'tok-123', origin: STARORG_ORIGIN, expiresAt: Date.now() + 86_400_000, user: { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true } };
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 let fetchMock: ReturnType<typeof vi.fn>;
 
-beforeEach(() => {
+beforeEach(async () => {
   fakeBrowser.reset();
   who.handle = 'zedwil';
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
+  await patchSettings({ starorg: true });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -254,9 +258,9 @@ describe('connect / disconnect', () => {
   it('asks for the host first, runs PKCE S256 on the identity redirect, exchanges code + verifier without cookies', async () => {
     fetchMock.mockImplementation(async () => (order.push('exchange'), json(200, { access_token: 'tok', expires_in: 3600, user })));
     const before = Date.now();
-    const auth = await connect();
+    const auth = await connect('prod');
     expect(order).toEqual(['request', 'flow', 'exchange']);
-    expect(request).toHaveBeenCalledWith({ origins: STARORG_HOSTS });
+    expect(request).toHaveBeenCalledWith({ origins: hostsOf(STARORG_ORIGIN) });
     const { url, interactive } = flow.mock.calls[0]![0] as { url: string; interactive: boolean };
     expect(interactive).toBe(true);
     const u = new URL(url);
@@ -276,38 +280,38 @@ describe('connect / disconnect', () => {
   });
   it('a denied permission stops before the sign-in', async () => {
     request.mockResolvedValue(false);
-    await expect(connect()).rejects.toThrow(/needs permission/);
+    await expect(connect('prod')).rejects.toThrow(/needs permission/);
     expect(flow).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it('a cancelled sign-in gives the host permission back', async () => {
     flow.mockRejectedValue(new Error('The user did not approve access.'));
-    await expect(connect()).rejects.toThrow(/did not finish/);
+    await expect(connect('prod')).rejects.toThrow(/did not finish/);
     expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS });
     expect(await starorgItem.getValue()).toBeNull();
   });
   it('a redirect with ?error= names it, and a missing code is reported; both release the permission', async () => {
     flow.mockResolvedValue(`${REDIRECT}?error=access_denied`);
-    await expect(connect()).rejects.toThrow('StarOrg Tools sign-in failed: access_denied.');
+    await expect(connect('prod')).rejects.toThrow('StarOrg Tools sign-in failed: access_denied.');
     flow.mockResolvedValue(REDIRECT);
-    await expect(connect()).rejects.toThrow('returned no code');
+    await expect(connect('prod')).rejects.toThrow('returned no code');
     flow.mockResolvedValue('not a url');
-    await expect(connect()).rejects.toThrow('returned no code');
+    await expect(connect('prod')).rejects.toThrow('returned no code');
     expect(remove).toHaveBeenCalledTimes(3);
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it('a refused exchange (400) or a malformed answer stores nothing and releases the permission', async () => {
     fetchMock.mockResolvedValueOnce(json(400, { detail: 'Invalid or expired code' }));
-    await expect(connect()).rejects.toThrow('StarOrg Tools refused the sign-in: Invalid or expired code');
+    await expect(connect('prod')).rejects.toThrow('StarOrg Tools refused the sign-in: Invalid or expired code');
     fetchMock.mockResolvedValueOnce(json(200, { access_token: 'tok', user })); // no expires_in → would never expire
-    await expect(connect()).rejects.toThrow('unexpected sign-in answer');
+    await expect(connect('prod')).rejects.toThrow('unexpected sign-in answer');
     expect(await starorgItem.getValue()).toBeNull();
     expect(remove).toHaveBeenCalledTimes(2);
   });
   it('a failed connect keeps the permission while the incognito context is still connected', async () => {
     await storage.setItem('local:incognito.starorg', AUTH);
     flow.mockRejectedValue(new Error('closed'));
-    await expect(connect()).rejects.toThrow();
+    await expect(connect('prod')).rejects.toThrow();
     expect(remove).not.toHaveBeenCalled();
   });
   it('disconnect: logout with the bearer (no cookies), then forget the token, then drop the permission', async () => {
@@ -342,8 +346,8 @@ describe('connect / disconnect', () => {
   it('Firefox: Connect asks for the data categories, Disconnect removes them with the host', async () => {
     vi.stubEnv('FIREFOX', 'true' as never);
     fetchMock.mockResolvedValue(json(200, { access_token: 'tok', expires_in: 3600, user }));
-    await connect();
-    expect(request).toHaveBeenCalledWith({ origins: STARORG_HOSTS, data_collection: DATA_COLLECTION });
+    await connect('prod');
+    expect(request).toHaveBeenCalledWith({ origins: hostsOf(STARORG_ORIGIN), data_collection: DATA_COLLECTION });
     await disconnect();
     expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS, data_collection: [...DATA_COLLECTION, FINANCIAL] });
   });
@@ -367,7 +371,9 @@ describe('connect / disconnect', () => {
 });
 
 describe('StarOrg settings', () => {
-  it('Auto-sync and Send pledge values default off', async () => {
+  it('the integration is opt-in, on production, and Auto-sync and Send pledge values default off', async () => {
+    expect(DEFAULTS.starorg).toBe(false);
+    expect(DEFAULTS.starorgTarget).toBe('prod');
     expect(DEFAULTS.starorgAutoSync).toBe(false);
     expect(DEFAULTS.starorgSendCost).toBe(false);
     expect(await getSettings()).toMatchObject({ starorgAutoSync: false, starorgSendCost: false });
@@ -375,6 +381,83 @@ describe('StarOrg settings', () => {
   it('their switches live on the StarOrg card, not in the Spectrum / site list', () => {
     expect(STARORG_TOGGLES.map((t) => t.key)).toEqual(['starorgAutoSync', 'starorgSendCost']);
     expect(SETTING_TOGGLES.some((t) => t.key.startsWith('starorg'))).toBe(false);
+    expect(toggleOf('starorg').label).toBe('StarOrg Tools');
     expect(toggleOf('starorgSendCost').label).toBe('Send pledge values');
+  });
+});
+
+describe('StarOrg site (production / dev)', () => {
+  const user = { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true };
+  it('declares both sites as optional hosts', () => {
+    expect(STARORG_HOSTS).toEqual([`${STARORG_ORIGIN}/*`, `${DEV_ORIGIN}/*`]);
+  });
+  it('connects to the chosen site only, and the token remembers it', async () => {
+    const request = vi.fn(async () => true);
+    const flow = vi.fn(async (_details: { url: string }) => 'https://ext.chromiumapp.org/?code=abc');
+    fakeBrowser.permissions.request = request as never;
+    fakeBrowser.identity.launchWebAuthFlow = flow as never;
+    fakeBrowser.identity.getRedirectURL = (() => 'https://ext.chromiumapp.org/') as never;
+    fetchMock.mockResolvedValue(json(200, { access_token: 'tok', expires_in: 3600, user }));
+    const auth = await connect('dev');
+    expect(request).toHaveBeenCalledWith({ origins: hostsOf(DEV_ORIGIN) });
+    expect(new URL(flow.mock.calls[0]![0].url).origin).toBe(DEV_ORIGIN);
+    expect(fetchMock.mock.calls[0]![0]).toBe(`${DEV_ORIGIN}/api/auth/extension/exchange`);
+    expect(auth.origin).toBe(DEV_ORIGIN);
+    expect((await starorgItem.getValue())?.origin).toBe(DEV_ORIGIN);
+  });
+  it('sends with a token to the site that issued it, whatever the setting says now', async () => {
+    await starorgItem.setValue({ ...AUTH, origin: DEV_ORIGIN });
+    await patchSettings({ starorgTarget: 'prod' });
+    fetchMock.mockResolvedValue(json(200, { status: 'success' }));
+    await push(payload());
+    expect(fetchMock.mock.calls[0]![0]).toBe(`${DEV_ORIGIN}/api/fleet/hangar/sync`);
+  });
+  it('forgets a token without a known site', async () => {
+    await starorgItem.setValue({ ...AUTH, origin: 'https://evil.example' });
+    expect(await currentAuth()).toBeNull();
+    expect(await starorgItem.getValue()).toBeNull();
+  });
+});
+
+describe('StarOrg integration switch', () => {
+  it('off: nothing is read or sent, even with a token', async () => {
+    await starorgItem.setValue(AUTH);
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' } as never);
+    await patchSettings({ starorg: false });
+    expect(await sendHangar(async () => ships)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('StarOrg switched off', () => {
+  const user = { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true };
+  it('a sign-in that finishes after the switch went off keeps no token and gives the permission back', async () => {
+    const remove = vi.fn(async () => true);
+    fakeBrowser.permissions.request = (async () => true) as never;
+    fakeBrowser.permissions.remove = remove as never;
+    fakeBrowser.identity.getRedirectURL = (() => 'https://ext.chromiumapp.org/') as never;
+    fakeBrowser.identity.launchWebAuthFlow = (async () => {
+      await patchSettings({ starorg: false });
+      return 'https://ext.chromiumapp.org/?code=abc';
+    }) as never;
+    fetchMock.mockImplementation(async (url: string) => (url.endsWith('/exchange') ? json(200, { access_token: 'tok', expires_in: 3600, user }) : json(200, {})));
+    await expect(connect('prod')).rejects.toThrow(/switched off/);
+    expect(await starorgItem.getValue()).toBeNull();
+    expect(fetchMock.mock.calls.map((c) => c[0])).toContain(`${STARORG_ORIGIN}/api/auth/logout`);
+    expect(remove).toHaveBeenCalled();
+  });
+  it('disconnectAll signs out both contexts and drops the hosts even while the other context is connected', async () => {
+    const remove = vi.fn(async () => true);
+    fakeBrowser.permissions.remove = remove as never;
+    fetchMock.mockResolvedValue(json(200, {}));
+    await starorgItem.setValue(AUTH);
+    await storage.setItem('local:incognito.starorg', { ...AUTH, token: 'tok-incog', origin: DEV_ORIGIN });
+    await storage.setItem('local:incognito.starorgSync', { at: 1, ok: true, message: 'x' });
+    await disconnectAll();
+    expect(await starorgItem.getValue()).toBeNull();
+    expect(await storage.getItem('local:incognito.starorg')).toBeNull();
+    expect(await storage.getItem('local:incognito.starorgSync')).toBeNull();
+    expect(fetchMock.mock.calls.map((c) => c[0]).sort()).toEqual([`${DEV_ORIGIN}/api/auth/logout`, `${STARORG_ORIGIN}/api/auth/logout`]);
+    expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS });
   });
 });

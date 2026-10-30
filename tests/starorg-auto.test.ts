@@ -26,7 +26,7 @@ const pledge = (id: number, shipsIn: string[]): Pledge => ({
 });
 const A = [pledge(7, ['Aegis Avenger Titan'])];
 const B = [pledge(7, ['Aegis Avenger Titan']), pledge(8, ['Cutlass Black'])];
-const AUTH = { token: 'tok-123', expiresAt: Date.now() + 86_400_000, user: { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true } };
+const AUTH = { token: 'tok-123', origin: 'https://starorg.tools', expiresAt: Date.now() + 86_400_000, user: { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true } };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -37,15 +37,18 @@ beforeEach(async () => {
   fetchMock = vi.fn(async () => json(200, {}));
   vi.stubGlobal('fetch', fetchMock);
   await gameShipsItem.setValue([]);
+  await patchSettings({ starorg: true });
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe('weekly alarm', () => {
   it('is wanted only while connected, with Auto-sync on and outside passive mode', () => {
-    expect(weeklyWanted({ pollAuto: true, starorgAutoSync: true }, true)).toBe(true);
-    expect(weeklyWanted({ pollAuto: false, starorgAutoSync: true }, true)).toBe(false);
-    expect(weeklyWanted({ pollAuto: true, starorgAutoSync: false }, true)).toBe(false);
-    expect(weeklyWanted({ pollAuto: true, starorgAutoSync: true }, false)).toBe(false);
+    const on = { starorg: true, pollAuto: true, starorgAutoSync: true };
+    expect(weeklyWanted(on, true)).toBe(true);
+    expect(weeklyWanted({ ...on, pollAuto: false }, true)).toBe(false);
+    expect(weeklyWanted({ ...on, starorgAutoSync: false }, true)).toBe(false);
+    expect(weeklyWanted(on, false)).toBe(false);
+    expect(weeklyWanted({ ...on, starorg: false }, true)).toBe(false);
   });
   it('is created weekly when wanted and cleared on passive mode, Auto-sync off or disconnect', async () => {
     await starorgItem.setValue(AUTH);
@@ -96,12 +99,15 @@ describe('push after a load', () => {
     expect(saved).toMatchObject({ complete: true, handle: 'zedwil', pledges: B });
     expect(await hangarLoadItem.getValue()).toEqual({ at: saved!.at, handle: 'zedwil' });
   });
-  it('afterLoad sends only with Auto-sync on', async () => {
+  it('afterLoad sends only with the integration and Auto-sync on', async () => {
     await starorgItem.setValue(AUTH);
     await saveCompleteLoad({ at: 5, pledges: B, complete: true, handle: 'zedwil' });
     expect(await afterLoad(catalog)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
-    await patchSettings({ starorgAutoSync: true });
+    await patchSettings({ starorg: false, starorgAutoSync: true });
+    expect(await afterLoad(catalog)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await patchSettings({ starorg: true });
     expect(await afterLoad(catalog)).toMatchObject({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

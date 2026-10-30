@@ -56,6 +56,12 @@ export interface Settings {
   partySound: boolean;
   /** RSI+ bar on store ship pages and account pages. */
   siteBar: boolean;
+  /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
+  accountSwitcher: boolean;
+  /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
+  starorg: boolean;
+  /** Which StarOrg Tools site to connect to (`lib/starorg.ts` `STARORG_TARGETS`). Fixed while connected. */
+  starorgTarget: 'prod' | 'dev';
   /** StarOrg Tools (when connected): send the hangar after every full load, and weekly when it changed (`lib/starorg.ts`). */
   starorgAutoSync: boolean;
   /** StarOrg Tools: include each pledge's value (`pledge_cost`); off = sent empty. */
@@ -80,6 +86,9 @@ export const DEFAULTS: Settings = {
   partyRemindHours: 12,
   partySound: true,
   siteBar: true,
+  accountSwitcher: false,
+  starorg: false,
+  starorgTarget: 'prod',
   starorgAutoSync: false,
   starorgSendCost: false,
 };
@@ -170,6 +179,17 @@ export async function getSettings(): Promise<Settings> {
 
 export async function patchSettings(patch: Partial<Settings>) {
   await settingsItem.setValue({ ...(await getSettings()), ...patch });
+}
+
+/**
+ * The account switcher became opt-in (`accountSwitcher`, off by default). Once per device (a local marker: saved logins
+ * are per device, settings are synced), someone with a saved login in either context gets it turned on.
+ */
+export async function keepAccountSwitcher(): Promise<void> {
+  if (await storage.getItem<boolean>('local:accountSwitcherMigrated')) return;
+  await storage.setItem('local:accountSwitcherMigrated', true);
+  const saved = await Promise.all(['local:profiles', 'local:incognito.profiles'].map((k) => storage.getItem<Profiles>(k as 'local:profiles').catch(() => null)));
+  if (saved.some((p) => p?.list?.length) && !(await getSettings()).accountSwitcher) await patchSettings({ accountSwitcher: true });
 }
 
 export async function getWatches(): Promise<Watches> {

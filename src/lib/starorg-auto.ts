@@ -22,8 +22,8 @@ export const STARORG_PERIOD = 7 * 24 * 60;
 type Catalog = () => Promise<CatalogShip[]>;
 type LoadSignal = { at: number; handle: string | null } | null | undefined;
 
-/** The weekly alarm is wanted only while connected, with Auto-sync on and not in passive mode. */
-export const weeklyWanted = (s: Pick<Settings, 'pollAuto' | 'starorgAutoSync'>, connected: boolean): boolean => s.pollAuto && s.starorgAutoSync && connected;
+/** The weekly alarm is wanted only with the integration on, connected, Auto-sync on and not in passive mode. */
+export const weeklyWanted = (s: Pick<Settings, 'pollAuto' | 'starorg' | 'starorgAutoSync'>, connected: boolean): boolean => s.starorg && s.pollAuto && s.starorgAutoSync && connected;
 
 /** Add, keep or clear the weekly alarm to match the settings and the connection. */
 export async function scheduleStarOrg(): Promise<void> {
@@ -41,7 +41,8 @@ export const isNewLoad = (next: LoadSignal, prev: LoadSignal): boolean => !!next
 
 /** After a completed load: send when Auto-sync is on (`sendHangar` itself needs a token and a matching handle). */
 export async function afterLoad(catalog: Catalog): Promise<StarOrgSync | null> {
-  if (!(await getSettings()).starorgAutoSync) return null;
+  const s = await getSettings();
+  if (!s.starorg || !s.starorgAutoSync) return null;
   return sendHangar(catalog);
 }
 
@@ -52,7 +53,7 @@ export async function afterLoad(catalog: Catalog): Promise<StarOrgSync | null> {
  */
 export async function weeklySync(catalog: Catalog, readHangar: () => Promise<Pledge[]>): Promise<StarOrgSync | null> {
   const s = await getSettings();
-  if (!s.starorgAutoSync || !s.pollAuto || !(await currentAuth())) return null;
+  if (!weeklyWanted(s, !!(await currentAuth()))) return null;
   const saved = await hangarItem.getValue();
   const me = await whoAmI();
   if (!saved?.complete || !me || saved.handle !== me.handle) return null;

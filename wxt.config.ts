@@ -36,15 +36,14 @@ export default defineConfig({
   // Targets: chrome, edge, brave (same MV3 build as chrome, own file name), firefox. `wxt zip -b <target>`; CI builds all four.
   manifest: ({ browser, mode }) => {
     const firefox = browser === 'firefox';
-    // StarOrg Tools (Settings → Integrations): an *optional* host, asked for only when the user presses Connect and
-    // dropped on Disconnect, so a store install still talks to RSI alone. The dev host is declared by a development
-    // build only (`wxt`, `wxt build --mode development`) and never ships in a store zip (lib/starorg.ts picks the same
-    // host from `import.meta.env.MODE`). Firefox MV2 has no `optional_host_permissions`: the host goes into
-    // `optional_permissions` there.
+    // StarOrg Tools (Settings → Integrations, opt-in): *optional* hosts, one per site the user can pick (production or
+    // dev, lib/starorg.ts `STARORG_TARGETS`). Only the chosen site's host is asked for, when the user presses Connect,
+    // and both are dropped on Disconnect, so a store install still talks to RSI alone. Firefox MV2 has no
+    // `optional_host_permissions`: the hosts go into `optional_permissions` there.
     // Not pinned yet: `manifest.key` for the Chromium dev build (a stable dev extension id for the StarOrg redirect
     // allowlist). No key is in the repo; generate one (docs/architecture.md → StarOrg Tools) and add `key` here for
     // `mode === 'development'` only — the store assigns the production id.
-    const starorgHosts = ['https://starorg.tools/*', ...(mode === 'development' ? ['https://dev.starorg.tools/*'] : [])];
+    const starorgHosts = ['https://starorg.tools/*', 'https://dev.starorg.tools/*'];
     return {
       name: 'RSI+',
       ...(versionName ? { version_name: versionName } : {}),

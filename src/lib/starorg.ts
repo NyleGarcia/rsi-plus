@@ -1,7 +1,11 @@
 /**
- * StarOrg Tools hangar sync (Settings → Integrations). Optional and off until the user presses *Connect*:
+ * StarOrg Tools hangar sync (Settings → Integrations). Opt-in twice: the *StarOrg Tools* switch (`starorg`, off by
+ * default) shows the card and the export preset, and nothing is sent until the user presses *Connect*:
  *
- * - **Connect** asks for the optional `https://starorg.tools/*` host, then signs in through StarOrg's extension
+ * - **Site**: `starorgTarget` picks production (`starorg.tools`) or the dev site (`dev.starorg.tools`). The token
+ *   records the origin it came from (`StarOrgAuth.origin`) and every request goes there, so a token never reaches the
+ *   other site; the card fixes the choice while connected.
+ * - **Connect** asks for the chosen site's optional host, then signs in through StarOrg's extension
  *   flow (`/api/auth/extension/login` → Discord → a one-time `?code=` on `identity.getRedirectURL()`), with a PKCE
  *   verifier the server checks at `/api/auth/extension/exchange`. The `aud=rsiplus` token (90 days) is kept under
  *   `acct('local:starorg')` (`starorgItem`), never in sync storage.
@@ -24,14 +28,22 @@ import { whoAmI } from './accounts';
 import { starOrgRows, type StarOrgRow } from './export';
 import type { Pledge } from './hangar';
 import type { GameShip } from './items';
-import { gameShipsItem, getSettings, hangarItem, INCOGNITO, starorgItem, starorgSyncItem } from './settings';
+import { gameShipsItem, getSettings, hangarItem, INCOGNITO, starorgItem, starorgSyncItem, type Settings } from './settings';
 import type { CatalogShip } from './store';
 import { storage } from '#imports';
 
-/** Development builds (`wxt`, `wxt build --mode development`) talk to the dev site; every other build to production. */
-export const STARORG_ORIGIN = import.meta.env.MODE === 'development' ? 'https://dev.starorg.tools' : 'https://starorg.tools';
-/** The optional host permission (`wxt.config.ts` declares the same pattern). */
-export const STARORG_HOSTS = [`${STARORG_ORIGIN}/*`];
+/** The StarOrg Tools sites RSI+ can connect to (Settings → Integrations → Site). */
+export const STARORG_TARGETS = {
+  prod: { label: 'Production', origin: 'https://starorg.tools' },
+  dev: { label: 'Dev (dev.starorg.tools)', origin: 'https://dev.starorg.tools' },
+} as const satisfies Record<Settings['starorgTarget'], { label: string; origin: string }>;
+export type StarOrgTarget = Settings['starorgTarget'];
+export const originOf = (target: StarOrgTarget): string => (STARORG_TARGETS[target] ?? STARORG_TARGETS.prod).origin;
+/** One site's optional host permission. */
+export const hostsOf = (origin: string): string[] => [`${origin}/*`];
+/** Every StarOrg optional host (`wxt.config.ts` declares the same patterns; `scripts/manifest-check.mjs` allows them). */
+export const STARORG_HOSTS = Object.values(STARORG_TARGETS).map((t) => `${t.origin}/*`);
+const KNOWN_ORIGINS = new Set<string>(Object.values(STARORG_TARGETS).map((t) => t.origin));
 export const SYNC_FORMAT = 'hangarxplor/1';
 export const MISMATCH = 'RSI_HANDLE_MISMATCH';
 /** StarOrg's `MAX_SYNC_ROWS`: a bigger push is refused with a 422, so it is caught before sending. */
@@ -47,6 +59,8 @@ export interface StarOrgUser {
 }
 export interface StarOrgAuth {
   token: string;
+  /** The StarOrg site that issued the token (`STARORG_TARGETS`): every request with it goes there. */
+  origin: string;
   /** ms since epoch. */
   expiresAt: number;
   user: StarOrgUser;
@@ -142,11 +156,15 @@ export async function pkcePair(): Promise<{ verifier: string; challenge: string 
   return { verifier, challenge: await s256(verifier) };
 }
 
-/** The stored token, or null when there is none or it has expired (an expired one is forgotten). */
+/** A token that can still be used: unexpired, and issued by one of the known sites. */
+export const usableAuth = (auth: StarOrgAuth | null | undefined, now = Date.now()): auth is StarOrgAuth =>
+  !!auth && auth.expiresAt > now && KNOWN_ORIGINS.has(auth.origin);
+
+/** The stored token, or null when there is none, it has expired, or its site is unknown (those are forgotten). */
 export async function currentAuth(now = Date.now()): Promise<StarOrgAuth | null> {
   const auth = await starorgItem.getValue();
   if (!auth) return null;
-  if (auth.expiresAt <= now) {
+  if (!usableAuth(auth, now)) {
     await starorgItem.setValue(null);
     return null;
   }
@@ -188,17 +206,18 @@ const isFirefox = () => String(import.meta.env.FIREFOX) === 'true';
  * Ask for the host permission (and, on Firefox, the optional data-collection categories). Must run first inside the
  * click handler: browsers grant it only during a user gesture, which an earlier `await` would end.
  */
-function requestAccess(): Promise<boolean> {
+function requestAccess(origin: string): Promise<boolean> {
+  const origins = hostsOf(origin);
   if (isFirefox()) {
     try {
       // Firefox 140+: the categories declared under data_collection_permissions.optional (wxt.config.ts). Older
       // Firefox rejects the unknown key synchronously, so fall back to the host alone, still inside the gesture.
-      return browser.permissions.request({ origins: STARORG_HOSTS, data_collection: DATA_COLLECTION } as never);
+      return browser.permissions.request({ origins, data_collection: DATA_COLLECTION } as never);
     } catch {
       /* fall through */
     }
   }
-  return browser.permissions.request({ origins: STARORG_HOSTS });
+  return browser.permissions.request({ origins });
 }
 
 /**
@@ -238,8 +257,8 @@ async function otherContextConnected(now = Date.now()): Promise<boolean> {
  * Drop the StarOrg host (and, on Firefox, every data-collection category RSI+ asks for) — unless the other context
  * (normal / incognito) still holds a live token, which keeps the shared host permission until it disconnects too.
  */
-async function releaseAccess(): Promise<void> {
-  if (await otherContextConnected()) return;
+async function releaseAccess(force = false): Promise<void> {
+  if (!force && (await otherContextConnected())) return;
   if (isFirefox()) {
     try {
       await browser.permissions.remove({ origins: STARORG_HOSTS, data_collection: [...DATA_COLLECTION, FINANCIAL] } as never);
@@ -266,20 +285,21 @@ function codeOf(back: string | undefined): string {
   return code;
 }
 
-/** Connect: host permission → StarOrg / Discord sign-in in a browser popup → token. Call from a click handler. */
-export async function connect(): Promise<StarOrgAuth> {
-  if (!(await requestAccess())) throw new Error('RSI+ needs permission to reach StarOrg Tools to connect.');
+/** Connect to one StarOrg site: host permission → StarOrg / Discord sign-in in a browser popup → token. Call from a click handler. */
+export async function connect(target: StarOrgTarget): Promise<StarOrgAuth> {
+  const origin = originOf(target);
+  if (!(await requestAccess(origin))) throw new Error('RSI+ needs permission to reach StarOrg Tools to connect.');
   try {
     const { verifier, challenge } = await pkcePair();
     const params = new URLSearchParams({ code_challenge: challenge, code_challenge_method: 'S256', redirect_uri: browser.identity.getRedirectURL() });
     let back: string | undefined;
     try {
-      back = await browser.identity.launchWebAuthFlow({ url: `${STARORG_ORIGIN}/api/auth/extension/login?${params}`, interactive: true });
+      back = await browser.identity.launchWebAuthFlow({ url: `${origin}/api/auth/extension/login?${params}`, interactive: true });
     } catch (e) {
       throw new Error(`StarOrg Tools sign-in did not finish (${(e as Error).message}).`);
     }
     const code = codeOf(back);
-    const res = await fetch(`${STARORG_ORIGIN}/api/auth/extension/exchange`, {
+    const res = await fetch(`${origin}/api/auth/extension/exchange`, {
       method: 'POST',
       credentials: 'omit',
       headers: { 'Content-Type': 'application/json' },
@@ -290,7 +310,12 @@ export async function connect(): Promise<StarOrgAuth> {
     const user = j?.user as StarOrgUser | undefined;
     if (!j || typeof j.access_token !== 'string' || !j.access_token || typeof j.expires_in !== 'number' || !Number.isFinite(j.expires_in) || j.expires_in <= 0 || !user || typeof user !== 'object')
       throw new Error('StarOrg Tools sent an unexpected sign-in answer.');
-    const auth: StarOrgAuth = { token: j.access_token, expiresAt: Date.now() + j.expires_in * 1000, user };
+    const auth: StarOrgAuth = { token: j.access_token, origin, expiresAt: Date.now() + j.expires_in * 1000, user };
+    // The integration was switched off while the sign-in window was open: don't keep a token for it.
+    if (!(await getSettings()).starorg) {
+      await fetch(`${origin}/api/auth/logout`, { method: 'POST', credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => undefined);
+      throw new Error('StarOrg Tools was switched off; not connected.');
+    }
     await starorgItem.setValue(auth);
     await starorgSyncItem.setValue(null);
     return auth;
@@ -308,10 +333,28 @@ export async function connect(): Promise<StarOrgAuth> {
 export async function disconnect(): Promise<void> {
   const auth = await starorgItem.getValue();
   if (auth)
-    await fetch(`${STARORG_ORIGIN}/api/auth/logout`, { method: 'POST', credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => undefined);
+    await fetch(`${auth.origin}/api/auth/logout`, { method: 'POST', credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => undefined);
   await starorgItem.setValue(null);
   await starorgSyncItem.setValue(null);
   await releaseAccess();
+}
+
+/**
+ * The *StarOrg Tools* switch turned off (background, on the synced setting, so every device and both contexts get
+ * it): sign out and forget this context's and the other context's token, and drop the hosts unconditionally.
+ */
+export async function disconnectAll(): Promise<void> {
+  const other = await storage.getItem<StarOrgAuth>(OTHER_CONTEXT_KEY).catch(() => null);
+  if (other?.token && KNOWN_ORIGINS.has(other.origin))
+    await fetch(`${other.origin}/api/auth/logout`, { method: 'POST', credentials: 'omit', headers: { Authorization: `Bearer ${other.token}` } }).catch(() => undefined);
+  await storage.removeItem(OTHER_CONTEXT_KEY).catch(() => undefined);
+  await storage.removeItem(OTHER_CONTEXT_KEY.replace('starorg', 'starorgSync') as typeof OTHER_CONTEXT_KEY).catch(() => undefined);
+  const auth = await starorgItem.getValue();
+  if (auth)
+    await fetch(`${auth.origin}/api/auth/logout`, { method: 'POST', credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => undefined);
+  await starorgItem.setValue(null);
+  await starorgSyncItem.setValue(null);
+  await releaseAccess(true);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -338,7 +381,7 @@ export async function push(payload: SyncPayload): Promise<StarOrgSync> {
   if (!auth) return record(DISCONNECTED);
   let res: Response;
   try {
-    res = await fetch(`${STARORG_ORIGIN}/api/fleet/hangar/sync`, {
+    res = await fetch(`${auth.origin}/api/fleet/hangar/sync`, {
       method: 'PUT',
       credentials: 'omit',
       headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
@@ -389,7 +432,8 @@ export function sendHangar(catalog: () => Promise<CatalogShip[]>, opts: { onlyIf
 }
 
 async function doSend(catalog: () => Promise<CatalogShip[]>, { onlyIfChanged = false }: { onlyIfChanged?: boolean }): Promise<StarOrgSync | null> {
-  if (!(await currentAuth())) return null;
+  // The integration switch is synced; another device turning it off stops this one sending too.
+  if (!(await getSettings()).starorg || !(await currentAuth())) return null;
   const fail = async (message: string) => {
     const prev = await starorgSyncItem.getValue();
     const out: StarOrgSync = { at: Date.now(), ok: false, message, hash: prev?.hash };
@@ -418,7 +462,7 @@ export async function status(): Promise<{ rsi_handle: string; last_sync_at: stri
   const auth = await currentAuth();
   if (!auth) return null;
   try {
-    const res = await fetch(`${STARORG_ORIGIN}/api/fleet/hangar/sync`, { credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } });
+    const res = await fetch(`${auth.origin}/api/fleet/hangar/sync`, { credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } });
     if (res.status === 401) {
       await starorgItem.setValue(null);
       return null;

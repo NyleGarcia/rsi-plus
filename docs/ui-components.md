@@ -62,7 +62,7 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 - `cart-ui.svelte.ts` — `createCartLedger()` → `{ state, busy, added, of(key), add(key, task), addAll(lines), reset() }`, `cartErrorLabel(code)`. Pages keep the call (`addStandalone`, `addStep`) and hand it to the ledger.
 - `deep-link.svelte.ts` — `useDeepLink({ hash, idParam, elId, apply, rendered })` → `{ flash }`; `hashParam(k)`.
 - `hub-pages.ts` — `HUB_GROUPS`, `HUB_PAGES`, `SETTINGS_PAGE`, `pageOf(tab)`, `isHubTab(s)`: the one list of pages (sidebar, popup, links).
-- `settings-ui.ts` — `SETTING_TOGGLES` (+ `quick` for the popup), `QUICK_TOGGLES`, `MUTE_MODES`, `STARORG_TOGGLES` (the StarOrg Tools card on Settings → Integrations, `StarOrgCard.svelte`).
+- `settings-ui.ts` — `SETTING_TOGGLES` (+ `quick` for the popup), `QUICK_TOGGLES`, `MUTE_MODES`, `STARORG_SWITCH` (the opt-in switch on Settings → Integrations that shows the card), `STARORG_TOGGLES` (the StarOrg Tools card, `StarOrgCard.svelte`).
 - `download.ts` — `downloadFile(name, body, type)`, `dateStamp()`.
 - `flash.svelte.ts` — `transient(ms)` → `{ text, show(msg), clear() }` for "Saved …" messages.
 - `store.ts` — `priceLabel(discounted, price)`, ribbon tests `isLimitedTime`, `isNewListing`, `isBestValue`, `bonusOf`, `fitsOf`, `isLowStock`, `isLimitedSku`.

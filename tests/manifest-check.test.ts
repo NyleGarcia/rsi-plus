@@ -27,9 +27,9 @@ describe('manifest audit', () => {
     expect(check(mv3({ optional_host_permissions: [STARORG] }))).toMatchObject({ ok: true });
     expect(check(mv2({ optional_permissions: [STARORG] }))).toMatchObject({ ok: true });
   });
-  it('accepts the dev StarOrg host only with --dev', () => {
-    expect(check(mv3({ optional_host_permissions: [STARORG, DEV] })).ok).toBe(false);
-    expect(check(mv3({ optional_host_permissions: [STARORG, DEV] }), '--dev')).toMatchObject({ ok: true });
+  it('accepts the dev StarOrg host too (the Site dropdown can pick it)', () => {
+    expect(check(mv3({ optional_host_permissions: [STARORG, DEV] }))).toMatchObject({ ok: true });
+    expect(check(mv2({ optional_permissions: [STARORG, DEV] }))).toMatchObject({ ok: true });
   });
   it('rejects any other optional host, and an optional API permission', () => {
     const other = check(mv3({ optional_host_permissions: ['https://evil.example/*'] }));
