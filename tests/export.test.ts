@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shipCode, shipLines, stripMaker, xplorCsv, xplorRows } from '@/lib/export';
+import { pledgeHulls, shipCode, shipLines, stripMaker, xplorCsv, xplorRows } from '@/lib/export';
 import type { Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
 
@@ -21,6 +21,17 @@ describe('fleet export (HangarXPLOR shape)', () => {
   it('a pack lists each ship, a CCU none, sorted by maker then ship', () => {
     const rows = xplorRows([pledge(1, ['Cutlass Black', 'Avenger Titan']), pledge(2, [], { type: 'upgrade', upgrade: { fromId: 1, fromName: 'a', toId: 2, toName: 'b' } })], ships);
     expect(rows.map((r) => [r.name, r.pledge_id])).toEqual([['Avenger Titan', '1'], ['Cutlass Black', '1']]);
+  });
+  it('a pack names only the ships you named, each with its own name', () => {
+    const p = pledge(5, ['Cutlass Black', 'Avenger Titan'], {
+      items: [{ title: 'Cutlass Black', kind: 'Ship', customName: 'Rusty' }, { title: 'Avenger Titan', kind: 'Ship' }],
+      nickname: 'Rusty',
+    });
+    expect(xplorRows([p], ships).map((r) => [r.name, r.ship_name])).toEqual([['Avenger Titan', 'Avenger Titan'], ['Cutlass Black', 'Rusty']]);
+  });
+  it('a save from before per-ship names uses the pledge nickname for a one-ship pledge only', () => {
+    expect(pledgeHulls(pledge(6, ['Cutlass Black'], { nickname: 'Rusty' }))).toEqual([{ title: 'Cutlass Black', customName: 'Rusty' }]);
+    expect(pledgeHulls(pledge(6, ['Cutlass Black', 'Avenger Titan'], { nickname: 'Rusty, Bessie' })).map((h) => h.customName)).toEqual(['', '']);
   });
   it('codes: table hit, Mk-less fallback, synthesized for unknown ships', () => {
     expect(shipCode('Constellation Mk IV Andromeda', 'Roberts Space Industries').ship_code).toBe('RSI_Constellation_Andromeda');

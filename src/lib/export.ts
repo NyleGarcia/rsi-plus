@@ -1,7 +1,7 @@
 /**
  * Fleet export in the HangarXPLOR shape — the file format FleetYards (Hangar → Import), myfleet.gg (the StarShip42 FleetView
  * successor), Starjump / hangar.link and spreadsheets all read. One row per ship hull in a pledge (HangarXPLOR.Download.js,
- * MIT): `ship_code`, `ship_name` (your nickname, else the ship), `manufacturer_code/name`, `name` (ship as listed, maker
+ * MIT): `ship_code`, `ship_name` (the name you gave that ship, else the ship), `manufacturer_code/name`, `name` (ship as listed, maker
  * prefix stripped), `lti`, `warbond`, `entity_type: 'ship'`, `pledge_id/name/date/cost`. Pure; UI in ShipsPanel / HangarPanel.
  */
 import type { Pledge } from './hangar';
@@ -48,17 +48,28 @@ export function shipCode(name: string, manufacturer: string): Pick<XplorRow, 'sh
   return { ship_code: synthCode(code, name), manufacturer_code: code, manufacturer_name: manufacturer };
 }
 
+/**
+ * Each ship hull of a pledge with the name you gave it ('' = unnamed). RSI puts a ship's name inside that ship's item,
+ * so a pack names only the hulls you named. A save from before items carried their name falls back to the pledge's
+ * nickname only when the pledge holds one hull: a pack's names can't be pinned to its ships.
+ */
+export function pledgeHulls(p: Pick<Pledge, 'ships' | 'items' | 'nickname'>): { title: string; customName: string }[] {
+  const items = p.items.filter((i) => i.kind.toLowerCase() === 'ship');
+  const hulls = items.length ? items.map((i) => ({ title: i.title, customName: i.customName ?? '' })) : p.ships.map((title) => ({ title, customName: '' }));
+  if (p.nickname && hulls.length === 1 && !items.some((i) => 'customName' in i)) hulls[0]!.customName = p.nickname;
+  return hulls;
+}
+
 /** One HangarXPLOR row per ship hull listed in each pledge, sorted by maker then ship (CCU pledges hold no hulls). */
 export function xplorRows(pledges: Pledge[], ships: CatalogShip[]): XplorRow[] {
   const out: XplorRow[] = [];
   for (const p of pledges) {
-    const titles = p.ships.length ? p.ships : p.items.filter((i) => i.kind.toLowerCase() === 'ship').map((i) => i.title);
-    for (const title of titles) {
+    for (const { title, customName } of pledgeHulls(p)) {
       const cat = matchShip(title, ships);
       const name = cat?.name ?? stripMaker(title);
       out.push({
         ...shipCode(name, cat?.manufacturer ?? ''),
-        ship_name: p.nickname || name,
+        ship_name: customName || name,
         name,
         lti: p.lti,
         warbond: p.warbond,
