@@ -410,6 +410,18 @@ export function hangarCsv(list: Pledge[]): string {
 /** Page size every hangar read uses — a pledge's page is its position in the list (RSI order) at this size. */
 export const HANGAR_PAGE = 50;
 
+export type HangarState = 'none' | 'partial' | 'complete';
+/**
+ * How far the saved hangar can be trusted. `partial` = a load that stopped part-way (Stop, error, refresh — saved
+ * after every page with `complete: false`): pledges on the unread pages are missing, so anything judging ownership
+ * ("not in hangar", add missing to cart) or exporting the fleet must not take it for the whole hangar. A save from
+ * before the flag existed counts as complete.
+ */
+export function hangarState(h: { pledges: readonly unknown[]; complete?: boolean; page?: number } | null | undefined): HangarState {
+  if (!h?.pledges.length) return 'none';
+  return h.complete === false ? 'partial' : 'complete';
+}
+
 const rowOf = new WeakMap<Pledge[], Map<number, number>>();
 /**
  * Hangar page a pledge sits on (gift / melt / reclaim happen there). Page = the one it was read from, else from its

@@ -2,7 +2,7 @@
   import { loadBuyback, loadBuybackDetails } from '@/lib/account';
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
-  import type { BuybackItem, PledgeType } from '@/lib/hangar';
+  import { hangarState, type BuybackItem, type PledgeType } from '@/lib/hangar';
   import { buybackItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
   import { bg } from '@/lib/messages';
   import { itemKey } from '@/lib/melt';
@@ -52,7 +52,13 @@
   let paints = $state<StorePaint[]>([]);
   const storeIdx = $derived(storePaintIndex(paints));
   /** Copies of each item title in the saved hangar → "already in hangar" per buyback entry. */
-  let hangarPledges = $state<import('@/lib/hangar').Pledge[]>([]);
+  let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
+  const hangarPledges = $derived(hangar?.pledges ?? []);
+  /**
+   * `partial` = the hangar load stopped part-way: items on the unread pages would read "not in hangar" and land in
+   * the cart through "Add all missing", so no ownership verdict is shown until the hangar is whole.
+   */
+  const hangarReady = $derived(hangarState(hangar));
   const hangarQty = $derived(hangarCounts(hangarPledges));
   const qtyOf = (t: string) => hangarQty.get(itemKey(t)) ?? 0;
   /** Per entry: contents with hangar counts; `owned` = every content present. */
@@ -107,9 +113,9 @@
     bg({ type: 'paints:get' })
       .then((p) => (paints = p?.paints ?? paints))
       .catch(() => {}); // store links are a bonus
-    hangarItem.getValue().then((h) => (hangarPledges = h?.pledges ?? [])).catch(() => {});
+    hangarItem.getValue().then((h) => (hangar = h)).catch(() => {});
     const offs = [
-      hangarItem.watch((h) => (hangarPledges = h?.pledges ?? [])),
+      hangarItem.watch((h) => (hangar = h)),
       catalogItem.watch((c) => c?.ships?.length && (ships = c.ships)),
       paintCatalogItem.watch((p) => p?.paints?.length && (paints = p.paints)),
     ];
@@ -215,7 +221,7 @@
   const types = $derived([...new Set(all.map((i) => i.type))]);
   const shown = $derived(
     sortBy(
-      all.filter((i) => (type === 'all' || i.type === type) && (store === 'any' || storeStatus(i) === store) && (own === 'all' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
+      all.filter((i) => (type === 'all' || i.type === type) && (store === 'any' || storeStatus(i) === store) && (own === 'all' || hangarReady !== 'complete' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
       sort,
       { name: (i) => i.name, type: (i) => i.type, date: (i) => dateValue(i.date) },
     ),
@@ -274,7 +280,8 @@
     <Table.Cell class="text-muted-foreground text-xs">{Number.isNaN(melted) ? b.date : fmtDate(melted)}</Table.Cell>
     <Table.Cell class="whitespace-normal text-xs">
       {@const h = ownFor(b)}
-      {#if !hangarPledges.length}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
+      {#if hangarReady === 'none'}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
+      {:else if hangarReady === 'partial'}<HintBadge variant="warning" hint="The hangar load stopped part-way, so items on the pages not read yet would show as missing. Resume it on the Pledges page to compare.">hangar partly loaded (page {hangar?.page})</HintBadge> <a class={LINK} href="#hangar">Resume</a>
       {:else if h.hint}
         <HintBadge variant={h.owned ? 'success' : h.hint.ownedForHull.length ? 'warning' : 'muted'} hint="The list page only says how many items — use “Load contents & prices” to read this entry's page">{h.owned ? 'likely all in hangar' : 'contents not loaded'} · {h.hint.count} items</HintBadge>
         {#if h.hint.hull}
@@ -353,7 +360,7 @@
             {#each types as t (t)}<Select.Item value={t} label={t} />{/each}
           </Select.Content>
         </Select.Root>
-        <Select.Root type="single" bind:value={own}>
+        {#if hangarReady === 'complete'}<Select.Root type="single" bind:value={own}>
           <Select.Trigger aria-label="Hangar status">{own === 'all' ? 'In hangar: any' : own === 'owned' ? 'Already in hangar' : own === 'partly' ? 'Partly in hangar' : own === 'unknown' ? 'Contents not loaded' : 'Not in hangar'}</Select.Trigger>
           <Select.Content>
             <Select.Item value="all" label="In hangar: any" />
@@ -362,7 +369,7 @@
             <Select.Item value="missing" label={`Not in hangar (none of it) · ${ownCount('missing')}`} />
             <Select.Item value="unknown" label={`Contents not loaded · ${ownCount('unknown')}`} />
           </Select.Content>
-        </Select.Root>
+        </Select.Root>{/if}
         <Select.Root type="single" bind:value={() => groupBy, (v) => (groupBy = v as BuybackGroupBy)}>
           <Select.Trigger aria-label="Group by">{BUYBACK_GROUP_BY.find((o) => o.value === groupBy)?.label}</Select.Trigger>
           <Select.Content>

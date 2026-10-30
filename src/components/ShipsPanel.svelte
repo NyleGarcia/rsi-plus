@@ -2,7 +2,7 @@
   import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import PaintBundlePanel from './PaintBundlePanel.svelte';
-  import { hangarUrl } from '@/lib/hangar';
+  import { hangarState, hangarUrl } from '@/lib/hangar';
   import {
     line,
     familyLabel,
@@ -169,7 +169,10 @@
   const stamp = () => new Date().toISOString().slice(0, 10);
   // ---- fleet export (HangarXPLOR shape: FleetYards, myfleet.gg, Starjump read it) ----
   const fleetRows = () => xplorRows(hangar?.pledges ?? [], ships);
+  /** A stopped hangar load misses every pledge on the unread pages — exporting it would hand on a fleet with ships missing. */
+  const partial = $derived(hangarState(hangar) === 'partial');
   function exportFleet(kind: 'json' | 'csv') {
+    if (partial) return;
     const rows = fleetRows();
     if (kind === 'json') download(`hangarxplor-shiplist-${stamp()}.json`, JSON.stringify(rows, null, 2), 'application/json');
     else download(`hangarxplor-shiplist-${stamp()}.csv`, xplorCsv(rows));
@@ -492,14 +495,17 @@
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end" class="w-80">
                     <DropdownMenu.Label class="text-muted-foreground text-[11px] font-normal">HangarXPLOR format — one row per hull, with pledge, LTI, warbond, nickname</DropdownMenu.Label>
-                    <DropdownMenu.Item onSelect={() => exportFleet('json')}>
+                    {#if partial}
+                      <DropdownMenu.Label class="text-warning text-xs font-normal">Hangar partly loaded (stopped after page {hangar?.page}) — load your whole hangar first (<a class={LINK} href="#hangar">Pledges</a> → Resume).</DropdownMenu.Label>
+                    {/if}
+                    <DropdownMenu.Item disabled={partial} onSelect={() => exportFleet('json')}>
                       <div class="grid"><span class="font-semibold">JSON file</span><span class="text-muted-foreground text-xs">FleetYards (Hangar → Import), myfleet.gg 3D fleet view, Starjump / hangar.link</span></div>
                     </DropdownMenu.Item>
-                    <DropdownMenu.Item onSelect={() => exportFleet('csv')}>
+                    <DropdownMenu.Item disabled={partial} onSelect={() => exportFleet('csv')}>
                       <div class="grid"><span class="font-semibold">CSV file</span><span class="text-muted-foreground text-xs">Spreadsheets — Manufacturer, Ship, LTI, Warbond, ID, Pledge, Cost, Date</span></div>
                     </DropdownMenu.Item>
                     <DropdownMenu.Separator />
-                    <DropdownMenu.Item onSelect={copyNames}>
+                    <DropdownMenu.Item disabled={partial} onSelect={copyNames}>
                       <div class="grid"><span class="font-semibold">{copiedNames ? 'Copied ✓' : 'Copy ship names'}</span><span class="text-muted-foreground text-xs">One "Maker Ship" per hull, for tools that take a plain list</span></div>
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
