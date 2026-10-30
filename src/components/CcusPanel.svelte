@@ -24,6 +24,8 @@
   import Tag from './Tag.svelte';
   import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
+  import { wikiUrl } from '@/lib/wiki';
   import Thumb from './Thumb.svelte';
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
@@ -113,7 +115,7 @@
   <div class="flex items-center gap-2">
     <Thumb src={s?.thumb} {name} placeholder="block" />
     <div class="min-w-0">
-      <div class="font-medium">{name || '?'}</div>
+      <div class="flex items-center gap-0.5 font-medium">{name || '?'}{#if s}<WikiLink class="-my-1" href={wikiUrl(s.name)} name={s.name} />{/if}</div>
       <div class="text-muted-foreground text-xs">{s?.manufacturer ?? 'not in the catalog'}{#if msrp != null} · {usd(msrp)}{/if}</div>
     </div>
   </div>

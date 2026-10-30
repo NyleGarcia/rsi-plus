@@ -3,7 +3,7 @@
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, holdersIndex, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
-  import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
+  import { categorize, inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
   import { storeLinksFor } from '@/lib/paints';
   import { applyFacets, type FacetValues } from '@/lib/facets';
   import { isGifted, pledgeFacets, pledgeRanges, PLEDGE_PRIMARY, PLEDGE_TYPES as TYPES } from '@/lib/pledge-facets';
@@ -12,7 +12,7 @@
   import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
   import { cleanLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
-  import type { Catalog, StorePaint } from '@/lib/store';
+  import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import Stat from './Stat.svelte';
@@ -20,6 +20,8 @@
   import LoadStatus from './LoadStatus.svelte';
   import LoadActions from './LoadActions.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
+  import { itemWikiUrl } from '@/lib/wiki';
   import LazyTip from './LazyTip.svelte';
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
@@ -193,6 +195,19 @@
       if (storeLinksFor(titles, ships, idx).length) out.add(p.id);
     }
     return out;
+  });
+  /** Star Citizen Wiki link per item (`kind|title`), once per hangar / catalog: ships by their catalog name. */
+  const wikiOf = $derived.by(() => {
+    const ships = cat?.ships ?? [];
+    const m = new Map<string, string | null>();
+    for (const p of all)
+      for (const it of p.items) {
+        const k = `${it.kind}|${it.title}`;
+        if (m.has(k)) continue;
+        const c = categorize(it.title, it.kind);
+        m.set(k, itemWikiUrl(c, it.title, c === 'ship' ? matchShip(it.title, ships) : null));
+      }
+    return m;
   });
   const facets = $derived(
     pledgeFacets({
@@ -719,7 +734,7 @@
                       {@const full = allItems || open.has(p.id)}
                       {@const list = full ? p.items : p.items.slice(0, 4)}
                       <ul class="text-muted-foreground mt-1 list-disc pl-3.5 text-xs">
-                        {#each list as it, i (i)}<li class={/^(ship|vehicle)$/i.test(it.kind) ? 'text-foreground' : ''}>{it.title}{#if it.kind && !/^(ship|vehicle)$/i.test(it.kind)}<span class="text-muted-foreground"> · {it.kind}</span>{/if}</li>{/each}
+                        {#each list as it, i (i)}<li class={/^(ship|vehicle)$/i.test(it.kind) ? 'text-foreground' : ''}>{it.title}<WikiLink class="-my-1 ml-0.5" href={wikiOf.get(`${it.kind}|${it.title}`)} name={it.title} />{#if it.kind && !/^(ship|vehicle)$/i.test(it.kind)}<span class="text-muted-foreground"> · {it.kind}</span>{/if}</li>{/each}
                       </ul>
                       {#if p.items.length > 4 && !allItems}
                         <Button variant="link" size="xs" class="h-auto px-0" onclick={() => toggleOpen(p.id)}>{full ? 'Show less' : `+${p.items.length - 4} more items`}</Button>

@@ -9,8 +9,9 @@
   import { Badge } from '@/components/ui/badge';
   import { storePaintIndex } from '@/lib/items';
   import { buybackContents, countTitles, hangarCounts, packHint, storeLinksFor } from '@/lib/paints';
-  import { inventory } from '@/lib/items';
-  import { usd, type CatalogShip, type StorePaint } from '@/lib/store';
+  import { categorize, inventory } from '@/lib/items';
+  import { matchShip, usd, type CatalogShip, type StorePaint } from '@/lib/store';
+  import { itemWikiUrl } from '@/lib/wiki';
   import { ownUsd } from '@/lib/privacy.svelte';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Check from '@lucide/svelte/icons/check';
@@ -25,6 +26,7 @@
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
   import Empty from './Empty.svelte';
@@ -63,6 +65,13 @@
   const qtyOf = (t: string) => hangarQty.get(itemKey(t)) ?? 0;
   /** Per entry: contents with hangar counts; `owned` = every content present. */
   const rows = $derived(inventory(hangarPledges, ships));
+  /** Star Citizen Wiki link for one content title: kind from the entry's item list; a ship entry without kinds holds a ship. */
+  const wikiFor = (b: BuybackItem, title: string) => {
+    const kind = b.items?.find((i) => i.title === title)?.kind ?? '';
+    let c = categorize(title, kind);
+    if (!kind && c === 'other' && b.type === 'ship') c = 'ship';
+    return itemWikiUrl(c, title, c === 'ship' ? matchShip(title, ships) : null);
+  };
   const inHangar = (b: BuybackItem) => {
     const contents = buybackContents(b);
     // One line per distinct item: how many the entry holds (`need`) vs copies in the hangar (`n`).
@@ -271,7 +280,8 @@
 {#snippet row(b: BuybackItem)}
   <Table.Row>
     <Table.Cell class="whitespace-normal">
-      <strong>{b.name}</strong>
+      {@const solo = buybackContents(b)}
+      <strong>{b.name}</strong>{#if solo.length === 1}<WikiLink class="-my-1 ml-0.5" href={wikiFor(b, solo[0]!)} name={solo[0]!} />{/if}
       {#if b.items}<div class="text-muted-foreground text-xs">{b.items.length} item{b.items.length === 1 ? '' : 's'}</div>
       {:else if b.contained}<div class="text-muted-foreground text-xs">{b.contained}</div>{/if}
     </Table.Cell>
@@ -303,10 +313,10 @@
         <ul class="m-0 mt-1.5 grid list-none gap-0.5 p-0">
           {#each lack as p (p.title)}
             {@const sl = storeLink(b, p.title)}
-            <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
+            <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}<WikiLink class="-my-1 -ml-1" href={wikiFor(b, p.title)} name={p.title} />{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
           {/each}
           {#each have as p (p.title)}
-            <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
+            <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}<WikiLink class="-my-1 ml-0.5" href={wikiFor(b, p.title)} name={p.title} />{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
           {/each}
         </ul>
         {@const missingOnStore = lack.map((p) => ({ p, sl: storeLink(b, p.title) })).filter((x) => x.sl?.price != null)}
