@@ -1,25 +1,12 @@
 /**
- * Sounds from the background. A Chromium service worker can't play audio, so an offscreen document
- * (`entrypoints/offscreen`) does; it's created on first use and kept (cheap, closes with the browser).
+ * Sounds from the background. A Chromium service worker can't play audio, so the offscreen document
+ * (`entrypoints/offscreen`, `lib/offscreen.ts`) does; it's created on first use and kept (cheap, closes with the browser).
  * Firefox (MV2) has no offscreen API but its background is a page with WebAudio, so it plays the ding directly.
  */
 import { playDing } from './ding-synth';
+import { ensureOffscreen, OFFSCREEN_DING } from './offscreen';
 
-export const OFFSCREEN_DING = 'offscreen:ding';
-const PAGE = '/offscreen.html';
-
-async function ensureOffscreen() {
-  const off = browser.offscreen;
-  const url = browser.runtime.getURL(PAGE as '/offscreen.html');
-  const has =
-    typeof off.hasDocument === 'function'
-      ? await off.hasDocument()
-      : (await browser.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT' as never], documentUrls: [url] })).length > 0;
-  if (has) return;
-  await off.createDocument({ url: PAGE, reasons: ['AUDIO_PLAYBACK' as never], justification: 'Play a short ding when party mode accepts a friend request' }).catch((e: Error) => {
-    if (!/single offscreen|already exists/i.test(e.message)) throw e; // raced with another create: fine
-  });
-}
+export { OFFSCREEN_DING };
 
 /** Play the party ding; throws when neither offscreen documents nor WebAudio exist (caller logs and moves on). */
 export async function ding() {
@@ -28,6 +15,6 @@ export async function ding() {
     playDing(); // Firefox: background page
     return;
   }
-  await ensureOffscreen();
+  await ensureOffscreen('AUDIO_PLAYBACK', 'Play a short ding when party mode accepts a friend request');
   await browser.runtime.sendMessage({ type: OFFSCREEN_DING });
 }

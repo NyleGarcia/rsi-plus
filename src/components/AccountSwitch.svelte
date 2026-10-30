@@ -1,7 +1,7 @@
 <script lang="ts">
-  /** Profile chip: who you are, switch to a saved login, save the current one, forget one. Hub header + popup. */
+  /** Profile chip: who you are, switch to a saved login, save the current one, forget one. Hub header + popup. Opt-in: renders nothing unless Settings → *Account switcher* is on. */
   import { captureProfile, forgetProfile, logoutLocal, switchTo, whoAmI, type Profiles } from '@/lib/accounts';
-  import { INCOGNITO, profilesItem } from '@/lib/settings';
+  import { INCOGNITO, getSettings, profilesItem, settingsItem } from '@/lib/settings';
   import * as Popover from '@/components/ui/popover';
   import * as Collapsible from '@/components/ui/collapsible';
   import { mergeProps } from 'bits-ui';
@@ -26,7 +26,15 @@
    *  separate incognito jar or storage here — everything acts on the regular window's login. */
   let spanning = $state(false);
 
+  /** Settings → *Account switcher* (off by default). */
+  let enabled = $state(false);
   $effect(() => {
+    getSettings().then((v) => (enabled = v.accountSwitcher));
+    return settingsItem.watch(() => getSettings().then((v) => (enabled = v.accountSwitcher)));
+  });
+
+  $effect(() => {
+    if (!enabled) return;
     profilesItem.getValue().then((v) => (ps = v));
     whoAmI().then((w) => (me = w));
     browser.windows
@@ -136,7 +144,9 @@
   </div>
 {/snippet}
 
-{#if compact}
+{#if !enabled}
+  <!-- Account switcher off (Settings): nothing to show. -->
+{:else if compact}
   <!-- Popup: the menu unfolds inline (a floating layer would be clipped by the popup window's size). -->
   <Collapsible.Root bind:open class="grid gap-2">
     <Collapsible.Trigger>

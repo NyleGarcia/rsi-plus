@@ -34,8 +34,16 @@ export default defineConfig({
   // RSIPLUS_NOMINIFY=1: readable function names in Chrome profiles.
   vite: () => ({ plugins: [tailwindcss()], ...(process.env.RSIPLUS_NOMINIFY ? { build: { minify: false } } : {}) }),
   // Targets: chrome, edge, brave (same MV3 build as chrome, own file name), firefox. `wxt zip -b <target>`; CI builds all four.
-  manifest: ({ browser }) => {
+  manifest: ({ browser, mode }) => {
     const firefox = browser === 'firefox';
+    // StarOrg Tools (Settings → Integrations, opt-in): *optional* hosts, one per site the user can pick (production or
+    // dev, lib/starorg.ts `STARORG_TARGETS`). Only the chosen site's host is asked for, when the user presses Connect,
+    // and both are dropped on Disconnect, so a store install still talks to RSI alone. Firefox MV2 has no
+    // `optional_host_permissions`: the hosts go into `optional_permissions` there.
+    // Not pinned yet: `manifest.key` for the Chromium dev build (a stable dev extension id for the StarOrg redirect
+    // allowlist). No key is in the repo; generate one (docs/architecture.md → StarOrg Tools) and add `key` here for
+    // `mode === 'development'` only — the store assigns the production id.
+    const starorgHosts = ['https://starorg.tools/*', 'https://dev.starorg.tools/*'];
     return {
       name: 'RSI+',
       ...(versionName ? { version_name: versionName } : {}),
@@ -44,8 +52,11 @@ export default defineConfig({
       // cookies: read the Rsi-Token cookie so the background can call Spectrum's API (X-Rsi-Token header) without a tab.
       // offscreen (Chromium): a service worker can't play audio; the party-mode ding plays in an offscreen document.
       // Firefox has no such permission — its MV2 background is a page and plays the ding itself (lib/sound.ts).
-      permissions: ['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', ...(firefox ? [] : ['offscreen'])],
+      // identity: `launchWebAuthFlow` for the optional StarOrg Tools sign-in (Discord through StarOrg, PKCE); it grants
+      // no data access by itself and does nothing until the user presses Connect.
+      permissions: ['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', 'identity', ...(firefox ? [] : ['offscreen'])],
       host_permissions: ['https://robertsspaceindustries.com/*'],
+      ...(firefox ? { optional_permissions: starorgHosts } : { optional_host_permissions: starorgHosts }),
       // split (Chromium): incognito gets its own background (own cookie jar → its own RSI login, polling, party mode)
       // and its hub/popup open in incognito. Account data is namespaced per context in lib/settings.ts (storage is
       // shared). Spanning would be simpler, but Chrome refuses to show extension pages inside incognito windows in that
@@ -62,8 +73,12 @@ export default defineConfig({
                 id: 'rsi-plus@nylegarcia.github.io',
                 // 128: `world: "MAIN"` content scripts in the manifest (spectrum-hook).
                 strict_min_version: '128.0',
-                // AMO requires a data-collection declaration for new submissions; nothing leaves the browser (PRIVACY.md).
-                data_collection_permissions: { required: ['none'] },
+                // AMO requires a data-collection declaration for new submissions. Nothing is required (RSI+ works with
+                // no data leaving the browser); the optional StarOrg Tools sync sends the RSI handle (personally
+                // identifying) and the ship list read from RSI's hangar pages (website content), asked for on Connect
+                // together with the host (PRIVACY.md). Pledge values (financial) go only with *Send pledge values*,
+                // which asks for `financialAndPaymentInfo` when switched on (lib/starorg.ts `requestCostAccess`).
+                data_collection_permissions: { required: ['none'], optional: ['personallyIdentifyingInfo', 'websiteContent', 'financialAndPaymentInfo'] },
               },
             },
           }
