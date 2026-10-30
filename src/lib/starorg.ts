@@ -1,0 +1,431 @@
+/**
+ * StarOrg Tools hangar sync (Settings → Integrations). Optional and off until the user presses *Connect*:
+ *
+ * - **Connect** asks for the optional `https://starorg.tools/*` host, then signs in through StarOrg's extension
+ *   flow (`/api/auth/extension/login` → Discord → a one-time `?code=` on `identity.getRedirectURL()`), with a PKCE
+ *   verifier the server checks at `/api/auth/extension/exchange`. The `aud=rsiplus` token (90 days) is kept under
+ *   `acct('local:starorg')` (`starorgItem`), never in sync storage.
+ * - **Send** builds the StarOrg Tools preset rows (`starOrgRows`: pledged hulls + in-game ships) and `PUT`s them to
+ *   `/api/fleet/hangar/sync` with the logged-in RSI handle. Requests carry `Authorization: Bearer` and
+ *   `credentials: 'omit'`, so a starorg.tools session cookie in the same browser never stands in for the token.
+ *   Pledge values go only when *Send pledge values* is on (and, on Firefox, its financial data-collection category is
+ *   granted); otherwise `pledge_cost` is sent empty. Only a hangar read as the handle logged in now is sent
+ *   (`hangarItem.handle`), and at most `MAX_SYNC_ROWS` rows. Hulls StarOrg doesn't know come back in `not_found` and
+ *   are shown on the card.
+ * - **Disconnect** logs the token out server-side (its `jti` is denylisted, so a copied token dies too), forgets it
+ *   and drops the host permission (plus Firefox's data-collection categories). Under `incognito: split` each context
+ *   has its own token but the host permission is shared: it is dropped only when the other context holds no live
+ *   token. A cancelled or refused Connect gives the permission back the same way.
+ *
+ * Every StarOrg request needs a stored token: with none, nothing is sent. A 401 (expired, signed out elsewhere)
+ * forgets the token, so the card shows *Connect* again. Screenshare mode masks the page only; it changes nothing sent.
+ */
+import { whoAmI } from './accounts';
+import { starOrgRows, type StarOrgRow } from './export';
+import type { Pledge } from './hangar';
+import type { GameShip } from './items';
+import { gameShipsItem, getSettings, hangarItem, INCOGNITO, starorgItem, starorgSyncItem } from './settings';
+import type { CatalogShip } from './store';
+import { storage } from '#imports';
+
+/** Development builds (`wxt`, `wxt build --mode development`) talk to the dev site; every other build to production. */
+export const STARORG_ORIGIN = import.meta.env.MODE === 'development' ? 'https://dev.starorg.tools' : 'https://starorg.tools';
+/** The optional host permission (`wxt.config.ts` declares the same pattern). */
+export const STARORG_HOSTS = [`${STARORG_ORIGIN}/*`];
+export const SYNC_FORMAT = 'hangarxplor/1';
+export const MISMATCH = 'RSI_HANDLE_MISMATCH';
+/** StarOrg's `MAX_SYNC_ROWS`: a bigger push is refused with a 422, so it is caught before sending. */
+export const MAX_SYNC_ROWS = 500;
+/** How many unknown hull names the card keeps. */
+export const NOT_FOUND_CAP = 20;
+
+export interface StarOrgUser {
+  discord_id: string;
+  username: string;
+  rsi_handle: string | null;
+  rsi_verified: boolean;
+}
+export interface StarOrgAuth {
+  token: string;
+  /** ms since epoch. */
+  expiresAt: number;
+  user: StarOrgUser;
+}
+export interface StarOrgSync {
+  at: number;
+  ok: boolean;
+  /** One line for the card: "Sent 42 ships" or what went wrong. */
+  message: string;
+  rows?: number;
+  /** `changeHash` of the rows last accepted by StarOrg — the weekly check sends only when it differs. */
+  hash?: string;
+  handle?: string;
+  /** Hulls StarOrg Tools doesn't know (`not_found`, at most `NOT_FOUND_CAP`): shown on the card, never dropped silently. */
+  notFound?: string[];
+  /** How many hulls StarOrg didn't know in all (`not_found` length before the cap, or `kept_unmatched` when larger). */
+  unmatched?: number;
+  /** 409 `RSI_HANDLE_MISMATCH`: the RSI handles this StarOrg member has verified. */
+  verifiedHandles?: string[];
+  /** The send found no (valid) token: the card shows *Connect*. */
+  disconnected?: boolean;
+}
+export interface SyncPayload {
+  format: typeof SYNC_FORMAT;
+  client: string;
+  rsi_handle: string;
+  exported_at: string;
+  rows: StarOrgRow[];
+}
+
+/** `rsi-plus/<manifest version>`, or `rsi-plus/unknown` outside an extension (tests). */
+export function clientId(): string {
+  try {
+    return `rsi-plus/${browser.runtime.getManifest().version}`;
+  } catch {
+    return 'rsi-plus/unknown';
+  }
+}
+
+/** The `PUT /api/fleet/hangar/sync` body. Pure: `pledge_cost` is blanked on every row unless `sendCost`. */
+export function buildPayload(
+  pledges: Pledge[],
+  gameShips: GameShip[],
+  catalog: CatalogShip[],
+  opts: { sendCost: boolean; rsiHandle: string; client?: string; now?: Date },
+): SyncPayload {
+  const rows = starOrgRows(pledges, gameShips, catalog).map((r) => (opts.sendCost ? r : { ...r, pledge_cost: '' }));
+  return {
+    format: SYNC_FORMAT,
+    client: opts.client ?? clientId(),
+    rsi_handle: opts.rsiHandle,
+    exported_at: (opts.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    rows,
+  };
+}
+
+/** cyrb53: a fast, stable 53-bit string hash (not cryptographic — it only detects change). */
+function cyrb53(s: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+}
+
+/**
+ * Hash of the row set as StarOrg would store it: pledge id, hull, nickname, flags, insurance, source and the (possibly
+ * blanked) value of every row, order-insensitive. Same rows → same hash, whatever order the hangar lists them in.
+ */
+export function changeHash(rows: StarOrgRow[]): string {
+  const lines = rows.map((r) => [r.pledge_id, r.ship_code, r.name, r.ship_name, r.lti ? 1 : 0, r.warbond ? 1 : 0, r.insurance ?? '', r.acquired ?? '', r.pledge_cost].join('\u001f'));
+  return cyrb53(lines.sort().join('\u001e'));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sign-in
+
+const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/** RFC 7636 S256: base64url(sha256(verifier)), no padding. */
+export async function s256(verifier: string): Promise<string> {
+  return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+}
+
+/** A fresh PKCE pair: a 43-character verifier (32 random bytes) and its S256 challenge. */
+export async function pkcePair(): Promise<{ verifier: string; challenge: string }> {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  return { verifier, challenge: await s256(verifier) };
+}
+
+/** The stored token, or null when there is none or it has expired (an expired one is forgotten). */
+export async function currentAuth(now = Date.now()): Promise<StarOrgAuth | null> {
+  const auth = await starorgItem.getValue();
+  if (!auth) return null;
+  if (auth.expiresAt <= now) {
+    await starorgItem.setValue(null);
+    return null;
+  }
+  return auth;
+}
+
+/** FastAPI's `detail` as one line (a string, `{message}`, or a validation list). */
+async function detailOf(res: Response): Promise<{ text: string; body: unknown }> {
+  const body: unknown = await res.json().catch(() => null);
+  const d = (body as { detail?: unknown } | null)?.detail;
+  const text =
+    typeof d === 'string'
+      ? d
+      : Array.isArray(d)
+        ? validationLine(d) ?? `HTTP ${res.status}`
+        : d && typeof d === 'object' && 'message' in d && typeof (d as { message: unknown }).message === 'string'
+          ? (d as { message: string }).message
+          : `HTTP ${res.status}`;
+  return { text, body: d };
+}
+
+/** A FastAPI 422 list as one line: the first error's `msg` and where (`loc` minus `body`), plus how many more. */
+function validationLine(list: unknown[]): string | null {
+  const first = list[0] as { msg?: unknown; loc?: unknown } | undefined;
+  if (!first || typeof first.msg !== 'string') return null;
+  const loc = Array.isArray(first.loc) ? first.loc.filter((p) => p !== 'body').join('.') : '';
+  const more = list.length > 1 ? ` (+${list.length - 1} more)` : '';
+  return `${first.msg}${loc ? ` at ${loc}` : ''}${more}`;
+}
+
+/** Firefox 140+ data-collection categories asked for at Connect (wxt.config.ts `data_collection_permissions.optional`). */
+export const DATA_COLLECTION = ['personallyIdentifyingInfo', 'websiteContent'];
+/** Asked for by the *Send pledge values* switch on Firefox: pledge values are financial information. */
+export const FINANCIAL = 'financialAndPaymentInfo';
+/** Builds define `import.meta.env.FIREFOX` as a boolean; Vitest exposes it as the string `'false'` / `'true'`. */
+const isFirefox = () => String(import.meta.env.FIREFOX) === 'true';
+
+/**
+ * Ask for the host permission (and, on Firefox, the optional data-collection categories). Must run first inside the
+ * click handler: browsers grant it only during a user gesture, which an earlier `await` would end.
+ */
+function requestAccess(): Promise<boolean> {
+  if (isFirefox()) {
+    try {
+      // Firefox 140+: the categories declared under data_collection_permissions.optional (wxt.config.ts). Older
+      // Firefox rejects the unknown key synchronously, so fall back to the host alone, still inside the gesture.
+      return browser.permissions.request({ origins: STARORG_HOSTS, data_collection: DATA_COLLECTION } as never);
+    } catch {
+      /* fall through */
+    }
+  }
+  return browser.permissions.request({ origins: STARORG_HOSTS });
+}
+
+/**
+ * *Send pledge values* turned on (Firefox): ask for the financial data-collection category, inside the switch's
+ * gesture. true elsewhere and on a Firefox without data-collection permissions (nothing to ask for).
+ */
+export function requestCostAccess(): Promise<boolean> {
+  if (!isFirefox()) return Promise.resolve(true);
+  try {
+    return browser.permissions.request({ data_collection: [FINANCIAL] } as never).catch(() => false);
+  } catch {
+    return Promise.resolve(true); // pre-140 Firefox: no categories exist
+  }
+}
+
+/** Whether pledge values may go out: the setting, and on Firefox the granted financial category. */
+async function costAllowed(setting: boolean): Promise<boolean> {
+  if (!setting || !isFirefox()) return setting;
+  try {
+    return await browser.permissions.contains({ data_collection: [FINANCIAL] } as never);
+  } catch {
+    return true; // pre-140 Firefox: no categories exist
+  }
+}
+
+/**
+ * The other context's token key. Under Chromium `incognito: split` the two contexts keep separate tokens (`acct()`),
+ * but host permissions are extension-wide, so one context must not drop the host while the other still uses it.
+ */
+const OTHER_CONTEXT_KEY = INCOGNITO ? 'local:starorg' : 'local:incognito.starorg';
+async function otherContextConnected(now = Date.now()): Promise<boolean> {
+  const other = await storage.getItem<StarOrgAuth>(OTHER_CONTEXT_KEY).catch(() => null);
+  return !!other && typeof other.expiresAt === 'number' && other.expiresAt > now;
+}
+
+/**
+ * Drop the StarOrg host (and, on Firefox, every data-collection category RSI+ asks for) — unless the other context
+ * (normal / incognito) still holds a live token, which keeps the shared host permission until it disconnects too.
+ */
+async function releaseAccess(): Promise<void> {
+  if (await otherContextConnected()) return;
+  if (isFirefox()) {
+    try {
+      await browser.permissions.remove({ origins: STARORG_HOSTS, data_collection: [...DATA_COLLECTION, FINANCIAL] } as never);
+      return;
+    } catch {
+      /* pre-140 Firefox: the host alone */
+    }
+  }
+  await browser.permissions.remove({ origins: STARORG_HOSTS }).catch(() => false);
+}
+
+/** The redirect's `?code=`, or an error naming what StarOrg / the browser returned instead. */
+function codeOf(back: string | undefined): string {
+  let url: URL | null = null;
+  try {
+    url = back ? new URL(back) : null;
+  } catch {
+    /* not a URL */
+  }
+  const err = url?.searchParams.get('error_description') || url?.searchParams.get('error');
+  if (err) throw new Error(`StarOrg Tools sign-in failed: ${err}.`);
+  const code = url?.searchParams.get('code');
+  if (!code) throw new Error('StarOrg Tools sign-in returned no code.');
+  return code;
+}
+
+/** Connect: host permission → StarOrg / Discord sign-in in a browser popup → token. Call from a click handler. */
+export async function connect(): Promise<StarOrgAuth> {
+  if (!(await requestAccess())) throw new Error('RSI+ needs permission to reach StarOrg Tools to connect.');
+  try {
+    const { verifier, challenge } = await pkcePair();
+    const params = new URLSearchParams({ code_challenge: challenge, code_challenge_method: 'S256', redirect_uri: browser.identity.getRedirectURL() });
+    let back: string | undefined;
+    try {
+      back = await browser.identity.launchWebAuthFlow({ url: `${STARORG_ORIGIN}/api/auth/extension/login?${params}`, interactive: true });
+    } catch (e) {
+      throw new Error(`StarOrg Tools sign-in did not finish (${(e as Error).message}).`);
+    }
+    const code = codeOf(back);
+    const res = await fetch(`${STARORG_ORIGIN}/api/auth/extension/exchange`, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, code_verifier: verifier }),
+    });
+    if (!res.ok) throw new Error(`StarOrg Tools refused the sign-in: ${(await detailOf(res)).text}`);
+    const j = (await res.json().catch(() => null)) as { access_token?: unknown; expires_in?: unknown; user?: unknown } | null;
+    const user = j?.user as StarOrgUser | undefined;
+    if (!j || typeof j.access_token !== 'string' || !j.access_token || typeof j.expires_in !== 'number' || !Number.isFinite(j.expires_in) || j.expires_in <= 0 || !user || typeof user !== 'object')
+      throw new Error('StarOrg Tools sent an unexpected sign-in answer.');
+    const auth: StarOrgAuth = { token: j.access_token, expiresAt: Date.now() + j.expires_in * 1000, user };
+    await starorgItem.setValue(auth);
+    await starorgSyncItem.setValue(null);
+    return auth;
+  } catch (e) {
+    // No token stored: give the permission back, so a cancelled or refused sign-in leaves RSI+ as before Connect.
+    if (!(await starorgItem.getValue().catch(() => null))) await releaseAccess().catch(() => undefined);
+    throw e;
+  }
+}
+
+/**
+ * Disconnect: sign this context's token out on StarOrg (best effort), forget it, drop the host permission (unless the
+ * other incognito / normal context is still connected — `releaseAccess`).
+ */
+export async function disconnect(): Promise<void> {
+  const auth = await starorgItem.getValue();
+  if (auth)
+    await fetch(`${STARORG_ORIGIN}/api/auth/logout`, { method: 'POST', credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => undefined);
+  await starorgItem.setValue(null);
+  await starorgSyncItem.setValue(null);
+  await releaseAccess();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Send
+
+/** "StarOrg knows you as a or b; …" — the 409 line, naming the verified handles. */
+export const mismatchMessage = (handles: string[]) =>
+  `StarOrg knows you as ${handles.length ? handles.join(' or ') : 'another RSI account'}; switch accounts in RSI+ or verify this one on StarOrg Tools.`;
+
+const DISCONNECTED: Omit<StarOrgSync, 'at'> = { ok: false, disconnected: true, message: 'Not connected to StarOrg Tools — connect again.' };
+
+/**
+ * `PUT` one payload. No token → nothing is sent. Records and returns the result: 401 forgets the token (disconnected),
+ * 409 `RSI_HANDLE_MISMATCH` names the verified handles. The hash is kept from the last accepted send on failure.
+ */
+export async function push(payload: SyncPayload): Promise<StarOrgSync> {
+  const prev = await starorgSyncItem.getValue();
+  const record = async (r: Omit<StarOrgSync, 'at'>) => {
+    const out: StarOrgSync = { at: Date.now(), ...r, hash: r.ok ? r.hash : prev?.hash, handle: payload.rsi_handle };
+    await starorgSyncItem.setValue(out);
+    return out;
+  };
+  const auth = await currentAuth();
+  if (!auth) return record(DISCONNECTED);
+  let res: Response;
+  try {
+    res = await fetch(`${STARORG_ORIGIN}/api/fleet/hangar/sync`, {
+      method: 'PUT',
+      credentials: 'omit',
+      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    return record({ ok: false, message: `Could not reach StarOrg Tools (${(e as Error).message}).` });
+  }
+  if (res.status === 401) {
+    await starorgItem.setValue(null);
+    return record({ ...DISCONNECTED, message: 'StarOrg Tools signed RSI+ out — connect again.' });
+  }
+  if (!res.ok) {
+    const { text, body } = await detailOf(res);
+    const d = body as { code?: unknown; verified_handles?: unknown } | null;
+    if (res.status === 409 && d && typeof d === 'object' && d.code === MISMATCH) {
+      const handles = Array.isArray(d.verified_handles) ? d.verified_handles.filter((h): h is string => typeof h === 'string') : [];
+      return record({ ok: false, message: mismatchMessage(handles), verifiedHandles: handles });
+    }
+    return record({ ok: false, message: `StarOrg Tools refused the hangar: ${text}` });
+  }
+  const j = ((await res.json().catch(() => null)) ?? {}) as { imported_count?: number; updated?: number; removed?: number; kept_unmatched?: unknown; not_found?: unknown };
+  const n = payload.rows.length;
+  const allNotFound = Array.isArray(j.not_found) ? j.not_found.filter((h): h is string => typeof h === 'string') : [];
+  const kept = typeof j.kept_unmatched === 'number' && Number.isFinite(j.kept_unmatched) ? j.kept_unmatched : 0;
+  const unmatched = Math.max(allNotFound.length, kept);
+  const parts = [j.imported_count ? `${j.imported_count} new` : '', j.updated ? `${j.updated} updated` : '', j.removed ? `${j.removed} removed` : ''].filter(Boolean);
+  const unknown = unmatched ? ` ${unmatched} hull${unmatched === 1 ? '' : 's'} StarOrg Tools doesn't know yet.` : '';
+  return record({
+    ok: true,
+    rows: n,
+    hash: changeHash(payload.rows),
+    message: `Sent ${n} ship${n === 1 ? '' : 's'}${parts.length ? ` (${parts.join(', ')})` : ''}.${unknown}`,
+    ...(unmatched ? { notFound: allNotFound.slice(0, NOT_FOUND_CAP), unmatched } : {}),
+  });
+}
+
+let sending: Promise<StarOrgSync | null> | null = null;
+
+/**
+ * Send the saved hangar (+ in-game ships) as the logged-in RSI handle. `onlyIfChanged`: skip (null) when the rows
+ * hash to what StarOrg last accepted. Not connected → null without touching the hangar or the network. One send at a
+ * time per context; a second call while one runs gets the same result.
+ */
+export function sendHangar(catalog: () => Promise<CatalogShip[]>, opts: { onlyIfChanged?: boolean } = {}): Promise<StarOrgSync | null> {
+  sending ??= doSend(catalog, opts).finally(() => (sending = null));
+  return sending;
+}
+
+async function doSend(catalog: () => Promise<CatalogShip[]>, { onlyIfChanged = false }: { onlyIfChanged?: boolean }): Promise<StarOrgSync | null> {
+  if (!(await currentAuth())) return null;
+  const fail = async (message: string) => {
+    const prev = await starorgSyncItem.getValue();
+    const out: StarOrgSync = { at: Date.now(), ok: false, message, hash: prev?.hash };
+    await starorgSyncItem.setValue(out);
+    return out;
+  };
+  const hangar = await hangarItem.getValue();
+  if (!hangar?.complete) return fail('Load your whole hangar first (Hangar → Pledges).');
+  const me = await whoAmI();
+  if (!me) return fail('Not logged in on robertsspaceindustries.com — log in there, then send again.');
+  // The saved hangar must be the one RSI shows now: never send account A's ships under account B's handle.
+  if (hangar.handle !== me.handle) return fail(`Saved hangar belongs to ${hangar.handle || 'another RSI login'}; load your hangar again (Hangar → Pledges).`);
+  const [{ starorgSendCost }, game, ships] = await Promise.all([getSettings(), gameShipsItem.getValue(), catalog()]);
+  const payload = buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: me.handle });
+  if (payload.rows.length > MAX_SYNC_ROWS)
+    return fail(`Your hangar has ${payload.rows.length} ships; StarOrg Tools takes at most ${MAX_SYNC_ROWS} per send. Nothing was sent.`);
+  if (onlyIfChanged) {
+    const prev = await starorgSyncItem.getValue();
+    if (prev?.ok && prev.hash === changeHash(payload.rows) && prev.handle === me.handle) return null;
+  }
+  return push(payload);
+}
+
+/** `GET /api/fleet/hangar/sync`: when StarOrg last received each of your RSI handles. null = not connected / failed. */
+export async function status(): Promise<{ rsi_handle: string; last_sync_at: string | null; client: string | null; rows: number }[] | null> {
+  const auth = await currentAuth();
+  if (!auth) return null;
+  try {
+    const res = await fetch(`${STARORG_ORIGIN}/api/fleet/hangar/sync`, { credentials: 'omit', headers: { Authorization: `Bearer ${auth.token}` } });
+    if (res.status === 401) {
+      await starorgItem.setValue(null);
+      return null;
+    }
+    if (!res.ok) return null;
+    return ((await res.json()) as { syncs?: [] }).syncs ?? [];
+  } catch {
+    return null;
+  }
+}

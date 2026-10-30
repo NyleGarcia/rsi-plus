@@ -6,6 +6,7 @@
   import { bg } from '@/lib/messages';
   import Segmented from './Segmented.svelte';
   import SwitchRow from './SwitchRow.svelte';
+  import StarOrgCard from './StarOrgCard.svelte';
   import TipButton from './TipButton.svelte';
   import LazyTip from './LazyTip.svelte';
   import { LINK } from '@/lib/ui';
@@ -138,6 +139,16 @@
           {@render numberField(PARTY_REMIND, s.partyRemindHours)}
         </div>
       {/if}
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Integrations</Card.Title>
+      <Card.Description>Optional connections to other sites. Each one is off until you connect it, and RSI+ talks to nothing but RSI until then.</Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      <StarOrgCard />
     </Card.Content>
   </Card.Root>
 </div>

@@ -1,7 +1,7 @@
 ---
 title: Release and Web Store publishing
 tags: [release, ci, chrome-web-store]
-updated: 2026-10-22
+updated: 2026-10-29
 ---
 # Release and Web Store publishing
 
@@ -25,3 +25,4 @@ The 1Password Environment also still holds the v1.1 OAuth client / refresh token
 ## Notes
 - Nothing secret is needed locally: the service account is impersonated through your own gcloud login; ids live in 1Password (local) and the `chrome-web-store` GitHub environment (CI) — never in a plain env file.
 - Web Store metadata rule (rejection 2026-10-15): no third-party product names in the dashboard fields — `store/LISTING.md`.
+- **Privacy form changes with the StarOrg Tools sync release** (first release carrying the `identity` permission and the optional `https://starorg.tools/*` host): before or with submitting that zip, update the dashboard's *Privacy practices* tab from `store/LISTING.md` → Privacy tab — the single purpose text, the new `identity` and optional-host justifications, and the data-usage ticks (personally identifiable information, authentication information and website content now also cover what the optional sync sends; financial and payment information ticked for the off-by-default *Send pledge values*). Paste the description's new PRIVACY paragraph too. `identity` carries no install warning, so existing users are not asked to re-accept the update; the optional host prompts only on *Connect*. On AMO, the update declares `data_collection_permissions.optional`; keep the listing's privacy policy link on PRIVACY.md.

@@ -22,7 +22,12 @@ import {
   wishlistItem,
   settingsItem,
   watchesItem,
+  hangarLoadItem,
+  starorgItem,
 } from '@/lib/settings';
+import { afterLoad, isNewLoad, scheduleStarOrg, STARORG_ALARM, weeklySync } from '@/lib/starorg-auto';
+import { loadHangar } from '@/lib/account';
+import { readHangarOffscreen } from '@/lib/offscreen';
 import { ding } from '@/lib/sound';
 import { chainEvents } from '@/lib/ccu';
 import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
@@ -45,16 +50,27 @@ export default defineBackground(() => {
     });
   }
   browser.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
+    // The offscreen document's progress pings (lib/offscreen.ts) only keep this worker awake: no answer.
+    if ((msg as { type?: string })?.type?.startsWith('offscreen:')) return false;
     respond(handle(msg, sender.tab?.windowId)).then(sendResponse);
     return true; // async response
   });
   browser.runtime.onInstalled.addListener(() => schedule());
   browser.runtime.onStartup.addListener(() => schedule());
   settingsItem.watch(() => schedule());
+  // Connect / Disconnect / a 401 add or remove the weekly StarOrg check.
+  starorgItem.watch(() => scheduleStarOrg().catch((e) => console.warn('[RSI+] starorg alarm', e)));
   feedItem.watch((f) => updateBadge(f ?? []));
+  // StarOrg auto-sync: every completed full hangar load (Hangar tab load / update, refreshHangar from the CCU planner
+  // or Paint rebuy) announces itself on hangarLoadItem (lib/hangar-refresh.ts). Watching hangarItem instead would
+  // count a profile switch's restore as a load and push a parked snapshot (lib/starorg-auto.ts).
+  hangarLoadItem.watch((next, prev) => {
+    if (isNewLoad(next, prev)) afterLoad(starorgCatalog).catch((e) => console.warn('[RSI+] starorg', e));
+  });
   browser.alarms.onAlarm.addListener((a) => {
     if (a.name === ALARM) poll().catch((e) => console.warn('[RSI+] poll', e));
     if (a.name === PARTY_ALARM) partyTick().catch((e) => console.warn('[RSI+] party', e));
+    if (a.name === STARORG_ALARM) weeklySync(starorgCatalog, readHangarFresh).catch((e) => console.warn('[RSI+] starorg', e));
   });
   // Party mode: check every minute while on; turning it on checks right away.
   partyModeItem.watch(() => syncPartyAlarm(true));
@@ -112,6 +128,8 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
 
 /** Poll alarm from settings: every `pollMinutes`, or none at all in passive mode (then only *Check now* polls). */
 async function schedule() {
+  // First, so passive mode (or Auto-sync off) clears the weekly StarOrg alarm too (lib/starorg-auto.ts).
+  await scheduleStarOrg().catch((e) => console.warn('[RSI+] starorg alarm', e)); // never block the poll alarm
   const { pollMinutes, pollAuto } = await getSettings();
   if (!pollAuto) {
     await browser.alarms.clear(ALARM);
@@ -121,6 +139,12 @@ async function schedule() {
   const cur = await browser.alarms.get(ALARM);
   if (cur?.periodInMinutes !== period) browser.alarms.create(ALARM, { periodInMinutes: period, delayInMinutes: 1 });
 }
+
+/** The ship catalog StarOrg rows are named from. */
+const starorgCatalog = async () => ((await catalogItem.getValue()) ?? (await catalog(false))).ships;
+
+/** Weekly StarOrg re-read: Firefox's background page parses RSI's pages itself; Chromium's worker asks the offscreen document. */
+const readHangarFresh = () => (typeof DOMParser !== 'undefined' ? loadHangar(() => undefined) : readHangarOffscreen());
 
 /**
  * Open (or focus) the hub in the window the request came from. Matters for incognito: a hub tab must stay in an

@@ -43,7 +43,7 @@ ON THE SITE
 • An RSI+ bar on store ship pages (MSRP, warbond price, wishlist, Plan CCU) and on hangar / buyback / upgrade pages that opens the matching hub view.
 
 PRIVACY
-RSI+ only talks to robertsspaceindustries.com. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
+RSI+ talks only to robertsspaceindustries.com, and to an org fleet site if you connect it. Optional: connect an org fleet site to send your ship list (hull, nickname, LTI / warbond / insurance, pledge id and pledge name; pledge values only if you turn that on). Off until you press Connect; nothing else ever leaves RSI. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
 
 Open source: https://github.com/NyleGarcia/rsi-plus
 
@@ -68,8 +68,11 @@ RSI+ is an unofficial Star Citizen fan tool, made by the community. It is not af
 
 **Single purpose description:**
 ```
-RSI+ improves the Roberts Space Industries website for its users: Spectrum read tracking, mutes, watches and notifications, a friends manager, and explorers for the hangar, buyback and pledge store with a CCU upgrade planner and paint-rebuy planner. All features act on the user's own RSI account and only talk to robertsspaceindustries.com.
+RSI+ improves the Roberts Space Industries website for its users: Spectrum read tracking, mutes, watches and notifications, a friends manager, and explorers for the hangar, buyback and pledge store with a CCU upgrade planner and paint-rebuy planner. All features act on the user's own RSI account and only talk to robertsspaceindustries.com, except an optional, off-by-default sync that sends the user's own ship list to StarOrg Tools (starorg.tools), an org fleet manager, after the user connects it.
 ```
+
+> The description above names the org fleet site generically (metadata rule); the privacy fields below name
+> `starorg.tools`, because a host-permission justification has to say which host and why.
 
 **Permission justifications:**
 - `storage` — settings, read marks, mutes, watches, friends snapshots, cached hangar / buyback / catalog pages, CCU chains and paint plans, kept in the browser's extension storage.
@@ -77,17 +80,20 @@ RSI+ improves the Roberts Space Industries website for its users: Spectrum read 
 - `alarms` — the periodic background check (default every 5 minutes) for watched threads, channels, authors, friend requests and wishlist prices.
 - `notifications` — desktop notifications for new replies in watched threads, new friend requests, friends coming online and wishlist price drops, each one switchable off.
 - `cookies` — reads the user's own `Rsi-Token` session cookie for robertsspaceindustries.com so the background check can call Spectrum's API the way the site does, without keeping a tab open; the optional account switcher saves and restores the user's own RSI cookies to swap between their accounts.
-- `offscreen` — a service worker cannot play audio; the optional party-mode "ding" plays in an offscreen document.
+- `offscreen` — a service worker cannot play audio or parse HTML; the optional party-mode "ding" plays in an offscreen document, and the optional StarOrg Tools *Auto-sync* reads the user's own hangar pages there once a week.
 - Host permission `https://robertsspaceindustries.com/*` — the only site the extension works on and talks to: content scripts on Spectrum, hangar, buyback and store pages, and API / page requests for the features above.
 - `incognito: split` — an incognito window gets its own background (own cookie jar), so an incognito RSI login is kept separate from the normal one.
+- `identity` — `launchWebAuthFlow` for the optional StarOrg Tools sign-in (the user presses Connect in Settings → Integrations; StarOrg's own Discord sign-in, PKCE). Unused until then.
+- Optional host permission `https://starorg.tools/*` — requested only when the user presses Connect for the StarOrg Tools sync, given back if the sign-in is cancelled or fails, removed on Disconnect (kept while an incognito window is still connected, since host permissions are shared). Used to sign in and to send the user's own ship list (hull, nickname, LTI / warbond / insurance, pledge id and name, pledge values only if the user turns that on) with *Send hangar now* or the user's *Auto-sync* switch (after each full hangar load, and weekly if the re-read ship list changed since the last successful send).
 
 **Remote code:** No, I am not using remote code.
 
 **Data usage — what the extension collects (ticked):**
-- Personally identifiable information — the user's RSI handle / display name and their friends' handles (shown in the extension; stored locally).
-- Authentication information — the RSI session cookie, read locally and only sent back to robertsspaceindustries.com; saved logins stored locally only if the user uses the account switcher.
-- Website content — Spectrum threads and replies, hangar / buyback / store pages the extension reads to build its views.
-- Not collected: health, financial and payment information (store credit and pledge values are read from the user's own RSI pages and kept locally; no payment details are touched), personal communications, location, web history, user activity.
+- Personally identifiable information — the user's RSI handle / display name and their friends' handles (shown in the extension; stored locally). With the optional StarOrg Tools sync connected, the user's own RSI handle is sent to starorg.tools with the ship list.
+- Authentication information — the RSI session cookie, read locally and only sent back to robertsspaceindustries.com; saved logins stored locally only if the user uses the account switcher; the StarOrg Tools sign-in token (optional sync), stored locally and sent only to starorg.tools.
+- Website content — Spectrum threads and replies, hangar / buyback / store pages the extension reads to build its views. With the optional sync connected, the ship list read from the user's hangar pages is sent to starorg.tools.
+- Financial and payment information — ticked only for the optional sync's *Send pledge values* switch (off by default): each pledge's value from the user's own hangar is then sent to starorg.tools (on Firefox the switch asks for the optional `financialAndPaymentInfo` data-collection category, declared in the manifest). Otherwise store credit and pledge values are read from the user's own RSI pages and kept locally; no payment details are touched.
+- Not collected: health, personal communications, location, web history, user activity.
 
 **Certifications (all three):** I do not sell or transfer user data to third parties outside the approved use cases · I do not use or transfer user data for purposes unrelated to my item's single purpose · I do not use or transfer user data to determine creditworthiness or for lending purposes.
 

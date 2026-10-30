@@ -23,6 +23,11 @@ export const SETTING_TOGGLES: SettingToggle[] = [
   { key: 'siteBar', label: 'RSI+ bar on store & account pages' },
 ];
 export const QUICK_TOGGLES = SETTING_TOGGLES.filter((t) => t.quick);
+/** The StarOrg Tools card's switches (Settings → Integrations) — kept out of `SETTING_TOGGLES`, which is the Spectrum / site card. */
+export const STARORG_TOGGLES: SettingToggle[] = [
+  { key: 'starorgAutoSync', label: 'Auto-sync', hint: 'Send after every full hangar load; once a week, re-read your hangar from RSI and send it if your ships changed (not in passive mode)' },
+  { key: 'starorgSendCost', label: 'Send pledge values', hint: 'Off: the value of each pledge is sent empty' },
+];
 /** `muteMode` options — Mutes page and Settings use the same words. */
 export const MUTE_MODES: { id: Settings['muteMode']; label: string; hint: string }[] = [
   { id: 'dim', label: 'Dim', hint: 'Collapsed to one faint line; hover to peek' },
@@ -45,4 +50,4 @@ export const POLL_MINUTES: NumberSetting = { key: 'pollMinutes', label: 'every',
 export const PARTY_REMIND: NumberSetting = { key: 'partyRemindHours', label: 'Party reminder after', unit: 'h (0 = never)', min: 0, max: 720, fallback: 0 };
 export const clampSetting = (n: NumberSetting, raw: unknown) => Math.max(n.min, Number(raw) || n.fallback);
 /** One toggle's wording by key (pages that show a single switch outside the Settings list). */
-export const toggleOf = (key: keyof Settings): SettingToggle => SETTING_TOGGLES.find((t) => t.key === key) ?? { key, label: String(key) };
+export const toggleOf = (key: keyof Settings): SettingToggle => [...SETTING_TOGGLES, ...STARORG_TOGGLES].find((t) => t.key === key) ?? { key, label: String(key) };
