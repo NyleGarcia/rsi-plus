@@ -73,8 +73,10 @@
     });
   const logout = () =>
     run('logout', async () => {
+      const parked = !!ps.active;
       await logoutLocal();
       me = null;
+      if (parked) setTimeout(() => location.reload(), 600); // the active account's data got parked
       return 'RSI cookies cleared here (saved profiles untouched).';
     });
 </script>

@@ -4,7 +4,7 @@ import { fakeBrowser } from 'wxt/testing/fake-browser';
 const who = vi.hoisted(() => ({ member: null as { nickname: string; displayname: string; avatar: string | null } | null }));
 vi.mock('@/lib/api', () => ({ identify: async () => ({ member: who.member }) }));
 
-import { captureProfile, forgetProfile, switchTo, toSaved, toSet, type SavedCookie } from '@/lib/accounts';
+import { captureProfile, forgetProfile, logoutLocal, switchTo, toSaved, toSet, type SavedCookie } from '@/lib/accounts';
 import { hangarItem, profilesItem, readItem } from '@/lib/settings';
 
 const raw = (over: Partial<Parameters<typeof toSaved>[0]> = {}) =>
@@ -102,5 +102,42 @@ describe('profiles', () => {
 
     await forgetProfile(a.id);
     expect((await profilesItem.getValue())).toEqual({ active: null, list: [expect.objectContaining({ handle: 'bob' })] });
+  });
+
+  /** Log in as `nick` (cookie + identity), save it, then give it a hangar marker (`at` = name length). */
+  const loginAndSave = async (nick: string) => {
+    await fakeBrowser.cookies.set({ url: 'https://robertsspaceindustries.com/', name: 'Rsi-Token', value: `tok${nick}` });
+    who.member = { nickname: nick, displayname: nick, avatar: null };
+    const p = await captureProfile();
+    await hangarItem.setValue({ at: nick.length, pledges: [], complete: true });
+    return p;
+  };
+
+  it('log out parks the active data: switching straight back restores it', async () => {
+    const a = await loginAndSave('Alice');
+    await logoutLocal();
+    who.member = null;
+    expect((await profilesItem.getValue()).active).toBeNull();
+    expect(await hangarItem.getValue()).toBeNull(); // logged-out state starts clean
+
+    who.member = { nickname: 'Alice', displayname: 'Alice', avatar: null };
+    await switchTo(a.id);
+    expect((await hangarItem.getValue())?.at).toBe(5);
+  });
+
+  it('log out, log in as someone else and save: both accounts keep their own data', async () => {
+    const a = await loginAndSave('Alice');
+    await logoutLocal();
+    who.member = null;
+    const b = await loginAndSave('Bob');
+    expect((await hangarItem.getValue())?.at).toBe(3);
+
+    who.member = { nickname: 'Alice', displayname: 'Alice', avatar: null };
+    await switchTo(a.id);
+    expect((await hangarItem.getValue())?.at).toBe(5);
+
+    who.member = { nickname: 'Bob', displayname: 'Bob', avatar: null };
+    await switchTo(b.id);
+    expect((await hangarItem.getValue())?.at).toBe(3);
   });
 });
