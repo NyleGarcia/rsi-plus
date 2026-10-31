@@ -15,6 +15,8 @@ export interface PledgeItem {
   kind: string;
   /** RSI's own thumbnail for the item on the hangar page (media.robertsspaceindustries.com) — the only picture of a paint the store no longer lists. */
   image?: string;
+  /** The name you gave this ship (`.custom-name-text` inside the item); absent when unnamed and on saves from before it was read. */
+  customName?: string;
 }
 
 export interface Upgrade {
@@ -46,6 +48,7 @@ export interface Pledge {
   hasGame: boolean;
   /** Upgraded ship (a CCU was applied — RSI marks it `.upgraded`). */
   upgraded: boolean;
+  /** Every ship name in the pledge, joined with ", " (search, CSV). Per ship: `PledgeItem.customName`. */
   nickname: string;
   /** Hangar page it was read from (`/account/pledges?page=N&pagesize=50`) — for "open in hangar" links. */
   page?: number;
@@ -164,9 +167,11 @@ function parseItems(root: ParentNode): PledgeItem[] {
   for (const it of root.querySelectorAll('.items .item, .item')) {
     const title = text(it.querySelector('.title'));
     const kind = text(it.querySelector('.kind'));
-    if (!title || out.some((o) => o.title === title && o.kind === kind)) continue;
+    // A named ship sits inside its own item, so two copies of one hull with different names stay two items.
+    const customName = text(it.querySelector('.custom-name-text'));
+    if (!title || out.some((o) => o.title === title && o.kind === kind && (o.customName ?? '') === customName)) continue;
     const image = imageOf(it.querySelector('.image, img'));
-    out.push(image ? { title, kind, image } : { title, kind });
+    out.push({ title, kind, ...(image ? { image } : {}), ...(customName ? { customName } : {}) });
   }
   return out;
 }
@@ -409,6 +414,18 @@ export function hangarCsv(list: Pledge[]): string {
 
 /** Page size every hangar read uses — a pledge's page is its position in the list (RSI order) at this size. */
 export const HANGAR_PAGE = 50;
+
+export type HangarState = 'none' | 'partial' | 'complete';
+/**
+ * How far the saved hangar can be trusted. `partial` = a load that stopped part-way (Stop, error, refresh — saved
+ * after every page with `complete: false`): pledges on the unread pages are missing, so anything judging ownership
+ * ("not in hangar", add missing to cart) or exporting the fleet must not take it for the whole hangar. A save from
+ * before the flag existed counts as complete.
+ */
+export function hangarState(h: { pledges: readonly unknown[]; complete?: boolean; page?: number } | null | undefined): HangarState {
+  if (!h?.pledges.length) return 'none';
+  return h.complete === false ? 'partial' : 'complete';
+}
 
 const rowOf = new WeakMap<Pledge[], Map<number, number>>();
 /**

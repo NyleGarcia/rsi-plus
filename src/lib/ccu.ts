@@ -477,6 +477,36 @@ export function reservedRefs(chains: { steps: Step[] }[]): number[] {
 }
 
 /**
+ * `exclude` plus the CCUs held by saved chains that aren't `own`. `own` picks the chains of the plan on screen (the
+ * route just saved, the fleet plan being edited): their CCUs stay usable, so saving a plan doesn't re-plan it without them.
+ */
+export function excludeReserved(exclude: number[], chains: SavedChain[], own: (c: SavedChain) => boolean): number[] {
+  return [...new Set([...exclude, ...reservedRefs(chains.filter((c) => !own(c)))])];
+}
+
+/** The exclusions fleet leg `i` was planned with — `exclude` plus the CCUs the goals above it took — to re-plan it alone. */
+export function legExclude(fleet: FleetPlan, i: number, exclude: number[]): number[] {
+  return [...new Set([...exclude, ...reservedRefs(fleet.legs.slice(0, i).flatMap((l) => (l.plan ? [l.plan] : [])))])];
+}
+
+/** A fleet goal opened in the single planner: its route and the exclusions the fleet planned that leg with (`legExclude`). */
+export interface OpenedLeg {
+  startId: number;
+  targetId: number;
+  exclude: number[];
+}
+
+/**
+ * The single planner's `exclude` for route `startId` → `targetId`: the user's force-excludes plus other saved chains'
+ * CCUs (`excludeSaved`). While an opened fleet leg's route is on screen its exclusions apply instead — they are kept out
+ * of the user's options, which the fleet plan shares, so going back to the fleet plans it as before.
+ */
+export function plannerExclude(exclude: number[], chains: SavedChain[], excludeSaved: boolean, startId: number | null, targetId: number | null, leg: OpenedLeg | null): number[] {
+  if (leg && leg.startId === startId && leg.targetId === targetId) return [...new Set([...exclude, ...leg.exclude])];
+  return excludeSaved ? excludeReserved(exclude, chains, (c) => c.startId === startId && c.targetId === targetId) : exclude;
+}
+
+/**
  * Saved chains with `future` steps are long-term goals: when the store starts selling a CCU to one of those hulls
  * (any SKU, in stock), one feed event per chain step + SKU — "X → Y is on sale now, $N (planned $M)". The feed's
  * key dedup keeps it to one alert per SKU appearance; the event opens the CCU planner.

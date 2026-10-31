@@ -2,10 +2,11 @@
   /** Hub → Settings: appearance of the extension pages (theme / accent) and the Spectrum / site options the popup also shows. */
   import { ACCENTS, MODES, PALETTES, readTheme, resolveMode, saveTheme, type Accent, type Palette, type ThemePrefs } from '@/lib/theme';
   import { getSettings, patchSettings, settingsItem, type Settings } from '@/lib/settings';
-  import { MUTE_MODES, PARTY_REMIND, POLL_MINUTES, SETTING_TOGGLES, clampSetting, type NumberSetting } from '@/lib/settings-ui';
+  import { MUTE_MODES, PARTY_REMIND, POLL_MINUTES, SETTING_TOGGLES, STARORG_SWITCH, clampSetting, type NumberSetting } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
   import Segmented from './Segmented.svelte';
   import SwitchRow from './SwitchRow.svelte';
+  import StarOrgCard from './StarOrgCard.svelte';
   import TipButton from './TipButton.svelte';
   import LazyTip from './LazyTip.svelte';
   import { LINK } from '@/lib/ui';
@@ -137,6 +138,22 @@
           </div>
           {@render numberField(PARTY_REMIND, s.partyRemindHours)}
         </div>
+      {/if}
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Integrations</Card.Title>
+      <Card.Description>Optional connections to other sites. Each one is off until you turn it on here and connect it, and RSI+ talks to nothing but RSI until then.</Card.Description>
+    </Card.Header>
+    <Card.Content class="grid gap-3">
+      {#if !s}
+        <span class="text-muted-foreground text-xs">Loading…</span>
+      {:else}
+        <SwitchRow id={`set-${STARORG_SWITCH.key}`} label={STARORG_SWITCH.label} hint={STARORG_SWITCH.hint} checked={s.starorg} onchange={(v) => set('starorg', v)} />
+        <!-- Off: the background signs out and forgets both contexts' tokens and drops the hosts (`disconnectAll`). -->
+        {#if s.starorg}<StarOrgCard />{/if}
       {/if}
     </Card.Content>
   </Card.Root>

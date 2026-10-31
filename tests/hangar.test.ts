@@ -66,6 +66,23 @@ describe('hangar parser', () => {
     expect(hangarCsv(p).split('\n')[1]).toBe('1,Cutlass Black Warbond,ship,110,"October 01, 2026",Cutlass Black,true,LTI,true,true,true,,,credit,,');
   });
 
+  it('reads the name you gave each ship from inside its own item', () => {
+    const named = (t: string, n: string) => `<div class="item"><div class="title">${t}</div><div class="kind">Ship</div><div class="custom-name"><span class="custom-name-text">${n}</span></div></div>`;
+    const doc = page(
+      li(4, 'Package - Exploration Pack', '$900.00 USD', []).replace(
+        '<div class="items">',
+        `<div class="items">${named('Perseus', 'Eldritch Singularity')}<div class="item"><div class="title">Polaris</div><div class="kind">Ship</div></div>${named('Polaris', 'Wayfinder')}`,
+      ),
+    );
+    const [p] = parseHangarPage(doc);
+    expect(p!.items).toEqual([
+      { title: 'Perseus', kind: 'Ship', customName: 'Eldritch Singularity' },
+      { title: 'Polaris', kind: 'Ship' },
+      { title: 'Polaris', kind: 'Ship', customName: 'Wayfinder' },
+    ]);
+    expect(p!.nickname).toBe('Eldritch Singularity, Wayfinder');
+  });
+
   it('empty page', () => {
     expect(parseHangarPage(page('<li><div class="empty-list">No pledges</div></li>'))).toEqual([]);
   });

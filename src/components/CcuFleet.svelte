@@ -5,7 +5,7 @@
    * owned CCUs and hulls. Pay-now vs later totals over the whole plan, a list of the CCUs still waiting for a sale, and
    * Save plan → one saved chain per goal (grouped), which the Feed watches like any saved chain.
    */
-  import { planFleet, STORE_START, type Goal, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+  import { excludeReserved, legExclude, planFleet, STORE_START, type Goal, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
   import { ccuGoalsItem } from '@/lib/settings';
   import { usd, type CatalogShip, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -42,6 +42,7 @@
     keptByLabel = 0,
     owned,
     opt,
+    excludeSaved = false,
     sales,
     chains,
     persist,
@@ -59,13 +60,15 @@
     /** Pledges labelled *Keep* (left out of `hulls`), for the note. */
     keptByLabel?: number;
     owned: OwnedCcu[];
-    /** Planner options (objective, warbond, buyback…, saved-chain exclusions) shared with the single planner. */
+    /** Planner options (objective, warbond, buyback…, forced exclusions) shared with the single planner. */
     opt: PlanOptions;
+    /** Keep the CCUs of saved chains out of the plan — except this plan's own saved chains (its group). */
+    excludeSaved?: boolean;
     sales: SaleHistory;
     chains: SavedChain[];
     persist: (next: SavedChain[]) => Promise<void>;
-    /** Open one goal's chain in the single planner (verify, cart). */
-    onopen: (startId: number, targetId: number, via: number[]) => void;
+    /** Open one goal's chain in the single planner (verify, cart), with the exclusions that leg was planned with. */
+    onopen: (startId: number, targetId: number, via: number[], exclude: number[]) => void;
   } = $props();
 
   let goals = $state<Goal[]>([]);
@@ -88,7 +91,12 @@
 
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const name = (id: number | null) => shipName(byId, id);
-  const fleet = $derived(planFleet(ships, owned, goals, opt, { hulls, keep, prefer: [...new Set([...prefer, ...labelPrefer])] }));
+  let planName = $state('');
+  /** The saved-chain group Save plan writes (and replaces). */
+  const group = $derived(planName.trim() || `Fleet plan ${fmtDate(Date.now())}`);
+  // This plan's own saved chains keep their CCUs: saving must not re-plan the legs without them.
+  const planOpt = $derived<PlanOptions>({ ...opt, exclude: excludeSaved ? excludeReserved(opt.exclude, chains, (c) => c.group === group) : opt.exclude });
+  const fleet = $derived(planFleet(ships, owned, goals, planOpt, { hulls, keep, prefer: [...new Set([...prefer, ...labelPrefer])] }));
   const payNow = $derived(fleet.total - fleet.later);
   /** Every CCU the plan waits for, cheapest first: hull, which goal, planned cost, when last seen on sale. */
   const waiting = $derived(
@@ -134,10 +142,8 @@
   const ltiToAdd = $derived(lti.filter((id) => !prefer.includes(id) && mine.some((m) => m.id === id)));
 
   // ---- save ----
-  let planName = $state('');
   const savedMsg = transient(3000);
   async function savePlan() {
-    const group = planName.trim() || `Fleet plan ${fmtDate(Date.now())}`;
     const now = Date.now();
     const made: SavedChain[] = fleet.legs
       .filter((l) => l.plan && l.startId != null)
@@ -151,7 +157,7 @@
         steps: $state.snapshot(l.plan!.steps),
         total: l.plan!.total,
         cash: l.plan!.cash,
-        opt: { ...$state.snapshot(opt), via: [...l.goal.via] },
+        opt: { ...$state.snapshot(planOpt), via: [...l.goal.via] },
       }));
     // Saving under an existing plan name replaces that plan's chains.
     await persist([...chains.filter((c) => c.group !== group), ...made]);
@@ -246,7 +252,7 @@
               {/each}
               <span class="flex-1"></span>
               <span class="tabular-nums">{usd(leg.plan.total - leg.plan.later)} now{leg.plan.later ? ` · ${usd(leg.plan.later)} later` : ''} · <span class={cn(leg.plan.savings > 0 && 'text-success')}>{usd(leg.plan.savings)} saved</span></span>
-              <TipButton variant="outline" size="xs" onclick={() => leg.startId != null && onopen(leg.startId, g.targetId, g.via)} tip="Open this chain in the single planner to verify it with RSI and add it to the cart">Open</TipButton>
+              <TipButton variant="outline" size="xs" onclick={() => leg.startId != null && onopen(leg.startId, g.targetId, g.via, legExclude(fleet, i, planOpt.exclude))} tip="Open this chain in the single planner to verify it with RSI and add it to the cart">Open</TipButton>
             </div>
           {/if}
         {/if}

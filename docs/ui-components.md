@@ -1,7 +1,7 @@
 ---
 title: UI components and page conventions
 tags: [ui, shadcn, conventions]
-updated: 2026-10-22
+updated: 2026-10-29
 ---
 # UI components and page conventions
 
@@ -56,17 +56,19 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 | `Segmented` | `options {id,label,hint}`, `bind:value`, `ariaLabel`, `size`, `disabled`, `class` | radio pill |
 | `Thumb` | `src`, `name`, `width`, `height`, `placeholder: 'icon'\|'block'` | thumbnail + hover preview |
 | `SortTh` | `key`, `bind:sort`, `firstDir`, `numeric`, `class` | sortable head; `numeric` right-aligns |
+| `WikiLink` | `href` (null → nothing), `name`, `class` | muted globe `TipButton` (ghost, `icon-xs`, new tab) to the Star Citizen Wiki, right after a ship / item name; tooltip + label "<name> on the Star Citizen Wiki". URL from `lib/wiki.ts`; pass the catalog / RSI item name, never a custom ship name. In dense text lists add `class="-my-1"` so the row keeps its height |
 | `Section`, `Combobox`, `ShipSelect`, `Wizard`, `LabelEdit`, `FanNotice`, `WidgetGrid` | unchanged | — |
 
 ## Shared helpers (`src/lib/`)
 - `cart-ui.svelte.ts` — `createCartLedger()` → `{ state, busy, added, of(key), add(key, task), addAll(lines), reset() }`, `cartErrorLabel(code)`. Pages keep the call (`addStandalone`, `addStep`) and hand it to the ledger.
 - `deep-link.svelte.ts` — `useDeepLink({ hash, idParam, elId, apply, rendered })` → `{ flash }`; `hashParam(k)`.
 - `hub-pages.ts` — `HUB_GROUPS`, `HUB_PAGES`, `SETTINGS_PAGE`, `pageOf(tab)`, `isHubTab(s)`: the one list of pages (sidebar, popup, links).
-- `settings-ui.ts` — `SETTING_TOGGLES` (+ `quick` for the popup), `QUICK_TOGGLES`, `MUTE_MODES`.
+- `settings-ui.ts` — `SETTING_TOGGLES` (+ `quick` for the popup), `QUICK_TOGGLES`, `MUTE_MODES`, `STARORG_SWITCH` (the opt-in switch on Settings → Integrations that shows the card), `STARORG_TOGGLES` (the StarOrg Tools card, `StarOrgCard.svelte`).
 - `download.ts` — `downloadFile(name, body, type)`, `dateStamp()`.
 - `flash.svelte.ts` — `transient(ms)` → `{ text, show(msg), clear() }` for "Saved …" messages.
 - `store.ts` — `priceLabel(discounted, price)`, ribbon tests `isLimitedTime`, `isNewListing`, `isBestValue`, `bonusOf`, `fitsOf`, `isLowStock`, `isLimitedSku`.
 - `money.ts` — `parseMoney`, `r2`, `cents`, `dollars`, `usd0`, types `Usd` / `Cents`. `dates.ts` — `MONTHS`, `monthKey`, `monthKeys`, `monthsSince`, `parseRsiDate`, `fmtDate`, `fmtDateTime`, `ago`. `dom.ts` — `clean`, `text`, `textNodes` for parsed RSI pages. `ui.ts` — `LINK`, `LINK_QUIET`, `LINK_ICON`.
+- `wiki.ts` — `wikiUrl(title)` (page by MediaWiki title: ships, by `CatalogShip.name`), `wikiSearchUrl(name)` (search + Go: components, FPS gear, paints), `itemWikiUrl(category, title, ship)` for hangar / buyback items (by `items.categorize`), `storeWikiUrl(category, name, ship)` for store listings; null = no wiki page (packages, insurance, flair, hangars, credits, CCUs, subscriber items).
 - `facets.ts` — `Facet`, `RangeFacet`, `applyFacets`, `facetCounts`, `toggleFacet`, `clearFacets`, `INSURANCE_OPTIONS`, `STAGE_OPTIONS`, `SIZE_OPTIONS`, `yesNo`, `insuranceBucket`, `stageOf`.
 
 ## Page scaffold

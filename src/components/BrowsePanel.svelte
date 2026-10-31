@@ -38,6 +38,8 @@
   import Segmented from './Segmented.svelte';
   import Tag from './Tag.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
+  import { storeWikiUrl } from '@/lib/wiki';
   import LazyTip from './LazyTip.svelte';
   import HintBadge from './HintBadge.svelte';
   import CartButton from './CartButton.svelte';
@@ -152,6 +154,8 @@
       .map((x) => ({ id: x.sku, name: x.name, url: x.url, price: x.price, discounted: x.price, available: x.inStock, thumb: null, category: /ship/i.test(x.category) ? 'ships' : /pack/i.test(x.category) ? 'packages' : 'gear', subtitle: x.category, vip: true, warbond: /warbond/i.test(x.url) }));
     return [...list, ...extra];
   });
+  /** Star Citizen Wiki link per listing id (ships by catalog name; paints / gear by search; packs none). */
+  const wikiById = $derived(new Map(all.map((it) => [it.id, storeWikiUrl(it.category, it.name, it.category === 'ships' ? matchShip(it.name, ships) : null)])));
   const whoCount = (w: Audience) => all.filter((it) => forWho(it, w)).length;
   /**
    * Picture per piece of a pack, from the store itself: a listing that grants just that piece (by content key), any
@@ -420,7 +424,7 @@
                   {/if}
                   <Thumb src={it.thumb} name={it.name} width={64} height={36} />
                   <div class="grid gap-0.5">
-                    <a class={LINK_QUIET} href={it.url} target="_blank" rel="noopener"><strong>{it.name}</strong></a>
+                    <div class="flex items-center gap-0.5"><a class={LINK_QUIET} href={it.url} target="_blank" rel="noopener"><strong>{it.name}</strong></a><WikiLink href={wikiById.get(it.id)} name={it.name} /></div>
                     <div class="flex flex-wrap items-center gap-1">
                       <span class="text-muted-foreground mr-1 text-[11px]">{it.subtitle || catLabel(it.category)}</span>
                       {#if it.vip}<Tag kind="concierge" />{/if}

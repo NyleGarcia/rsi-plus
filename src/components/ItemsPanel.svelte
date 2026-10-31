@@ -11,6 +11,8 @@
   import SortTh from './SortTh.svelte';
   import FilterChips from './FilterChips.svelte';
   import HintBadge from './HintBadge.svelte';
+  import WikiLink from './WikiLink.svelte';
+  import { itemWikiUrl } from '@/lib/wiki';
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Card from '@/components/ui/card';
@@ -275,6 +277,7 @@
                     <Table.Row>
                       <Table.Cell class="whitespace-normal">
                         <strong>{r.title}</strong>
+                        <WikiLink class="-my-1" href={itemWikiUrl(r.category, r.title, r.ship)} name={r.ship?.name ?? r.title} />
                         {#if r.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
                         {#if r.fitsVia === 'pledge'}<HintBadge variant="secondary" class="m-px" hint="Name doesn't say which ship — matched to the ship(s) in the same pledge">from pack</HintBadge>{/if}
                         {#if ps === 'no-ship'}<HintBadge variant="warning" class="m-px" hint="You don't own a ship this paint fits">no ship</HintBadge>{/if}

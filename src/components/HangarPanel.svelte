@@ -3,7 +3,7 @@
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, holdersIndex, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
-  import { inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
+  import { categorize, inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
   import { storeLinksFor } from '@/lib/paints';
   import { applyFacets, type FacetValues } from '@/lib/facets';
   import { isGifted, pledgeFacets, pledgeRanges, PLEDGE_PRIMARY, PLEDGE_TYPES as TYPES } from '@/lib/pledge-facets';
@@ -12,7 +12,7 @@
   import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
   import { cleanLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
-  import type { Catalog, StorePaint } from '@/lib/store';
+  import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import Stat from './Stat.svelte';
@@ -20,6 +20,8 @@
   import LoadStatus from './LoadStatus.svelte';
   import LoadActions from './LoadActions.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
+  import { itemWikiUrl } from '@/lib/wiki';
   import LazyTip from './LazyTip.svelte';
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
@@ -36,6 +38,7 @@
   import { hangarEvents } from '@/lib/hangar-events';
   import { mergeEvents } from '@/lib/watch';
   import { feedItem } from '@/lib/settings';
+  import { loadHandle, saveCompleteLoad } from '@/lib/hangar-refresh';
   import Thumb from './Thumb.svelte';
   import * as Card from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
@@ -101,15 +104,22 @@
     const ev = hangarEvents(prev, next, Date.now());
     if (ev.length) await feedItem.setValue(mergeEvents(await feedItem.getValue(), ev));
   }
+  /** Save a completed read: stores it and announces the load (StarOrg auto-sync, `lib/hangar-refresh.ts`). */
+  async function saveComplete(v: Saved & { complete: true }) {
+    await saveCompleteLoad(JSON.parse(JSON.stringify(v)));
+    data = v;
+  }
   async function update() {
-    if (!data?.complete || !data.pledges.length) return load(false);
     error = updated = '';
+    // Whose hangar RSI shows now: a saved list from another login (or from before handles were recorded) is reloaded in full.
+    const handle = await loadHandle();
+    if (!data?.complete || !data.pledges.length || data.handle !== handle) return load(false, handle);
     ctrl = new AbortController();
     loading = { page: 0, count: 0 };
     try {
       const prev = $state.snapshot(data.pledges) as Pledge[];
       const u = await updateHangar(prev, (p) => (loading = p), ctrl.signal);
-      await save({ ...credits(), at: Date.now(), pledges: u.pledges, complete: true });
+      await saveComplete({ ...credits(), at: Date.now(), pledges: u.pledges, complete: true, handle });
       await noteHangarEvents(prev, u.pledges);
       const what = [u.added && `${u.added} new`, u.changed && `${u.changed} changed`, u.removed && `${u.removed} gone`].filter(Boolean).join(', ');
       updated = `${what || 'No changes'} · read ${u.pages} page${u.pages === 1 ? '' : 's'}`;
@@ -121,22 +131,24 @@
     }
   }
 
-  async function load(resume = false) {
+  async function load(resume = false, known?: string | null) {
     error = updated = '';
     ctrl = new AbortController();
-    const from = resume && data && !data.complete ? { page: data.page ?? 0, items: $state.snapshot(data.pledges) as Pledge[] } : undefined;
+    const handle = known === undefined ? await loadHandle() : known;
+    // Resume only a partial read of the same login; pages read as someone else start over.
+    const from = resume && data && !data.complete && data.handle === handle ?{ page: data.page ?? 0, items: $state.snapshot(data.pledges) as Pledge[] } : undefined;
     loading = { page: from?.page ?? 0, count: from?.items.length ?? 0 };
     try {
       const pledges = await loadHangar(
         async ({ page, pages, items }) => {
           loading = { page, pages, count: items.length };
-          await save({ ...credits(), at: Date.now(), pledges: items, complete: false, page }); // after every page
+          await save({ ...credits(), at: Date.now(), pledges: items, complete: false, page, handle }); // after every page
         },
         ctrl.signal,
         from,
       );
       const prev = data?.complete ? ($state.snapshot(data.pledges) as Pledge[]) : [];
-      await save({ ...credits(), at: Date.now(), pledges, complete: true });
+      await saveComplete({ ...credits(), at: Date.now(), pledges, complete: true, handle });
       await noteHangarEvents(prev, pledges);
       refreshCredits();
     } catch (e) {
@@ -183,6 +195,19 @@
       if (storeLinksFor(titles, ships, idx).length) out.add(p.id);
     }
     return out;
+  });
+  /** Star Citizen Wiki link per item (`kind|title`), once per hangar / catalog: ships by their catalog name. */
+  const wikiOf = $derived.by(() => {
+    const ships = cat?.ships ?? [];
+    const m = new Map<string, string | null>();
+    for (const p of all)
+      for (const it of p.items) {
+        const k = `${it.kind}|${it.title}`;
+        if (m.has(k)) continue;
+        const c = categorize(it.title, it.kind);
+        m.set(k, itemWikiUrl(c, it.title, c === 'ship' ? matchShip(it.title, ships) : null));
+      }
+    return m;
   });
   const facets = $derived(
     pledgeFacets({
@@ -709,7 +734,7 @@
                       {@const full = allItems || open.has(p.id)}
                       {@const list = full ? p.items : p.items.slice(0, 4)}
                       <ul class="text-muted-foreground mt-1 list-disc pl-3.5 text-xs">
-                        {#each list as it, i (i)}<li class={/^(ship|vehicle)$/i.test(it.kind) ? 'text-foreground' : ''}>{it.title}{#if it.kind && !/^(ship|vehicle)$/i.test(it.kind)}<span class="text-muted-foreground"> · {it.kind}</span>{/if}</li>{/each}
+                        {#each list as it, i (i)}<li class={/^(ship|vehicle)$/i.test(it.kind) ? 'text-foreground' : ''}>{it.title}<WikiLink class="-my-1 ml-0.5" href={wikiOf.get(`${it.kind}|${it.title}`)} name={it.title} />{#if it.kind && !/^(ship|vehicle)$/i.test(it.kind)}<span class="text-muted-foreground"> · {it.kind}</span>{/if}</li>{/each}
                       </ul>
                       {#if p.items.length > 4 && !allItems}
                         <Button variant="link" size="xs" class="h-auto px-0" onclick={() => toggleOpen(p.id)}>{full ? 'Show less' : `+${p.items.length - 4} more items`}</Button>

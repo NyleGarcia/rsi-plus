@@ -2,18 +2,23 @@
   import { loadBuyback, loadBuybackDetails } from '@/lib/account';
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
-  import type { BuybackItem, PledgeType } from '@/lib/hangar';
+  import { hangarState, type BuybackItem, type PledgeType } from '@/lib/hangar';
   import { buybackItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { bg } from '@/lib/messages';
   import { itemKey } from '@/lib/melt';
   import { Badge } from '@/components/ui/badge';
   import { storePaintIndex } from '@/lib/items';
   import { buybackContents, countTitles, hangarCounts, packHint, storeLinksFor } from '@/lib/paints';
-  import { inventory } from '@/lib/items';
-  import { usd, type CatalogShip, type StorePaint } from '@/lib/store';
+  import { categorize, inventory } from '@/lib/items';
+  import { matchShip, usd, type CatalogShip, type StorePaint } from '@/lib/store';
+  import { itemWikiUrl } from '@/lib/wiki';
   import { ownUsd } from '@/lib/privacy.svelte';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { BUYBACK_GROUP_BY, buybackGroups, type BuybackGroupBy } from '@/lib/buyback-groups';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import LoadStatus from './LoadStatus.svelte';
@@ -21,10 +26,10 @@
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
   import HintBadge from './HintBadge.svelte';
   import Tag from './Tag.svelte';
   import Empty from './Empty.svelte';
-  import SwitchRow from './SwitchRow.svelte';
   import * as Alert from '@/components/ui/alert';
   import { LINK } from '@/lib/ui';
   import { fmtDate, parseRsiDate } from '@/lib/dates';
@@ -38,6 +43,7 @@
   let data = $state<Saved | null>(null);
   let loading = $state<{ page: number; count: number; pages?: number } | null>(null);
   let error = $state('');
+  let catalogError = $state('');
   let q = $state('');
   let type = $state<PledgeType | 'all'>('all');
   type Col = 'name' | 'type' | 'date';
@@ -48,11 +54,24 @@
   let paints = $state<StorePaint[]>([]);
   const storeIdx = $derived(storePaintIndex(paints));
   /** Copies of each item title in the saved hangar → "already in hangar" per buyback entry. */
-  let hangarPledges = $state<import('@/lib/hangar').Pledge[]>([]);
+  let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
+  const hangarPledges = $derived(hangar?.pledges ?? []);
+  /**
+   * `partial` = the hangar load stopped part-way: items on the unread pages would read "not in hangar" and land in
+   * the cart through "Add all missing", so no ownership verdict is shown until the hangar is whole.
+   */
+  const hangarReady = $derived(hangarState(hangar));
   const hangarQty = $derived(hangarCounts(hangarPledges));
   const qtyOf = (t: string) => hangarQty.get(itemKey(t)) ?? 0;
   /** Per entry: contents with hangar counts; `owned` = every content present. */
   const rows = $derived(inventory(hangarPledges, ships));
+  /** Star Citizen Wiki link for one content title: kind from the entry's item list; a ship entry without kinds holds a ship. */
+  const wikiFor = (b: BuybackItem, title: string) => {
+    const kind = b.items?.find((i) => i.title === title)?.kind ?? '';
+    let c = categorize(title, kind);
+    if (!kind && c === 'other' && b.type === 'ship') c = 'ship';
+    return itemWikiUrl(c, title, c === 'ship' ? matchShip(title, ships) : null);
+  };
   const inHangar = (b: BuybackItem) => {
     const contents = buybackContents(b);
     // One line per distinct item: how many the entry holds (`need`) vs copies in the hangar (`n`).
@@ -93,11 +112,23 @@
 
   $effect(() => {
     buybackItem.getValue().then((v) => (data = v)).catch((e) => (error = `Couldn't read saved buyback: ${(e as Error).message}`));
-    catalogItem.getValue().then((c) => (ships = c?.ships ?? [])).catch(() => {});
-    paintCatalogItem.getValue().then((p) => (paints = p?.paints ?? [])).catch(() => {});
-    hangarItem.getValue().then((h) => (hangarPledges = h?.pledges ?? [])).catch(() => {});
-    const offH = hangarItem.watch((h) => (hangarPledges = h?.pledges ?? []));
-    return () => (ctrl?.abort(), offH());
+    catalogItem.getValue().then((c) => c?.ships?.length && (ships = c.ships)).catch(() => {});
+    paintCatalogItem.getValue().then((p) => p?.paints?.length && (paints = p.paints)).catch(() => {});
+    // The cache may be empty (Store pages never opened): the background loads the catalog when it has none, as on
+    // My items / Hangar. Without it no entry can be matched to a ship (Group: ship) or a store page.
+    bg({ type: 'catalog:get' })
+      .then((c) => (ships = c?.ships ?? ships))
+      .catch((e) => (catalogError = `Store catalog: ${(e as Error).message} (needed to match entries to ships and store pages)`));
+    bg({ type: 'paints:get' })
+      .then((p) => (paints = p?.paints ?? paints))
+      .catch(() => {}); // store links are a bonus
+    hangarItem.getValue().then((h) => (hangar = h)).catch(() => {});
+    const offs = [
+      hangarItem.watch((h) => (hangar = h)),
+      catalogItem.watch((c) => c?.ships?.length && (ships = c.ships)),
+      paintCatalogItem.watch((p) => p?.paints?.length && (paints = p.paints)),
+    ];
+    return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
   async function save(v: Saved) {
@@ -172,19 +203,71 @@
     for (const b of all) seen.set(b.id, (seen.get(b.id) ?? 0) + 1);
     return new Map(all.map((b, i) => [b, (seen.get(b.id) ?? 0) > 1 || !b.id ? `${b.id}:${i}` : String(b.id)]));
   });
-  let onlyStore = $state(false);
+  /** Buyback prefs on this device: Group by and the store filter. */
+  const PREFS = 'rsiplus:buyback';
+  const saved = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ groupBy: BuybackGroupBy; store: StoreFilter }>;
+    } catch {
+      return {};
+    }
+  })();
+  type StoreFilter = 'any' | 'sold' | 'unsold';
+  const STORE_FILTER: { value: StoreFilter; label: string }[] = [
+    { value: 'any', label: 'Store: any' },
+    { value: 'sold', label: 'Store sells it today' },
+    { value: 'unsold', label: "Store doesn't sell it today" },
+  ];
+  let store = $state<StoreFilter>(STORE_FILTER.some((o) => o.value === saved.store) ? saved.store! : 'any');
+  /**
+   * Store status per entry: sold = the store sells at least one of its contents today; unsold = its contents are known
+   * and the store sells none of them (only buy-back gets them); unknown = a CCU (the planner's job) or contents not
+   * loaded yet — those match neither store filter.
+   */
+  const storeStatus = (b: BuybackItem): 'sold' | 'unsold' | 'unknown' =>
+    storeFor(b).length ? 'sold' : b.type === 'upgrade' || b.upgrade || !buybackContents(b).length ? 'unknown' : 'unsold';
+  const unknownStore = $derived(store === 'any' ? 0 : all.filter((b) => storeStatus(b) === 'unknown').length);
   const types = $derived([...new Set(all.map((i) => i.type))]);
   const shown = $derived(
     sortBy(
-      all.filter((i) => (type === 'all' || i.type === type) && (!onlyStore || storeFor(i).length > 0) && (own === 'all' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
+      all.filter((i) => (type === 'all' || i.type === type) && (store === 'any' || storeStatus(i) === store) && (own === 'all' || hangarReady !== 'complete' || ownFor(i).status === own) && (!q.trim() || `${i.name} ${i.contained}`.toLowerCase().includes(q.trim().toLowerCase()))),
       sort,
       { name: (i) => i.name, type: (i) => i.type, date: (i) => dateValue(i.date) },
     ),
   );
-  // Rows mount in chunks (40 first, then +60 a frame) so a long buyback list doesn't block the first paint.
-  let budget = $derived.by(() => (void shown, 40));
+  /** Group by (type / ship / none). */
+  let groupBy = $state<BuybackGroupBy>(BUYBACK_GROUP_BY.some((o) => o.value === saved.groupBy) ? saved.groupBy! : 'none');
   $effect(() => {
-    if (budget >= shown.length) return;
+    try {
+      localStorage.setItem(PREFS, JSON.stringify({ groupBy, store }));
+    } catch {
+      /* no persistence — fine */
+    }
+  });
+  const groups = $derived(buybackGroups(shown, groupBy, ships));
+  const groupKeys = $derived(groups.map((g) => g.key));
+  let collapsed = $state<Set<string>>(new Set());
+  const toggle = (k: string) => {
+    const next = new Set(collapsed);
+    if (!next.delete(k)) next.add(k);
+    collapsed = next;
+  };
+  const setAll = (keys: string[], close: boolean) => (collapsed = close ? new Set([...collapsed, ...keys]) : new Set([...collapsed].filter((k) => !keys.includes(k))));
+  /** Rows before each group among the expanded ones, for the chunked render. */
+  const starts = $derived.by(() => {
+    let n = 0;
+    return groups.map((g) => {
+      const at = n;
+      if (!collapsed.has(g.key)) n += g.items.length;
+      return at;
+    });
+  });
+  const visibleRows = $derived(groups.reduce((n, g) => n + (collapsed.has(g.key) ? 0 : g.items.length), 0));
+  // Rows mount in chunks (40 first, then +60 a frame) so a long buyback list doesn't block the first paint; a new
+  // filter or grouping starts over.
+  let budget = $derived.by(() => (void groups, 40));
+  $effect(() => {
+    if (budget >= visibleRows) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
@@ -192,6 +275,67 @@
 
 {#snippet cartBtn(sku: number, qty = 1)}
   <CartButton state={cart.of(sku)} onadd={() => addOne(sku, qty)} busy={cart.busy} {qty} />
+{/snippet}
+
+{#snippet row(b: BuybackItem)}
+  <Table.Row>
+    <Table.Cell class="whitespace-normal">
+      {@const solo = buybackContents(b)}
+      <strong>{b.name}</strong>{#if solo.length === 1}<WikiLink class="-my-1 ml-0.5" href={wikiFor(b, solo[0]!)} name={solo[0]!} />{/if}
+      {#if b.items}<div class="text-muted-foreground text-xs">{b.items.length} item{b.items.length === 1 ? '' : 's'}</div>
+      {:else if b.contained}<div class="text-muted-foreground text-xs">{b.contained}</div>{/if}
+    </Table.Cell>
+    <Table.Cell>{b.type}</Table.Cell>
+    {@const melted = parseRsiDate(b.date)}
+    <Table.Cell class="text-muted-foreground text-xs">{Number.isNaN(melted) ? b.date : fmtDate(melted)}</Table.Cell>
+    <Table.Cell class="whitespace-normal text-xs">
+      {@const h = ownFor(b)}
+      {#if hangarReady === 'none'}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
+      {:else if hangarReady === 'partial'}<HintBadge variant="warning" hint="The hangar load stopped part-way, so items on the pages not read yet would show as missing. Resume it on the Pledges page to compare.">hangar partly loaded (page {hangar?.page})</HintBadge> <a class={LINK} href="#hangar">Resume</a>
+      {:else if h.hint}
+        <HintBadge variant={h.owned ? 'success' : h.hint.ownedForHull.length ? 'warning' : 'muted'} hint="The list page only says how many items — use “Load contents & prices” to read this entry's page">{h.owned ? 'likely all in hangar' : 'contents not loaded'} · {h.hint.count} items</HintBadge>
+        {#if h.hint.hull}
+          <div class="mt-1">{#if h.hint.ownedForHull.length}<span class="text-muted-foreground">You own {h.hint.ownedForHull.length} {h.hint.hull} paint{h.hint.ownedForHull.length === 1 ? '' : 's'}{h.hint.ownedForHull.length >= h.hint.count ? ' (at least as many as the pack holds)' : ''}:</span> {h.hint.ownedForHull.map((p) => `${p.title}${p.n > 1 ? ` ×${p.n}` : ''}`).join(', ')}{:else}<span class="text-destructive">No {h.hint.hull} paints in your hangar.</span>{/if}</div>
+        {/if}
+      {:else if h.parts.length === 1 && h.parts[0]!.need === 1}
+        {@const sl = storeLink(b, h.parts[0]!.title)}
+        <div class="flex flex-wrap items-center gap-2">
+          {#if h.parts[0]!.n}<Tag kind="owned" count={h.parts[0]!.n} />{:else}<Badge variant="muted">not in hangar</Badge>{/if}
+          {#if sl}
+            <a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">store page{#if sl.price != null} · {usd(sl.price)}{/if}</a>
+            {@render cartBtn(sl.sku)}
+          {/if}
+        </div>
+      {:else}
+        {@const lack = h.parts.filter((p) => p.n < p.need)}
+        {@const have = h.parts.filter((p) => p.n >= p.need)}
+        <Badge variant={h.owned ? 'success' : h.any ? 'warning' : 'muted'}>{h.owned ? 'all in hangar' : h.any ? `${h.parts.length - lack.length} of ${h.parts.length} in hangar` : 'not in hangar'}</Badge>
+        <ul class="m-0 mt-1.5 grid list-none gap-0.5 p-0">
+          {#each lack as p (p.title)}
+            {@const sl = storeLink(b, p.title)}
+            <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}<WikiLink class="-my-1 -ml-1" href={wikiFor(b, p.title)} name={p.title} />{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
+          {/each}
+          {#each have as p (p.title)}
+            <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}<WikiLink class="-my-1 ml-0.5" href={wikiFor(b, p.title)} name={p.title} />{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
+          {/each}
+        </ul>
+        {@const missingOnStore = lack.map((p) => ({ p, sl: storeLink(b, p.title) })).filter((x) => x.sl?.price != null)}
+        {#if missingOnStore.length}
+          {@const sum = missingOnStore.reduce((a, x) => a + x.sl!.price! * Math.max(1, x.p.need - x.p.n), 0)}
+          <div class="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 pt-1.5">
+            <span>Missing on the store: <strong class="text-foreground">{usd(sum)}</strong> ({missingOnStore.length} of {lack.length}){#if b.price != null} · buy back: <strong class="text-foreground">{ownUsd(b.price)}</strong>{#if missingOnStore.length === lack.length} → <span class={b.price < sum ? 'text-success' : 'text-warning'}>{b.price < sum ? 'buy-back is cheaper' : 'store is cheaper'}</span>{/if}{/if}</span>
+            <TipButton variant="outline" size="xs" disabled={cart.busy} onclick={() => addMissing(missingOnStore.map((x) => ({ sku: x.sl!.sku, qty: Math.max(1, x.p.need - x.p.n) })))} tip="Adds every missing item the store sells to your RSI cart, one after another. Nothing is paid.">
+              <ShoppingCart /> Add all missing to cart
+            </TipButton>
+          </div>
+        {/if}
+      {/if}
+    </Table.Cell>
+    <Table.Cell class="text-right">
+      {#if b.url}<Button variant="outline" size="xs" href={b.url} target="_blank" rel="noopener">Buy back</Button>{/if}
+      {#if b.price != null}<div class="mt-1 text-xs whitespace-nowrap"><strong>{ownUsd(b.price)}</strong>{#if b.listPrice && b.listPrice > b.price}<span class="text-muted-foreground"> was {ownUsd(b.listPrice)} · −{Math.round(100 - (100 * b.price) / b.listPrice)}%</span>{/if}</div>{/if}
+    </Table.Cell>
+  </Table.Row>
 {/snippet}
 
 <Card.Root>
@@ -215,6 +359,7 @@
   </Card.Header>
   <Card.Content class="grid gap-4">
     {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
+    {#if catalogError}<Alert.Root variant="warning"><Alert.Description>{catalogError}</Alert.Description></Alert.Root>{/if}
     {#if all.length}
       <div class="flex flex-wrap items-center gap-2">
         <Input class="w-56" placeholder="Search" bind:value={q} aria-label="Search buyback" />
@@ -225,7 +370,7 @@
             {#each types as t (t)}<Select.Item value={t} label={t} />{/each}
           </Select.Content>
         </Select.Root>
-        <Select.Root type="single" bind:value={own}>
+        {#if hangarReady === 'complete'}<Select.Root type="single" bind:value={own}>
           <Select.Trigger aria-label="Hangar status">{own === 'all' ? 'In hangar: any' : own === 'owned' ? 'Already in hangar' : own === 'partly' ? 'Partly in hangar' : own === 'unknown' ? 'Contents not loaded' : 'Not in hangar'}</Select.Trigger>
           <Select.Content>
             <Select.Item value="all" label="In hangar: any" />
@@ -234,9 +379,24 @@
             <Select.Item value="missing" label={`Not in hangar (none of it) · ${ownCount('missing')}`} />
             <Select.Item value="unknown" label={`Contents not loaded · ${ownCount('unknown')}`} />
           </Select.Content>
+        </Select.Root>{/if}
+        <Select.Root type="single" bind:value={() => groupBy, (v) => (groupBy = v as BuybackGroupBy)}>
+          <Select.Trigger aria-label="Group by">{BUYBACK_GROUP_BY.find((o) => o.value === groupBy)?.label}</Select.Trigger>
+          <Select.Content>
+            {#each BUYBACK_GROUP_BY as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
+          </Select.Content>
         </Select.Root>
-        <SwitchRow id="buyback-only-store" size="sm" label="Only entries the store sells today" checked={onlyStore} onchange={(v) => (onlyStore = v)} />
-        <span class="text-muted-foreground text-sm">{shown.length} shown · buyback CCUs can be used by the CCU planner</span>
+        {#if groupBy !== 'none'}
+          <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, false)}>Expand all</Button>
+          <Button variant="outline" size="sm" onclick={() => setAll(groupKeys, true)}>Collapse all</Button>
+        {/if}
+        <Select.Root type="single" bind:value={() => store, (v) => (store = v as StoreFilter)}>
+          <Select.Trigger aria-label="Store">{STORE_FILTER.find((o) => o.value === store)?.label}</Select.Trigger>
+          <Select.Content>
+            {#each STORE_FILTER as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}
+          </Select.Content>
+        </Select.Root>
+        <span class="text-muted-foreground text-sm">{shown.length} shown{#if unknownStore} · {unknownStore} left out (CCUs or contents not loaded){/if} · buyback CCUs can be used by the CCU planner</span>
         <span class="flex-1"></span>
         <TipButton variant="ghost" size="xs" onclick={copyMarkup} tip="Copies the raw HTML of the first two buyback entries (as RSI serves them) to the clipboard, for fixing the parser when contents or dates come out wrong">Copy page markup</TipButton>
         {#if debugMsg}<span class="text-muted-foreground text-xs">{debugMsg}</span>{/if}
@@ -251,67 +411,30 @@
             <Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head>
           </Table.Row>
         </Table.Header>
+        {#each groups as g, gi (g.key)}
+          <Table.Body>
+            {#if g.label}
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head colspan={5} scope="rowgroup" class="h-auto pt-3.5">
+                  <!-- Table row group: a Collapsible can't wrap <tr>s, so this stays a disclosure button. -->
+                  <Button variant="ghost" size="sm" class="aria-expanded:bg-transparent h-auto w-full flex-wrap justify-start gap-2 px-1 py-1.5 text-left text-[13px] font-normal whitespace-normal" aria-expanded={!collapsed.has(g.key)} onclick={() => toggle(g.key)}>
+                    {#if collapsed.has(g.key)}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
+                    <strong>{g.label}</strong>
+                    <span class="text-muted-foreground text-[11px]">· {g.items.length} entr{g.items.length === 1 ? 'y' : 'ies'}</span>
+                  </Button>
+                </Table.Head>
+              </Table.Row>
+            {/if}
+            {#if !collapsed.has(g.key) && budget > starts[gi]!}
+              {#each g.items.slice(0, budget - starts[gi]!) as b (rowKey.get(b))}
+                {@render row(b)}
+              {/each}
+            {/if}
+          </Table.Body>
+        {/each}
         <Table.Body>
-          {#each shown.slice(0, budget) as b (rowKey.get(b))}
-            <Table.Row>
-              <Table.Cell class="whitespace-normal">
-                <strong>{b.name}</strong>
-                {#if b.items}<div class="text-muted-foreground text-xs">{b.items.length} item{b.items.length === 1 ? '' : 's'}</div>
-                {:else if b.contained}<div class="text-muted-foreground text-xs">{b.contained}</div>{/if}
-              </Table.Cell>
-              <Table.Cell>{b.type}</Table.Cell>
-              {@const melted = parseRsiDate(b.date)}
-              <Table.Cell class="text-muted-foreground text-xs">{Number.isNaN(melted) ? b.date : fmtDate(melted)}</Table.Cell>
-              <Table.Cell class="whitespace-normal text-xs">
-                {@const h = ownFor(b)}
-                {#if !hangarPledges.length}<HintBadge variant="muted" hint="Load the hangar on the Pledges page to compare">hangar not loaded</HintBadge>
-                {:else if h.hint}
-                  <HintBadge variant={h.owned ? 'success' : h.hint.ownedForHull.length ? 'warning' : 'muted'} hint="The list page only says how many items — use “Load contents & prices” to read this entry's page">{h.owned ? 'likely all in hangar' : 'contents not loaded'} · {h.hint.count} items</HintBadge>
-                  {#if h.hint.hull}
-                    <div class="mt-1">{#if h.hint.ownedForHull.length}<span class="text-muted-foreground">You own {h.hint.ownedForHull.length} {h.hint.hull} paint{h.hint.ownedForHull.length === 1 ? '' : 's'}{h.hint.ownedForHull.length >= h.hint.count ? ' (at least as many as the pack holds)' : ''}:</span> {h.hint.ownedForHull.map((p) => `${p.title}${p.n > 1 ? ` ×${p.n}` : ''}`).join(', ')}{:else}<span class="text-destructive">No {h.hint.hull} paints in your hangar.</span>{/if}</div>
-                  {/if}
-                {:else if h.parts.length === 1 && h.parts[0]!.need === 1}
-                  {@const sl = storeLink(b, h.parts[0]!.title)}
-                  <div class="flex flex-wrap items-center gap-2">
-                    {#if h.parts[0]!.n}<Tag kind="owned" count={h.parts[0]!.n} />{:else}<Badge variant="muted">not in hangar</Badge>{/if}
-                    {#if sl}
-                      <a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">store page{#if sl.price != null} · {usd(sl.price)}{/if}</a>
-                      {@render cartBtn(sl.sku)}
-                    {/if}
-                  </div>
-                {:else}
-                  {@const lack = h.parts.filter((p) => p.n < p.need)}
-                  {@const have = h.parts.filter((p) => p.n >= p.need)}
-                  <Badge variant={h.owned ? 'success' : h.any ? 'warning' : 'muted'}>{h.owned ? 'all in hangar' : h.any ? `${h.parts.length - lack.length} of ${h.parts.length} in hangar` : 'not in hangar'}</Badge>
-                  <ul class="m-0 mt-1.5 grid list-none gap-0.5 p-0">
-                    {#each lack as p (p.title)}
-                      {@const sl = storeLink(b, p.title)}
-                      <li class="text-destructive flex items-start gap-1.5"><X class="mt-0.5 size-3 shrink-0" aria-label="missing" /><span class="inline-flex flex-wrap items-center gap-x-1.5">{#if sl}<a href={sl.url} target="_blank" rel="noopener" class={LINK} title="Open the store page">{p.title}</a>{:else}{p.title}{/if}{#if p.need > 1} <span class="font-semibold">×{p.need}</span>{#if p.n} <span class="text-muted-foreground">(have {p.n})</span>{/if}{/if}{#if sl}{#if sl.price != null}<span class="text-muted-foreground">{usd(sl.price)}</span>{/if}{@render cartBtn(sl.sku, Math.max(1, p.need - p.n))}{/if}</span></li>
-                    {/each}
-                    {#each have as p (p.title)}
-                      <li class="text-muted-foreground flex items-start gap-1.5"><Check class="text-success mt-0.5 size-3 shrink-0" aria-label="in hangar" /><span>{p.title}{#if p.need > 1} ×{p.need}{/if} <span class="opacity-70">(have {p.n})</span></span></li>
-                    {/each}
-                  </ul>
-                  {@const missingOnStore = lack.map((p) => ({ p, sl: storeLink(b, p.title) })).filter((x) => x.sl?.price != null)}
-                  {#if missingOnStore.length}
-                    {@const sum = missingOnStore.reduce((a, x) => a + x.sl!.price! * Math.max(1, x.p.need - x.p.n), 0)}
-                    <div class="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 pt-1.5">
-                      <span>Missing on the store: <strong class="text-foreground">{usd(sum)}</strong> ({missingOnStore.length} of {lack.length}){#if b.price != null} · buy back: <strong class="text-foreground">{ownUsd(b.price)}</strong>{#if missingOnStore.length === lack.length} → <span class={b.price < sum ? 'text-success' : 'text-warning'}>{b.price < sum ? 'buy-back is cheaper' : 'store is cheaper'}</span>{/if}{/if}</span>
-                      <TipButton variant="outline" size="xs" disabled={cart.busy} onclick={() => addMissing(missingOnStore.map((x) => ({ sku: x.sl!.sku, qty: Math.max(1, x.p.need - x.p.n) })))} tip="Adds every missing item the store sells to your RSI cart, one after another. Nothing is paid.">
-                        <ShoppingCart /> Add all missing to cart
-                      </TipButton>
-                    </div>
-                  {/if}
-                {/if}
-              </Table.Cell>
-              <Table.Cell class="text-right">
-                {#if b.url}<Button variant="outline" size="xs" href={b.url} target="_blank" rel="noopener">Buy back</Button>{/if}
-                {#if b.price != null}<div class="mt-1 text-xs whitespace-nowrap"><strong>{ownUsd(b.price)}</strong>{#if b.listPrice && b.listPrice > b.price}<span class="text-muted-foreground"> was {ownUsd(b.listPrice)} · −{Math.round(100 - (100 * b.price) / b.listPrice)}%</span>{/if}</div>{/if}
-              </Table.Cell>
-            </Table.Row>
-          {/each}
-          {#if budget < shown.length}
-            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+          {#if budget < visibleRows}
+            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {visibleRows - budget} more loading</Table.Cell></Table.Row>
           {/if}
           {#if !shown.length}<Empty colspan={5}>Nothing matches.</Empty>{/if}
         </Table.Body>

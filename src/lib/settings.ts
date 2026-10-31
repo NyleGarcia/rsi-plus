@@ -56,6 +56,16 @@ export interface Settings {
   partySound: boolean;
   /** RSI+ bar on store ship pages and account pages. */
   siteBar: boolean;
+  /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
+  accountSwitcher: boolean;
+  /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
+  starorg: boolean;
+  /** Which StarOrg Tools site to connect to (`lib/starorg.ts` `STARORG_TARGETS`). Fixed while connected. */
+  starorgTarget: 'prod' | 'dev';
+  /** StarOrg Tools (when connected): send the hangar after every full load, and weekly when it changed (`lib/starorg.ts`). */
+  starorgAutoSync: boolean;
+  /** StarOrg Tools: include each pledge's value (`pledge_cost`); off = sent empty. */
+  starorgSendCost: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -76,6 +86,11 @@ export const DEFAULTS: Settings = {
   partyRemindHours: 12,
   partySound: true,
   siteBar: true,
+  accountSwitcher: false,
+  starorg: false,
+  starorgTarget: 'prod',
+  starorgAutoSync: false,
+  starorgSendCost: false,
 };
 
 export const settingsItem = storage.defineItem<Settings>('sync:settings', { fallback: DEFAULTS });
@@ -92,7 +107,14 @@ export const orgCacheItem = storage.defineItem<OrgCache>('local:orgs', { fallbac
 export const seenRequestsItem = storage.defineItem<string[] | null>(acct('local:seenRequests'), { fallback: null });
 /** Last full hangar / buyback load (local only — personal account data never leaves the browser). */
 /** `complete: false` + `page` = a load that stopped part-way (refresh, error, Stop) — resumable from `page + 1`. */
-export const hangarItem = storage.defineItem<{ at: number; pledges: Pledge[]; complete?: boolean; page?: number; credits?: Credits | null; creditsAt?: number } | null>(acct('local:hangar'), { fallback: null });
+/** `handle`: the RSI handle (lowercase, `whoAmI`) logged in when the load started; StarOrg Tools sends only a hangar read as the handle logged in now. */
+export const hangarItem = storage.defineItem<{ at: number; pledges: Pledge[]; complete?: boolean; page?: number; credits?: Credits | null; creditsAt?: number; handle?: string | null } | null>(acct('local:hangar'), { fallback: null });
+/**
+ * Written by the hangar loaders after a completed full load (`lib/hangar-refresh.ts` `saveCompleteLoad`): the signal the
+ * background's StarOrg auto-sync listens to. Not in `ACCOUNT_ITEMS` and never written by a profile restore, so swapping
+ * accounts (which rewrites `hangarItem`) is never mistaken for a load.
+ */
+export const hangarLoadItem = storage.defineItem<{ at: number; handle: string | null } | null>(acct('local:hangarLoad'), { fallback: null });
 export const buybackItem = storage.defineItem<{ at: number; items: BuybackItem[]; complete?: boolean; page?: number } | null>(acct('local:buyback'), { fallback: null });
 /** Order history imported from /account/billing (Wallet → Where the money went). */
 /** v2 (2026-10): orders carry `lines`, `credits`, `items`; v1 saves (first beta reader) are dropped, the user re-imports. */
@@ -133,6 +155,15 @@ export const partyModeItem = storage.defineItem<PartyMode | null>(acct('local:pa
 /** What party mode accepted (or failed to), newest first. */
 export const partyLogItem = storage.defineItem<PartyLogEntry[]>(acct('local:partyLog'), { fallback: [] });
 export const lastPollItem = storage.defineItem<{ at: number; error: string | null } | null>(acct('local:lastPoll'), { fallback: null });
+/**
+ * StarOrg Tools sign-in (`lib/starorg.ts`): the `aud=rsiplus` bearer token, when it expires, and who it belongs to.
+ * `storage.local` only, never sync; per context through `acct()` so an incognito window never reuses the normal
+ * window's token. Not in `ACCOUNT_ITEMS`: it is a StarOrg login, not RSI account data, and one StarOrg member can
+ * verify several RSI handles (the server checks the pushed handle).
+ */
+export const starorgItem = storage.defineItem<import('./starorg').StarOrgAuth | null>(acct('local:starorg'), { fallback: null });
+/** The last StarOrg Tools send: when, the result line, and the row-set hash the weekly check compares against. */
+export const starorgSyncItem = storage.defineItem<import('./starorg').StarOrgSync | null>(acct('local:starorgSync'), { fallback: null });
 
 /** Saved RSI logins for the account switcher (this context's cookie jar only — incognito has its own list). */
 export const profilesItem = storage.defineItem<Profiles>(acct('local:profiles'), { fallback: { active: null, list: [] } });
@@ -148,6 +179,17 @@ export async function getSettings(): Promise<Settings> {
 
 export async function patchSettings(patch: Partial<Settings>) {
   await settingsItem.setValue({ ...(await getSettings()), ...patch });
+}
+
+/**
+ * The account switcher became opt-in (`accountSwitcher`, off by default). Once per device (a local marker: saved logins
+ * are per device, settings are synced), someone with a saved login in either context gets it turned on.
+ */
+export async function keepAccountSwitcher(): Promise<void> {
+  if (await storage.getItem<boolean>('local:accountSwitcherMigrated')) return;
+  await storage.setItem('local:accountSwitcherMigrated', true);
+  const saved = await Promise.all(['local:profiles', 'local:incognito.profiles'].map((k) => storage.getItem<Profiles>(k as 'local:profiles').catch(() => null)));
+  if (saved.some((p) => p?.list?.length) && !(await getSettings()).accountSwitcher) await patchSettings({ accountSwitcher: true });
 }
 
 export async function getWatches(): Promise<Watches> {

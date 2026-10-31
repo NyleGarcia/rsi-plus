@@ -1,10 +1,12 @@
 /**
  * Fleet export in the HangarXPLOR shape — the file format FleetYards (Hangar → Import), myfleet.gg (the StarShip42 FleetView
  * successor), Starjump / hangar.link and spreadsheets all read. One row per ship hull in a pledge (HangarXPLOR.Download.js,
- * MIT): `ship_code`, `ship_name` (your nickname, else the ship), `manufacturer_code/name`, `name` (ship as listed, maker
- * prefix stripped), `lti`, `warbond`, `entity_type: 'ship'`, `pledge_id/name/date/cost`. Pure; UI in ShipsPanel / HangarPanel.
+ * MIT): `ship_code`, `ship_name` (the name you gave that ship, else the ship), `manufacturer_code/name`, `name` (ship as listed, maker
+ * prefix stripped), `lti`, `warbond`, `entity_type: 'ship'`, `pledge_id/name/date/cost`, plus `insurance` when the pledge lists
+ * one. `starOrgRows` adds `acquired` and the ships you have only in the game, and leaves out `pledge_date`, for StarOrg Tools. Pure; UI in ShipsPanel / HangarPanel.
  */
 import type { Pledge } from './hangar';
+import type { GameShip } from './items';
 import { matchShip, type CatalogShip } from './store';
 import { SHIP_CODES } from './data/ship-codes';
 
@@ -21,7 +23,14 @@ export interface XplorRow {
   pledge_name: string;
   pledge_date: string;
   pledge_cost: string;
+  /** Insurance as the pledge lists it ('LTI', '120 mo', '6 mo', …); omitted when the pledge lists none. */
+  insurance?: string;
+  /** StarOrg Tools preset only: a pledged hull, or one you have only in the game (bought with aUEC or earned). */
+  acquired?: 'pledge' | 'game';
 }
+
+/** A StarOrg Tools preset row: an `XplorRow` without `pledge_date` (StarOrg needs no purchase timeline). */
+export type StarOrgRow = Omit<XplorRow, 'pledge_date'>;
 
 const byName = new Map(SHIP_CODES.map((c) => [c[1].toLowerCase(), c]));
 const makerCode = new Map(SHIP_CODES.map((c) => [c[3].toLowerCase(), c[2]]));
@@ -48,17 +57,32 @@ export function shipCode(name: string, manufacturer: string): Pick<XplorRow, 'sh
   return { ship_code: synthCode(code, name), manufacturer_code: code, manufacturer_name: manufacturer };
 }
 
+/**
+ * Each ship hull of a pledge with the name you gave it ('' = unnamed). RSI puts a ship's name inside that ship's item,
+ * so a pack names only the hulls you named. A save from before items carried their name falls back to the pledge's
+ * nickname only when the pledge holds one hull: a pack's names can't be pinned to its ships.
+ */
+export function pledgeHulls(p: Pick<Pledge, 'ships' | 'items' | 'nickname'>): { title: string; customName: string }[] {
+  const items = p.items.filter((i) => i.kind.toLowerCase() === 'ship');
+  const hulls = items.length ? items.map((i) => ({ title: i.title, customName: i.customName ?? '' })) : p.ships.map((title) => ({ title, customName: '' }));
+  if (p.nickname && hulls.length === 1 && !items.some((i) => 'customName' in i)) hulls[0]!.customName = p.nickname;
+  return hulls;
+}
+
+type SortKeys = Pick<XplorRow, 'manufacturer_name' | 'name' | 'pledge_id'>;
+const byMakerShipPledge = (a: SortKeys, b: SortKeys) =>
+  a.manufacturer_name.localeCompare(b.manufacturer_name) || a.name.localeCompare(b.name) || a.pledge_id.localeCompare(b.pledge_id);
+
 /** One HangarXPLOR row per ship hull listed in each pledge, sorted by maker then ship (CCU pledges hold no hulls). */
 export function xplorRows(pledges: Pledge[], ships: CatalogShip[]): XplorRow[] {
   const out: XplorRow[] = [];
   for (const p of pledges) {
-    const titles = p.ships.length ? p.ships : p.items.filter((i) => i.kind.toLowerCase() === 'ship').map((i) => i.title);
-    for (const title of titles) {
+    for (const { title, customName } of pledgeHulls(p)) {
       const cat = matchShip(title, ships);
       const name = cat?.name ?? stripMaker(title);
       out.push({
         ...shipCode(name, cat?.manufacturer ?? ''),
-        ship_name: p.nickname || name,
+        ship_name: customName || name,
         name,
         lti: p.lti,
         warbond: p.warbond,
@@ -67,10 +91,41 @@ export function xplorRows(pledges: Pledge[], ships: CatalogShip[]): XplorRow[] {
         pledge_name: p.name,
         pledge_date: p.date,
         pledge_cost: `$${p.value.toFixed(2)} USD`,
+        ...(p.insurance ? { insurance: p.insurance } : {}),
       });
     }
   }
-  return out.sort((a, b) => a.manufacturer_name.localeCompare(b.manufacturer_name) || a.name.localeCompare(b.name) || a.pledge_id.localeCompare(b.pledge_id));
+  return out.sort(byMakerShipPledge);
+}
+
+/**
+ * The StarOrg Tools preset: every `xplorRows` row marked `acquired: 'pledge'`, plus one row per in-game copy of each
+ * `GameShip` (`acquired: 'game'`, no pledge id, $0). No row carries `pledge_date`: the preset sends only what the hangar
+ * view needs. In-game ships whose id the catalog no longer lists are skipped, since there is no catalog name to send.
+ * Same sort as `xplorRows`.
+ */
+export function starOrgRows(pledges: Pledge[], game: GameShip[], ships: CatalogShip[]): StarOrgRow[] {
+  const out: StarOrgRow[] = xplorRows(pledges, ships).map(({ pledge_date: _drop, ...r }) => ({ ...r, acquired: 'pledge' as const }));
+  const byId = new Map(ships.map((s) => [s.id, s]));
+  for (const g of game) {
+    const cat = byId.get(g.id);
+    if (!cat) continue;
+    for (let i = 0; i < g.count; i++) {
+      out.push({
+        ...shipCode(cat.name, cat.manufacturer),
+        ship_name: cat.name,
+        name: cat.name,
+        lti: false,
+        warbond: false,
+        entity_type: 'ship',
+        pledge_id: '',
+        pledge_name: g.how === 'earned' ? 'In-game (earned)' : 'In-game (bought)',
+        pledge_cost: '$0.00 USD',
+        acquired: 'game',
+      });
+    }
+  }
+  return out.sort(byMakerShipPledge);
 }
 
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;

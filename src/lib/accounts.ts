@@ -213,10 +213,18 @@ export async function forgetProfile(id: string) {
   await profilesItem.setValue({ active: ps.active === id ? null : ps.active, list: ps.list.filter((p) => p.id !== id) });
 }
 
-/** Wipe RSI cookies only (log out locally, server session untouched). Account data stays parked / in place. */
+/**
+ * Wipe RSI cookies only (log out locally, server session untouched). The active profile's data is parked under it
+ * and storage starts clean, so the next login (saved or switched to) never inherits it and a switch back restores it.
+ * With no active profile the data belongs to no saved login and stays in place.
+ */
 export async function logoutLocal() {
   await clearJar();
   const ps = await profilesItem.getValue();
+  if (ps.active) {
+    await parkData(ps.active);
+    for (const item of ACCOUNT_ITEMS) await storage.removeItem(item.key);
+  }
   await profilesItem.setValue({ ...ps, active: null });
   await reloadRsiTabs();
 }

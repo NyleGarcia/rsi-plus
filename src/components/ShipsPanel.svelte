@@ -2,7 +2,7 @@
   import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import PaintBundlePanel from './PaintBundlePanel.svelte';
-  import { hangarUrl } from '@/lib/hangar';
+  import { hangarState, hangarUrl } from '@/lib/hangar';
   import {
     line,
     familyLabel,
@@ -20,7 +20,7 @@
     type PaintGroup,
   } from '@/lib/items';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem, storeItemsItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, gameShipsItem, getSettings, hangarItem, paintCatalogItem, pledgeLabelsItem, settingsItem, storeItemsItem } from '@/lib/settings';
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { isExtra, isInsurance } from '@/lib/bundle';
@@ -33,6 +33,8 @@
   import Tag from './Tag.svelte';
   import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
+  import WikiLink from './WikiLink.svelte';
+  import { wikiSearchUrl, wikiUrl } from '@/lib/wiki';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
@@ -61,7 +63,7 @@
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import X from '@lucide/svelte/icons/x';
   import * as DropdownMenu from '@/components/ui/dropdown-menu';
-  import { shipLines, xplorCsv, xplorRows } from '@/lib/export';
+  import { shipLines, starOrgRows, xplorCsv, xplorRows } from '@/lib/export';
   import { applyFacets, stageOf, type FacetValues } from '@/lib/facets';
   import { shipFacets, shipRanges, SHIP_PRIMARY } from '@/lib/pledge-facets';
   import FacetBar from './FacetBar.svelte';
@@ -169,11 +171,22 @@
   const stamp = () => new Date().toISOString().slice(0, 10);
   // ---- fleet export (HangarXPLOR shape: FleetYards, myfleet.gg, Starjump read it) ----
   const fleetRows = () => xplorRows(hangar?.pledges ?? [], ships);
+  /** A stopped hangar load misses every pledge on the unread pages — exporting it would hand on a fleet with ships missing. */
+  const partial = $derived(hangarState(hangar) === 'partial');
   function exportFleet(kind: 'json' | 'csv') {
+    if (partial) return;
     const rows = fleetRows();
     if (kind === 'json') download(`hangarxplor-shiplist-${stamp()}.json`, JSON.stringify(rows, null, 2), 'application/json');
     else download(`hangarxplor-shiplist-${stamp()}.csv`, xplorCsv(rows));
   }
+  /** Settings → Integrations → *StarOrg Tools* (opt-in): shows the StarOrg export below. */
+  let starorgOn = $state(false);
+  $effect(() => {
+    getSettings().then((v) => (starorgOn = v.starorg));
+    return settingsItem.watch(() => getSettings().then((v) => (starorgOn = v.starorg)));
+  });
+  /** StarOrg Tools preset: the same rows plus insurance, `acquired`, and the ships you have only in the game, without `pledge_date`. */
+  const exportStarOrg = () => download(`starorg-fleet-${stamp()}.json`, JSON.stringify(starOrgRows(hangar?.pledges ?? [], game, ships), null, 2), 'application/json');
   let copiedNames = $state(false);
   async function copyNames() {
     await navigator.clipboard.writeText(shipLines(fleetRows()));
@@ -437,6 +450,7 @@
                                   <Table.Cell class="whitespace-normal">
                                     <Thumb src={r.store?.thumb ?? r.owned?.image} name={r.title} class="mr-1.5" />
                                     <strong class={cn(!r.owned && 'text-muted-foreground font-medium')}>{r.title}</strong>
+                                    {#if g.key.split('|')[0] !== 'packs'}<WikiLink href={wikiSearchUrl(r.title)} name={r.title} />{/if}
                                     {#if r.owned}
                                       <Tag kind="owned" count={r.owned.count} class="m-px" />
                                       {#if r.owned.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
@@ -492,16 +506,25 @@
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end" class="w-80">
                     <DropdownMenu.Label class="text-muted-foreground text-[11px] font-normal">HangarXPLOR format — one row per hull, with pledge, LTI, warbond, nickname</DropdownMenu.Label>
-                    <DropdownMenu.Item onSelect={() => exportFleet('json')}>
+                    {#if partial}
+                      <DropdownMenu.Label class="text-warning text-xs font-normal">Hangar partly loaded (stopped after page {hangar?.page}) — load your whole hangar first (<a class={LINK} href="#hangar">Pledges</a> → Resume).</DropdownMenu.Label>
+                    {/if}
+                    <DropdownMenu.Item disabled={partial} onSelect={() => exportFleet('json')}>
                       <div class="grid"><span class="font-semibold">JSON file</span><span class="text-muted-foreground text-xs">FleetYards (Hangar → Import), myfleet.gg 3D fleet view, Starjump / hangar.link</span></div>
                     </DropdownMenu.Item>
-                    <DropdownMenu.Item onSelect={() => exportFleet('csv')}>
+                    <DropdownMenu.Item disabled={partial} onSelect={() => exportFleet('csv')}>
                       <div class="grid"><span class="font-semibold">CSV file</span><span class="text-muted-foreground text-xs">Spreadsheets — Manufacturer, Ship, LTI, Warbond, ID, Pledge, Cost, Date</span></div>
                     </DropdownMenu.Item>
                     <DropdownMenu.Separator />
-                    <DropdownMenu.Item onSelect={copyNames}>
+                    <DropdownMenu.Item disabled={partial} onSelect={copyNames}>
                       <div class="grid"><span class="font-semibold">{copiedNames ? 'Copied ✓' : 'Copy ship names'}</span><span class="text-muted-foreground text-xs">One "Maker Ship" per hull, for tools that take a plain list</span></div>
                     </DropdownMenu.Item>
+                    {#if starorgOn}
+                      <DropdownMenu.Separator />
+                      <DropdownMenu.Item onSelect={exportStarOrg}>
+                        <div class="grid"><span class="font-semibold">JSON for StarOrg Tools</span><span class="text-muted-foreground text-xs">Import this on starorg.tools → Hangar</span></div>
+                      </DropdownMenu.Item>
+                    {/if}
                   </DropdownMenu.Content>
                 </DropdownMenu.Root>
               </Card.Action>
@@ -564,7 +587,7 @@
                         <div class="flex items-center gap-2.5">
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
                           <div>
-                            <strong>{f.ship.name}</strong>
+                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiUrl(f.ship.name)} name={f.ship.name} /></div>
                             {#if (f.ship.flyable && stageOf(f.ship.flyable) !== 'ready') || f.ship.size}
                               <div class="mt-0.5 flex flex-wrap gap-0.5">
                                 {#if f.ship.flyable && stageOf(f.ship.flyable) !== 'ready'}<Tag kind="stage" value={f.ship.flyable} size="xs" />{/if}
