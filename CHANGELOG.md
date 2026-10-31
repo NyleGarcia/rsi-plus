@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.8.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.7.0...v0.8.0) (2026-10-31)
+
+
+### Features
+
+* **buyback:** group the buyback list by type or by ship ([26a2b51](https://github.com/NyleGarcia/rsi-plus/commit/26a2b51578733ce3361db4e525c4f06f4d7780c6))
+* **export:** StarOrg Tools fleet preset with insurance and in-game ships ([1264c47](https://github.com/NyleGarcia/rsi-plus/commit/1264c4771739d41db29d33d0c15c0637cb08eb51))
+* **settings:** opt-in StarOrg Tools and account switcher, StarOrg site dropdown ([2b1e377](https://github.com/NyleGarcia/rsi-plus/commit/2b1e3777054e6496e7cbe3fba33147de93703a01))
+* **starorg:** connect RSI+ to StarOrg Tools and sync your ship list ([d9beb4a](https://github.com/NyleGarcia/rsi-plus/commit/d9beb4af0dfcffdabec0e4c227f377217a14ed61))
+* **starorg:** show exactly what the integration sends, with a payload preview ([41c1e0a](https://github.com/NyleGarcia/rsi-plus/commit/41c1e0aa1be277b686ce1089a253639830874532))
+* **ui:** Star Citizen Wiki link next to ships and items ([5a56f59](https://github.com/NyleGarcia/rsi-plus/commit/5a56f5948f85c1fb571beda56b9af72c70963b73))
+
+
+### Bug Fixes
+
+* **accounts:** log out here parks the active account's data so the next login can't take it over ([7b24b82](https://github.com/NyleGarcia/rsi-plus/commit/7b24b8272152462e47e25d30d3aea91ca85a0be5))
+* **buyback:** match only ships, vehicles, paints and components to a hull ([2859bd5](https://github.com/NyleGarcia/rsi-plus/commit/2859bd551674eef8c401db07f03b35839319c5a7))
+* **buyback:** store filter for what the store doesn't sell, and load the catalog for ship grouping ([fa2f292](https://github.com/NyleGarcia/rsi-plus/commit/fa2f29282c702ce6b91417064c998a7b5e12d553))
+* **ccu:** Open on a fleet goal no longer changes the fleet plan ([daaa8ac](https://github.com/NyleGarcia/rsi-plus/commit/daaa8ac0a1bb20dbc23dd191e9d15bafe13cae09))
+* **ccu:** saving a chain or fleet plan keeps its own CCUs in the plan ([ace8311](https://github.com/NyleGarcia/rsi-plus/commit/ace8311d071f60edec623b0fde3d9d9f99375062))
+* **export:** each ship in a pack keeps only the name you gave it ([9ad84dd](https://github.com/NyleGarcia/rsi-plus/commit/9ad84dde24aa46f8a379c6f5bd43e7eca55c9876))
+* **hangar:** a stopped hangar load no longer counts as the whole hangar ([b785272](https://github.com/NyleGarcia/rsi-plus/commit/b785272db9e829f0e259935f9f80202b215f51f7))
+* **paints:** top up the RSI cart from its read-back so a remount can't double the plan ([141556f](https://github.com/NyleGarcia/rsi-plus/commit/141556f2cb0d7b248f9b087c05cf633ad9ad733f))
+* **starorg:** preview refuses what a send refuses; cookie and handle wording ([de94e1e](https://github.com/NyleGarcia/rsi-plus/commit/de94e1ea05d27da76a98aea621822d33b724e265))
+* **ui:** no wiki link for concierge flair or paint packs ([2365ca6](https://github.com/NyleGarcia/rsi-plus/commit/2365ca66edbbe42f4d4faffb5281c3846aac86a4))
+
 ## [0.7.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.6.0...v0.7.0) (2026-10-25)
 
 

@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.8.0 — 2026-10-31
 - **StarOrg Tools: see exactly what is sent.** The StarOrg Tools card (Settings → Integrations) has a *What is sent* list, readable before you connect: every field a send carries, in plain words, and what is never sent. *Preview* builds the exact list a send would contain from your saved hangar and shows it (with *Copy JSON*) without sending anything; in screenshare mode your handle, ship names and values are masked on screen. The privacy policy now spells out each request RSI+ makes to StarOrg Tools and every field, field by field.
 - **Star Citizen Wiki links.** A small globe now sits next to ship and item names on Ships, Store, Pledges, Buyback, Items, Browse and Your CCUs; it opens that ship's page on the Star Citizen Wiki (starcitizen.tools) in a new tab. Ships go straight to their page by RSI's catalog name; components, FPS weapons, armour and paints open the wiki's search, which lands on the page when there is one. Packages, insurance, hangar flair, credits and CCUs get no globe — the wiki has nothing for them. It is a plain link: RSI+ sends nothing to the wiki, and your custom ship names are never used.
 - **Fleet export: ship names land on the ship you named.** In a pack, every ship got the names of all the named ships in it ("Eldritch Singularity, Eldritch Wayfinder" on the Perseus *and* the Polaris). RSI shows each ship's name on that ship, and RSI+ now reads it there, so only the ships you named carry a name, each its own. Reload your hangar once (Hangar → Pledges) so packs pick up the names per ship.
