@@ -40,7 +40,18 @@ export function itemWikiUrl(category: Category, title: string, ship?: CatalogShi
 }
 
 /**
- * Wiki link for a store listing. Standalone ships → the catalog ship's page; paints and gear → search; add-ons only
+ * Gear listings (also Concierge specials, which land in `gear`): by title — a paint / armour title links; else only a
+ * title that reads as an FPS weapon or armour piece. Flair, credits and other one-offs get none.
+ */
+function gearWikiUrl(name: string): string | null {
+  const c = categorize(name, '');
+  if (c !== 'other') return itemWikiUrl(c, name);
+  const fps = categorize(name, 'fps');
+  return fps === 'armor' || fps === 'weapon' ? itemWikiUrl(fps, name) : null;
+}
+
+/**
+ * Wiki link for a store listing. Standalone ships → the catalog ship's page; paints → search; gear by title (`gearWikiUrl`); add-ons only
  * when the title reads as a covered item (paint / armour). Packs, game packages and the subscribers store → null.
  */
 export function storeWikiUrl(category: StoreCategory, name: string, ship?: CatalogShip | null): string | null {
@@ -48,8 +59,9 @@ export function storeWikiUrl(category: StoreCategory, name: string, ship?: Catal
     case 'ships':
       return itemWikiUrl('ship', name, ship);
     case 'paints':
-    case 'gear':
       return name.trim() ? wikiSearchUrl(name) : null;
+    case 'gear':
+      return gearWikiUrl(name);
     case 'addons':
       return itemWikiUrl(categorize(name, ''), name);
     default:

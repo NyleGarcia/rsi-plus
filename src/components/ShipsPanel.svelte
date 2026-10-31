@@ -450,7 +450,7 @@
                                   <Table.Cell class="whitespace-normal">
                                     <Thumb src={r.store?.thumb ?? r.owned?.image} name={r.title} class="mr-1.5" />
                                     <strong class={cn(!r.owned && 'text-muted-foreground font-medium')}>{r.title}</strong>
-                                    <WikiLink href={wikiSearchUrl(r.title)} name={r.title} />
+                                    {#if g.key.split('|')[0] !== 'packs'}<WikiLink href={wikiSearchUrl(r.title)} name={r.title} />{/if}
                                     {#if r.owned}
                                       <Tag kind="owned" count={r.owned.count} class="m-px" />
                                       {#if r.owned.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
