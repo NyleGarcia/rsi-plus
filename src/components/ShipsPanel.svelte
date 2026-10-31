@@ -34,7 +34,7 @@
   import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
   import WikiLink from './WikiLink.svelte';
-  import { wikiSearchUrl, wikiUrl } from '@/lib/wiki';
+  import { wikiPageUrl } from '@/lib/wiki';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
@@ -450,7 +450,7 @@
                                   <Table.Cell class="whitespace-normal">
                                     <Thumb src={r.store?.thumb ?? r.owned?.image} name={r.title} class="mr-1.5" />
                                     <strong class={cn(!r.owned && 'text-muted-foreground font-medium')}>{r.title}</strong>
-                                    {#if g.key.split('|')[0] !== 'packs'}<WikiLink href={wikiSearchUrl(r.title)} name={r.title} />{/if}
+                                    {#if g.key.split('|')[0] !== 'packs'}<WikiLink href={wikiPageUrl(r.title)} name={r.title} />{/if}
                                     {#if r.owned}
                                       <Tag kind="owned" count={r.owned.count} class="m-px" />
                                       {#if r.owned.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
@@ -587,7 +587,7 @@
                         <div class="flex items-center gap-2.5">
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
                           <div>
-                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiUrl(f.ship.name)} name={f.ship.name} /></div>
+                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiPageUrl(f.ship.name)} name={f.ship.name} /></div>
                             {#if (f.ship.flyable && stageOf(f.ship.flyable) !== 'ready') || f.ship.size}
                               <div class="mt-0.5 flex flex-wrap gap-0.5">
                                 {#if f.ship.flyable && stageOf(f.ship.flyable) !== 'ready'}<Tag kind="stage" value={f.ship.flyable} size="xs" />{/if}

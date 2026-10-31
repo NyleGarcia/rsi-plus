@@ -6,6 +6,7 @@ updated: 2026-10-31
 # Changelog
 
 ## Unreleased
+- **Wiki links only where the wiki has a page.** The globe next to a ship or item name now shows only when the Star Citizen Wiki has a page (or redirect) by that name, and opens that page directly; it no longer falls back to a wiki search. The list of page titles ships with RSI+ (refreshed with `scripts/wiki-titles.mjs`), so still no request goes to the wiki. A few special editions and most paints have no page of their own and now show no globe.
 
 ## 0.8.0 — 2026-10-31
 - **StarOrg Tools: see exactly what is sent.** The StarOrg Tools card (Settings → Integrations) has a *What is sent* list, readable before you connect: every field a send carries, in plain words, and what is never sent. *Preview* builds the exact list a send would contain from your saved hangar and shows it (with *Copy JSON*) without sending anything; in screenshare mode your handle, ship names and values are masked on screen. The privacy policy now spells out each request RSI+ makes to StarOrg Tools and every field, field by field.
