@@ -3,7 +3,7 @@
   "description": "RSI site + Spectrum, better: hangar/buyback explorer, CCU planner, wishlist alerts, Spectrum read tracking, mutes, watches, friends manager",
   "private": true,
   "license": "MIT",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",
