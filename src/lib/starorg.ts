@@ -15,7 +15,7 @@
  *   Pledge values go only when *Send pledge values* is on (and, on Firefox, its financial data-collection category is
  *   granted); otherwise `pledge_cost` is sent empty. Only a hangar read as the handle logged in now is sent
  *   (`hangarItem.handle`), and at most `MAX_SYNC_ROWS` rows. Hulls StarOrg doesn't know come back in `not_found` and
- *   are shown on the card. *Preview* (`previewPayload`) builds the same body locally, with no token and no request;
+ *   are shown on the card. *Preview* (`previewPayload`) runs the same checks and builds the same body locally, with no token and no StarOrg request;
  *   `STARORG_FIELDS` describes every field of it.
  * - **Disconnect** logs the token out server-side (its `jti` is denylisted, so a copied token dies too), forgets it
  *   and drops the host permission (plus Firefox's data-collection categories). Under `incognito: split` each context
@@ -471,34 +471,40 @@ async function doSend(catalog: () => Promise<CatalogShip[]>, { onlyIfChanged = f
     await starorgSyncItem.setValue(out);
     return out;
   };
-  const hangar = await hangarItem.getValue();
-  if (!hangar?.complete) return fail('Load your whole hangar first (Hangar → Pledges).');
-  const me = await whoAmI();
-  if (!me) return fail('Not logged in on robertsspaceindustries.com — log in there, then send again.');
-  // The saved hangar must be the one RSI shows now: never send account A's ships under account B's handle.
-  if (hangar.handle !== me.handle) return fail(`Saved hangar belongs to ${hangar.handle || 'another RSI login'}; load your hangar again (Hangar → Pledges).`);
-  const [{ starorgSendCost }, game, ships] = await Promise.all([getSettings(), gameShipsItem.getValue(), catalog()]);
-  const payload = buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: me.handle });
-  if (payload.rows.length > MAX_SYNC_ROWS)
-    return fail(`Your hangar has ${payload.rows.length} ships; StarOrg Tools takes at most ${MAX_SYNC_ROWS} per send. Nothing was sent.`);
+  const r = await readyPayload(catalog);
+  if ('error' in r) return fail(r.error);
+  const { payload } = r;
   if (onlyIfChanged) {
     const prev = await starorgSyncItem.getValue();
-    if (prev?.ok && prev.hash === changeHash(payload.rows) && prev.handle === me.handle) return null;
+    if (prev?.ok && prev.hash === changeHash(payload.rows) && prev.handle === payload.rsi_handle) return null;
   }
   return push(payload);
 }
 
 /**
- * The payload a send would carry now, built locally for the card's *Preview*: the saved hangar, *My ships*, the same
- * pledge-value rule as a send, and the handle the hangar was read as (a send also checks RSI still shows that login).
- * Needs no token and makes no StarOrg request. An incomplete hangar gives `error` instead.
+ * Every pre-send check and the payload, shared by a send (`doSend`) and *Preview* (`previewPayload`) so the two can't
+ * drift: a complete saved hangar, an RSI login (`whoAmI()`, a request to RSI), the saved hangar read as that same
+ * handle (never account A's ships under account B's handle), and at most `MAX_SYNC_ROWS` rows. Needs no token.
  */
-export async function previewPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ payload: SyncPayload } | { error: string }> {
+async function readyPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ payload: SyncPayload } | { error: string }> {
   const hangar = await hangarItem.getValue();
-  if (!hangar?.complete) return { error: 'Your whole hangar isn’t loaded yet (Hangar → Pledges), so there is nothing to preview.' };
+  if (!hangar?.complete) return { error: 'Load your whole hangar first (Hangar → Pledges).' };
+  const me = await whoAmI();
+  if (!me) return { error: 'Not logged in on robertsspaceindustries.com — log in there, then send again.' };
+  if (hangar.handle !== me.handle) return { error: `Saved hangar belongs to ${hangar.handle || 'another RSI login'}; load your hangar again (Hangar → Pledges).` };
   const [{ starorgSendCost }, game, ships] = await Promise.all([getSettings(), gameShipsItem.getValue(), catalog()]);
-  return { payload: buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: hangar.handle ?? '' }) };
+  const payload = buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: me.handle });
+  if (payload.rows.length > MAX_SYNC_ROWS)
+    return { error: `Your hangar has ${payload.rows.length} ships; StarOrg Tools takes at most ${MAX_SYNC_ROWS} per send. Nothing was sent.` };
+  return { payload };
 }
+
+/**
+ * The payload a send would carry now, for the card's *Preview*: the same checks and body as a send (`readyPayload`),
+ * so Preview refuses exactly what Send refuses, with the same message. Needs no token and makes no StarOrg request
+ * (it asks RSI who is logged in, as a send does).
+ */
+export const previewPayload = (catalog: () => Promise<CatalogShip[]>): Promise<{ payload: SyncPayload } | { error: string }> => readyPayload(catalog);
 
 /** `GET /api/fleet/hangar/sync`: when StarOrg last received each of your RSI handles. null = not connected / failed. */
 export async function status(): Promise<{ rsi_handle: string; last_sync_at: string | null; client: string | null; rows: number }[] | null> {

@@ -106,7 +106,45 @@ describe('previewPayload', () => {
   });
   it('says so when the hangar is not fully loaded', async () => {
     await hangarItem.setValue({ at: 1, pledges, complete: false, handle: 'zedwil' });
-    expect(await previewPayload(catalog)).toEqual({ error: expect.stringMatching(/isn’t loaded/) });
+    expect(await previewPayload(catalog)).toEqual({ error: 'Load your whole hangar first (Hangar → Pledges).' });
+  });
+  it('refuses a hangar read as another RSI login', async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
+    who.handle = 'altguy';
+    expect(await previewPayload(catalog)).toEqual({ error: 'Saved hangar belongs to zedwil; load your hangar again (Hangar → Pledges).' });
+  });
+  it('refuses a saved hangar with no recorded handle (never an empty rsi_handle)', async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: null });
+    expect(await previewPayload(catalog)).toEqual({ error: expect.stringContaining('load your hangar again') });
+  });
+  it('refuses a logged-out RSI session', async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
+    who.handle = null;
+    expect(await previewPayload(catalog)).toEqual({ error: expect.stringContaining('Not logged in') });
+  });
+  it(`refuses more than ${MAX_SYNC_ROWS} rows`, async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
+    await gameShipsItem.setValue([{ id: 3, name: 'Cutlass Black', how: 'bought', count: MAX_SYNC_ROWS }]);
+    expect(await previewPayload(catalog)).toEqual({ error: expect.stringContaining(`at most ${MAX_SYNC_ROWS}`) });
+  });
+  it('refuses exactly what a send refuses, with the same message', async () => {
+    await starorgItem.setValue(AUTH);
+    const cases: [() => Promise<void>][] = [
+      [async () => void (await hangarItem.setValue({ at: 1, pledges, complete: false, handle: 'zedwil' }))],
+      [async () => void (await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'someoneelse' }))],
+      [async () => void (await hangarItem.setValue({ at: 1, pledges, complete: true, handle: null }))],
+      [async () => void (await gameShipsItem.setValue([{ id: 3, name: 'Cutlass Black', how: 'bought', count: MAX_SYNC_ROWS + 1 }]))],
+    ];
+    for (const [setup] of cases) {
+      await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
+      await gameShipsItem.setValue([]);
+      await setup();
+      const pre = await previewPayload(catalog);
+      const sent = await sendHangar(catalog);
+      expect('error' in pre && pre.error).toBe(sent?.message);
+      expect(sent?.ok).toBe(false);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

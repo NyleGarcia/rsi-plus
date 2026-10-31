@@ -4,7 +4,7 @@
    * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync / Send pledge values switches.
    * Shown only while the *StarOrg Tools* switch above it is on. Every network call is in `lib/starorg.ts` and runs only
    * while connected. *What is sent* lists every field from `STARORG_FIELDS` before connecting; *Preview* builds the exact
-   * body locally (`previewPayload`, no token, no request) and shows it — in screenshare mode with the handle, ship names
+   * body locally (`previewPayload`: a send's own checks and messages, no token, no StarOrg request) and shows it — in screenshare mode with the handle, ship names
    * and values masked on screen (*Copy JSON* still copies the real body).
    */
   import { connect, currentAuth, disconnect, originOf, usableAuth, previewPayload, requestCostAccess, sendHangar, status, STARORG_FIELDS, STARORG_TARGETS, type StarOrgAuth, type StarOrgSync, type StarOrgTarget, type SyncPayload } from '@/lib/starorg';
@@ -179,7 +179,7 @@
         {#each Object.entries(STARORG_FIELDS.row) as [k, d] (k)}<dt><code>{k}</code></dt><dd class="text-muted-foreground">{d}</dd>{/each}
       </dl>
       <p class="text-muted-foreground">
-        Never sent: pledge dates, store credit, buyback, orders or billing, the rest of a pledge (paints, gear, upgrades), your labels, Spectrum, friends, other saved logins, or any cookie or RSI login. Besides sending, RSI+ talks to StarOrg Tools only to sign you in, to ask when it last got your hangar, and to sign out.
+        Never sent: pledge dates, store credit, buyback, orders or billing, the rest of a pledge (paints, gear, upgrades), your labels, Spectrum, friends, other saved logins, or your RSI cookies or RSI login. RSI+'s requests carry no cookies; only the sign-in window, an ordinary StarOrg / Discord page, uses StarOrg's and Discord's own. Besides sending, RSI+ talks to StarOrg Tools only to sign you in, to ask when it last got your hangar, and to sign out.
       </p>
       <div class="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" onclick={onPreview} disabled={busy !== null}>{busy === 'preview' ? 'Building…' : 'Preview'}</Button>
