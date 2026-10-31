@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import { setDisplayCurrency } from './currency';
 import { NO_MUTES, type MuteRules } from './filters';
 import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
 import type { GameShip } from './items';
@@ -66,6 +67,10 @@ export interface Settings {
   starorgAutoSync: boolean;
   /** StarOrg Tools: include each pledge's value (`pledge_cost`); off = sent empty. */
   starorgSendCost: boolean;
+  /** Currency amounts are shown in (`lib/currency.ts` `CURRENCIES`); RSI's own numbers are USD. */
+  currency: string;
+  /** Units of `currency` per 1 USD, typed by the user (nothing is fetched). Ignored for USD. */
+  usdRate: number;
 }
 
 export const DEFAULTS: Settings = {
@@ -91,7 +96,21 @@ export const DEFAULTS: Settings = {
   starorgTarget: 'prod',
   starorgAutoSync: false,
   starorgSendCost: false,
+  currency: 'USD',
+  usdRate: 1,
 };
+
+/**
+ * Hub / popup startup: amounts in the chosen display currency (`lib/currency.ts`). A later change reloads the page —
+ * formatters are plain functions, so the tables would otherwise keep the old currency.
+ */
+export async function initCurrency(): Promise<void> {
+  const s = await getSettings();
+  setDisplayCurrency(s.currency, s.usdRate, navigator.language);
+  settingsItem.watch((n) => {
+    if (n && ((n.currency ?? 'USD') !== s.currency || (n.usdRate ?? 1) !== s.usdRate)) location.reload();
+  });
+}
 
 export const settingsItem = storage.defineItem<Settings>('sync:settings', { fallback: DEFAULTS });
 /** Read marks are local (can be thousands of entries — too big for sync quota). */
@@ -101,7 +120,7 @@ export const feedItem = storage.defineItem<FeedEvent[]>(acct('local:feed'), { fa
 export const friendNotesItem = storage.defineItem<FriendNotes>(acct('local:friendNotes'), { fallback: {} });
 /** member id -> presence status at the last poll (for "came online" events). */
 export const presenceItem = storage.defineItem<Record<string, string>>(acct('local:presence'), { fallback: {} });
-/** Friends' orgs from RSI citizen pages (nickname lower-case → orgs), refreshed after 24 h. */
+/** Friends' orgs from RSI citizen pages (nickname lower-case → orgs), refreshed after 7 days (`ORG_TTL`). */
 export const orgCacheItem = storage.defineItem<OrgCache>('local:orgs', { fallback: {} });
 /** Incoming friend request ids at the last poll (null = never polled → first poll is a silent baseline). */
 export const seenRequestsItem = storage.defineItem<string[] | null>(acct('local:seenRequests'), { fallback: null });

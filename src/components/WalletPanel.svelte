@@ -4,6 +4,7 @@
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
   import { buybackItem, catalogItem, fundingItem, hangarItem, ordersItem } from '@/lib/settings';
   import { r2, usd0 } from '@/lib/money';
+  import { displayCurrency, fmtUsdCompact } from '@/lib/currency';
   import { fmtDateTime } from '@/lib/dates';
   import { LINK } from '@/lib/ui';
   import { captureBilling, fetchOrders, orderSlices, ordersByMonth, ordersByYear, ordersCumulative, orderTotals, warbondInOrders, type Order, type SubPayment } from '@/lib/orders';
@@ -261,9 +262,9 @@
   const money = ownDollars;
   const signed = (n: number) => `${n < 0 ? '−' : '+'}${money(Math.abs(n))}`;
   const money0 = (n: number) => ownMoney(usd0(n));
-  const big = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : usd0(n));
+  const big = (n: number) => (displayCurrency() !== 'USD' ? (n >= 1e6 ? fmtUsdCompact(n) : usd0(n)) : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : usd0(n));
   /** Fits a narrow bar column: $55, $2.3k, $16k. */
-  const short = (n: number) => (n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : usd0(n));
+  const short = (n: number) => (displayCurrency() !== 'USD' ? (n >= 1e3 ? fmtUsdCompact(n) : usd0(n)) : n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : usd0(n));
   const fmtN = (n: number) => ownMoney(`¤${n.toLocaleString('en-US')}`);
   const RANGES: { id: FundingRange; label: string; hint: string }[] = [
     { id: 'day', label: 'Days', hint: 'last 7 days' },
