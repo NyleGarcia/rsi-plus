@@ -51,7 +51,7 @@
 </script>
 
 <div class={cn('relative grid', className)} style={!ready ? `min-height:${reserve ?? lines * lineHeight}px` : undefined} aria-busy={!ready} aria-label={label || undefined}>
-  <div class={cn('col-start-1 row-start-1 min-w-0 origin-top-left transition-[opacity,filter,transform] duration-300 motion-reduce:transition-none', visible && 'pointer-events-none scale-[0.99] opacity-0 blur-[3px]')}>
+  <div class={cn('col-start-1 row-start-1 min-w-0 origin-top-left transition-opacity duration-300 motion-reduce:transition-none', visible && 'pointer-events-none opacity-0')}>
     {@render children()}
   </div>
   {#if visible}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import { hangarUrl } from '@/lib/hangar';
   import { CATEGORY_LABEL, line, familyLabel, fitsLabel as fitsLabelOf, inventory, itemsCsv, ownedShipsWithPaints, paintStatus, seriesOf, storePaintFor, storePaintIndex, type Category, type GameShip, type ItemRow } from '@/lib/items';
   import { bg } from '@/lib/messages';
@@ -171,8 +172,10 @@
   const visibleRows = $derived(groups.reduce((n, g) => n + (collapsed.has(g.key) ? 0 : g.items.length), 0));
   // Rows mount in chunks (40 first, then +60 a frame); a new filter / grouping starts over.
   let budget = $derived.by(() => (void groups, 40));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (budget >= visibleRows) return;
+    if (budget >= visibleRows || !near) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
@@ -301,7 +304,7 @@
               </Table.Body>
             {/each}
             {#if budget < visibleRows}
-              <Table.Body><Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs">… {visibleRows - budget} more loading</Table.Cell></Table.Row></Table.Body>
+              <Table.Body><Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs"><span use:nearView={(v) => (near = v)}>… {visibleRows - budget} more below</span></Table.Cell></Table.Row></Table.Body>
             {/if}
           </Table.Root>
         {/if}

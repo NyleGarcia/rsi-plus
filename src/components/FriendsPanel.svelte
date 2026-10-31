@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import {
     allTags,
     blankNote,
@@ -21,6 +22,7 @@
   import HintBadge from './HintBadge.svelte';
   import Segmented from './Segmented.svelte';
   import Empty from './Empty.svelte';
+  import Section from './Section.svelte';
   import ConfirmButton from './ConfirmButton.svelte';
   import LazyTip from './LazyTip.svelte';
   import { LINK_QUIET } from '@/lib/ui';
@@ -180,6 +182,7 @@
       msg = (e as Error).message;
     } finally {
       orgProgress = null;
+      if (wanted.length) void pump(); // rows that came into view meanwhile
     }
   }
 
@@ -316,11 +319,58 @@
   /** Rows before each group, so the grouped view spends the same budget top-down. */
   const groupStart = $derived(groups.reduce<number[]>((a, g, i) => (a.push(i ? a[i - 1]! + groups[i - 1]!.items.length : 0), a), []));
   let budget = $derived.by(() => (void shown, void view, 40));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (budget >= rowCount) return;
+    if (budget >= rowCount || !near) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
+
+  /**
+   * Orgs load lazily: a friend row scrolled into view whose orgs are missing or older than `ORG_TTL` joins a queue,
+   * drained to the background ten handles at a time (~1 citizen page/s, one cache write per batch). *Load all orgs*
+   * still reads the whole list; while it runs the queue waits, and whatever it fetched the queue skips.
+   */
+  const wanted: string[] = [];
+  let pumping = false;
+  let lazyBusy = $state(false);
+  const seenRows = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) if (e.isIntersecting) wantOrgs((e.target as HTMLElement).dataset.nick ?? '');
+    },
+    { rootMargin: '200px' },
+  );
+  $effect(() => () => seenRows?.disconnect());
+  const freshOrgs = (nick: string) => {
+    const c = orgCache[nick.toLowerCase()];
+    return !!c && Date.now() - c.at <= ORG_TTL;
+  };
+  function wantOrgs(nick: string) {
+    if (!nick || freshOrgs(nick) || wanted.includes(nick)) return;
+    wanted.push(nick);
+    void pump();
+  }
+  async function pump() {
+    if (pumping) return;
+    pumping = true;
+    lazyBusy = true;
+    try {
+      while (wanted.length && !orgProgress) {
+        const batch = wanted.splice(0, 10).filter((n) => !freshOrgs(n));
+        if (batch.length) await bg({ type: 'orgs:get', nicknames: batch }).catch((e: Error) => (msg = e.message));
+      }
+    } finally {
+      pumping = false;
+      lazyBusy = false;
+    }
+  }
+  /** Row attachment: watch the row, ask for its orgs once it scrolls into view. */
+  const watchOrgs = (nick: string) => (node: HTMLElement) => {
+    node.dataset.nick = nick;
+    seenRows?.observe(node);
+    return () => seenRows?.unobserve(node);
+  };
 </script>
 
 {#snippet avatar(src: string | null | undefined)}
@@ -331,7 +381,7 @@
   {@const n = notes[m.id]}
   {@const st = statusOf(m)}
   {@const bellOn = notifyAll || bells.includes(m.id)}
-  <Table.Row data-state={selected.has(m.id) ? 'selected' : undefined}>
+  <Table.Row data-state={selected.has(m.id) ? 'selected' : undefined} {@attach watchOrgs(m.nickname)}>
     <Table.Cell><Checkbox checked={selected.has(m.id)} onCheckedChange={() => toggle(m.id)} aria-label={`Select ${m.displayname}`} /></Table.Cell>
     <Table.Cell>
       <div class="flex items-center gap-2">
@@ -483,29 +533,31 @@
           <Card.Action><Button variant="outline" onclick={load} disabled={loading || !!busyReq}>Refresh</Button></Card.Action>
         </Card.Header>
         <Card.Content class="grid gap-3">
-          {#if requests.incoming.length}
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <strong>Incoming</strong>
-              <div class="flex flex-wrap items-center gap-2">
-                <Button size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id))}>Accept all</Button>
-                <TipButton
-                  variant="outline"
-                  size="xs"
-                  disabled={!!busyReq}
-                  onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id), true)}
-                  tip="Accept and flag as party friends for later cleanup">Accept all as party</TipButton
-                >
-                <ConfirmButton
-                  disabled={!!busyReq}
-                  confirmLabel={`Confirm: decline ${requests.incoming.length}`}
-                  onconfirm={() =>
-                    requestAction(
-                      'decline',
-                      requests.incoming.map((r) => r.req.id),
-                    )}>Decline all</ConfirmButton
-                >
-              </div>
-            </div>
+          <Section id="friends-requests-in" title="Incoming" summary={`(${requests.incoming.length})`}>
+            {#snippet actions()}
+              {#if requests.incoming.length}
+                <div class="flex flex-wrap items-center gap-2">
+                  <Button size="xs" disabled={!!busyReq} onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id))}>Accept all</Button>
+                  <TipButton
+                    variant="outline"
+                    size="xs"
+                    disabled={!!busyReq}
+                    onclick={() => requestAction('accept', requests.incoming.map((r) => r.req.id), true)}
+                    tip="Accept and flag as party friends for later cleanup">Accept all as party</TipButton
+                  >
+                  <ConfirmButton
+                    disabled={!!busyReq}
+                    confirmLabel={`Confirm: decline ${requests.incoming.length}`}
+                    onconfirm={() =>
+                      requestAction(
+                        'decline',
+                        requests.incoming.map((r) => r.req.id),
+                      )}>Decline all</ConfirmButton
+                  >
+                </div>
+              {/if}
+            {/snippet}
+            {#if requests.incoming.length}
             <Table.Root>
               <Table.Body>
                 {#each requests.incoming as { req, member } (req.id)}
@@ -524,11 +576,12 @@
                 {/each}
               </Table.Body>
             </Table.Root>
-          {:else}
-            <Empty class="py-2 text-left">No incoming requests.</Empty>
-          {/if}
-          {#if requests.outgoing.length}
-            <strong>Sent</strong>
+            {:else}
+              <Empty class="py-2 text-left">No incoming requests.</Empty>
+            {/if}
+          </Section>
+          <Section id="friends-requests-out" title="Sent" summary={`(${requests.outgoing.length})`}>
+            {#if requests.outgoing.length}
             <Table.Root>
               <Table.Body>
                 {#each requests.outgoing as { req, member } (req.id)}
@@ -541,7 +594,10 @@
                 {/each}
               </Table.Body>
             </Table.Root>
-          {/if}
+            {:else}
+              <Empty class="py-2 text-left">No sent requests.</Empty>
+            {/if}
+          </Section>
         </Card.Content>
       </Card.Root>
     {/if}
@@ -571,8 +627,8 @@
           </span>
         </Card.Description>
         <Card.Action class="flex flex-wrap items-center gap-2">
-          <TipButton variant="outline" disabled={!!orgProgress || !friends.length} onclick={() => loadOrgs(false)} tip="Reads each friend's public RSI citizen page (~1/s), cached 24 h">
-            {orgProgress ? `Orgs ${orgProgress.done}/${orgProgress.total}…` : stale.length ? `Load all orgs (${stale.length})` : 'Orgs up to date'}
+          <TipButton variant="outline" disabled={!!orgProgress || !friends.length} onclick={() => loadOrgs(false)} tip="Rows on screen load their orgs on their own; this reads every friend's public RSI citizen page (~1/s), cached 7 days">
+            {orgProgress ? `Orgs ${orgProgress.done}/${orgProgress.total}…` : lazyBusy ? `Orgs loading… (${stale.length} to go)` : stale.length ? `Load all orgs (${stale.length})` : 'Orgs up to date'}
           </TipButton>
           <Button variant="outline" onclick={exportCsv} disabled={!shown.length}>Export CSV</Button>
           <Button variant="outline" onclick={load} disabled={loading}>Refresh</Button>
@@ -695,6 +751,7 @@
               {/each}
             {/if}
           </Table.Root>
+          {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
         {/if}
       </Card.Content>
     </Card.Root>

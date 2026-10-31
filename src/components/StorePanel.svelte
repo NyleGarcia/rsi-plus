@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import Combobox from './Combobox.svelte';
   import Segmented from './Segmented.svelte';
   import { bg } from '@/lib/messages';
@@ -179,8 +180,10 @@
   });
   /** Rows on screen: first 40 with the click, 40 more a frame — *All hulls* (240 rows) blocked for ~250 ms in one go. */
   let budget = $derived.by(() => (void shown, 40));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (budget >= shown.length) return;
+    if (budget >= shown.length || !near) return;
     const t = setTimeout(() => (budget += 40), 16);
     return () => clearTimeout(t);
   });
@@ -285,7 +288,7 @@
           </Table.Row>
         {/each}
         {#if budget < shown.length}
-          <Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+          <Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs"><span use:nearView={(v) => (near = v)}>… {shown.length - budget} more below</span></Table.Cell></Table.Row>
         {:else if !shown.length}
           <Empty colspan={6}>{loading ? 'Loading…' : cat ? 'Nothing matches.' : 'No catalog yet — Refresh prices reads it.'}</Empty>
         {/if}

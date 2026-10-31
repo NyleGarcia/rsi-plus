@@ -366,7 +366,7 @@
   const beats = (rate: number) => PAINT_TIERS.find((t) => t.rate > rate + 1e-9) ?? null;
 
   // ---- RSI cart ----
-  const cart = createCartLedger();
+  const cart = createCartLedger({ readBack: false }) // the planner reads the cart back on *Confirm cart* instead;
   /** Every cart line of the plan: the picks' listings + wanted paints (one line per listing; a repeated listing adds qty). */
   const cartLines = $derived.by(() => {
     const m = new Map<number, { paint: StorePaint; qty: number }>();
@@ -714,7 +714,7 @@
   {/if}
 
   <!-- The numbers and the cart buttons stay in view under the hub header while the sections below scroll. -->
-  <div class="bg-card/95 sticky top-14 z-10 -mx-6 grid gap-2 border-b px-6 pt-1 pb-2 backdrop-blur">
+  <div class="bg-card sticky top-14 z-10 -mx-6 grid gap-2 border-b px-6 pt-1 pb-2">
   <div class="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
     <Stat tone="credit" value={ownUsd(totals.credit + meltOnlyCredit)} label={`melt credit · ${picks.length + meltOnly.length} pledges`} delta={{ text: `${ownUsd(totals.credit)} to rebuy · ${ownUsd(meltOnlyCredit)} melt only`, tone: 'neutral' }} />
     <Stat

@@ -54,7 +54,7 @@
   ];
 </script>
 
-<footer class="bg-background/95 text-muted-foreground sticky bottom-0 z-10 mt-auto border-t text-xs backdrop-blur" aria-label="About RSI+">
+<footer class="bg-background text-muted-foreground sticky bottom-0 z-10 mt-auto border-t text-xs" aria-label="About RSI+">
   <Collapsible.Root bind:open class="mx-auto w-full max-w-[1800px] px-6 max-sm:px-3">
     <div class="flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1 py-1.5">
       <span class="inline-flex shrink-0 items-center gap-2">

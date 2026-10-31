@@ -43,6 +43,19 @@
     { icon: pageOf('feed').icon, title: 'Feed', description: 'Watched Spectrum threads, friends coming online, friend requests, store alerts and store changes land here. Settings has the switches.', href: '#feed', linkLabel: 'Open Feed' },
   ];
   let tab = $state<Tab>(fromHash());
+  /**
+   * The page whose panel is mounted: follows `tab` one paint later. A click first paints the nav highlight and the
+   * title, then the panel swap (tearing down a 17k-node Pledges table, building the next page) runs in its own task —
+   * in the click's frame it held the next paint for 200–800 ms (INP).
+   */
+  // svelte-ignore state_referenced_locally
+  let paneTab = $state<Tab>(tab);
+  $effect(() => {
+    const t = tab;
+    let timer = 0;
+    const raf = requestAnimationFrame(() => (timer = window.setTimeout(() => (paneTab = t))));
+    return () => (cancelAnimationFrame(raf), clearTimeout(timer));
+  });
 
   /**
    * Panels load on first visit (one chunk each) instead of all fifteen up front: the hub chunk was 1.1 MB parsed on
@@ -69,7 +82,7 @@
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let loaded = $state<Partial<Record<PanelKey, Component<any>>>>({});
   const panelKey = $derived<PanelKey>(
-    tab === 'melt' ? 'hangar' : tab === 'fleet' || tab === 'paint-rebuy' || tab === 'paints' ? 'ships' : tab in LOADERS ? (tab as PanelKey) : 'mutes',
+    paneTab === 'melt' ? 'hangar' : paneTab === 'fleet' || paneTab === 'paint-rebuy' || paneTab === 'paints' ? 'ships' : paneTab in LOADERS ? (paneTab as PanelKey) : 'mutes',
   );
   const Panel = $derived(loaded[panelKey]);
   const load = (k: PanelKey) => (loaded[k] ? Promise.resolve() : LOADERS[k]().then((m) => void (loaded[k] = m.default)));
@@ -181,7 +194,7 @@
     </Sidebar.Root>
 
     <Sidebar.Inset class="min-w-0">
-      <header class="bg-background/85 sticky top-0 z-10 flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2 backdrop-blur">
+      <header class="bg-background sticky top-0 z-10 flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2">
         <Sidebar.Trigger class="-ml-1" />
         <Separator orientation="vertical" class="h-5" />
         <div class="grid min-w-0 flex-1 leading-tight">
@@ -222,9 +235,9 @@
           <SkeletonSwap ready={false} lines={8} lineHeight={44} label="Page"><div></div></SkeletonSwap>
         {:else if panelKey === 'hangar'}
           <!-- One instance for both pages: the melt ticks and filters survive switching between them. -->
-          <Panel pane={tab === 'melt' ? 'melt' : 'pledges'} />
+          <Panel pane={paneTab === 'melt' ? 'melt' : 'pledges'} />
         {:else if panelKey === 'ships'}
-          <Panel view={tab === 'fleet' ? 'ships' : tab === 'paint-rebuy' ? 'bundle' : 'paints'} />
+          <Panel view={paneTab === 'fleet' ? 'ships' : paneTab === 'paint-rebuy' ? 'bundle' : 'paints'} />
         {:else if panelKey === 'ccu'}
           <Panel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else}

@@ -6,7 +6,7 @@
  */
 import { cell, type Pledge } from './hangar';
 import { itemKey } from './melt';
-import { matchShip, memoFor, paintKey, shipKey, type CatalogShip, type StorePaint } from './store';
+import { cutKey, matchShip, memoFor, paintKey, shipKey, type CatalogShip, type StorePaint } from './store';
 
 export type Category = 'ship' | 'paint' | 'armor' | 'weapon' | 'fps' | 'component' | 'decoration' | 'hangar' | 'game' | 'insurance' | 'credits' | 'other';
 
@@ -132,18 +132,30 @@ const SERIES: [RegExp, RegExp, string][] = [
 
 function matchFor(text: string, ships: CatalogShip[]): CatalogShip[] {
   const key = ` ${shipKey(text)} `;
-  for (const [re, hull] of SERIES) if (re.test(key)) return ships.filter((s) => hull.test(shipKey(s.name)));
-  const exact = ships.filter((s) => {
-    const k = shipKey(s.name);
-    return k && key.includes(` ${k} `);
-  });
+  const ix = fitIndex(ships);
+  for (const [re, hull] of SERIES) if (re.test(key)) return ix.filter((e) => hull.test(e.key)).map((e) => e.ship);
+  const exact = ix.filter((e) => e.key && key.includes(e.padded));
   if (exact.length) {
     // Keep only the longest names (e.g. "Cutlass Black" over "Cutlass").
-    const max = Math.max(...exact.map((s) => shipKey(s.name).length));
-    return exact.filter((s) => shipKey(s.name).length === max);
+    const max = Math.max(...exact.map((e) => e.key.length));
+    return exact.filter((e) => e.key.length === max).map((e) => e.ship);
   }
-  const fams = new Set(ships.map((s) => family(s.name, ships)).filter((f) => f.length >= 3 && key.includes(` ${f} `)));
-  return sameMark(key, ships.filter((s) => fams.has(family(s.name, ships))));
+  const fams = new Set(ix.map((e) => e.fam).filter((f) => f.length >= 3 && key.includes(` ${f} `)));
+  return sameMark(key, ix.filter((e) => fams.has(e.fam)).map((e) => e.ship));
+}
+const fitIndexes = new WeakMap<object, { ship: CatalogShip; key: string; padded: string; fam: string }[]>();
+/** Each catalog ship's key and family, once per catalog array: `matchFor` runs per item title (thousands per hangar) and recomputed `family` for every ship each time. */
+function fitIndex(ships: CatalogShip[]) {
+  let ix = fitIndexes.get(ships);
+  if (!ix)
+    fitIndexes.set(
+      ships,
+      (ix = ships.map((ship) => {
+        const key = shipKey(ship.name);
+        return { ship, key, padded: ` ${key} `, fam: family(ship.name, ships) };
+      })),
+    );
+  return ix;
 }
 /** A title that says "Mk II" is for the Mk II hulls of the family (Mk I paints don't fit a Mk II); no Mk hull → all. */
 function sameMark(key: string, list: CatalogShip[]): CatalogShip[] {
@@ -451,7 +463,12 @@ export function storePaintsByFamily(paints: StorePaint[], ships: CatalogShip[]):
 
 /** Hangar paint → the same paint on the store (for a buy / price link), by normalized title. */
 export function storePaintFor(r: ItemRow, byKey: Map<string, StorePaint>): StorePaint | null {
-  return byKey.get(paintKey(r.title)) ?? null;
+  const hit = byKey.get(paintKey(r.title));
+  if (hit) return hit;
+  const prefix = cutKey(r.title); // the hangar page cut the title short ("Constellation Mk IV Andromeda - Blackth...")
+  if (!prefix) return null;
+  for (const [k, sp] of byKey) if (k.length > prefix.length && k.startsWith(prefix)) return sp;
+  return null;
 }
 export const storePaintIndex = (paints: StorePaint[]) => new Map(paints.map((p) => [paintKey(p.name), p]));
 
