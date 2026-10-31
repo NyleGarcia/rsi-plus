@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import Segmented from './Segmented.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import PaintBundlePanel from './PaintBundlePanel.svelte';
@@ -34,7 +35,7 @@
   import HintBadge from './HintBadge.svelte';
   import TipButton from './TipButton.svelte';
   import WikiLink from './WikiLink.svelte';
-  import { wikiSearchUrl, wikiUrl } from '@/lib/wiki';
+  import { wikiPageUrl } from '@/lib/wiki';
   import CartButton from './CartButton.svelte';
   import OpenCartButton from './OpenCartButton.svelte';
   import Empty from './Empty.svelte';
@@ -281,8 +282,10 @@
   const groupKeys = $derived(groups.map((g) => `p|${g.key}`));
   // Groups mount in chunks (12 first, then +20 a frame); a new filter starts over.
   let groupBudget = $derived.by(() => (void groups, 12));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (groupBudget >= groups.length) return;
+    if (groupBudget >= groups.length || !near) return;
     const t = setTimeout(() => (groupBudget += 20), 16);
     return () => clearTimeout(t);
   });
@@ -338,7 +341,7 @@
     {#if r.store}
       <a class="{LINK} inline-flex items-center gap-1 whitespace-nowrap" href={r.store.url} target="_blank" rel="noopener" title={r.owned ? 'Store page (buy another / gift)' : 'Open on the store'}><ExternalLink class="size-3" /> {r.owned ? 'store' : `store ${priceLabel(r.store.discounted, r.store.price)}`}</a>
       {@const sku = r.store.id}
-      {#if r.store.available || cart.of(sku)}<CartButton state={cart.of(sku)} onadd={() => addOne(sku)} name={r.title} available={r.store.available} />{/if}
+      {#if r.store.available || cart.of(sku)}<CartButton state={cart.of(sku)} inCart={cart.qtyOf(sku)} onadd={() => addOne(sku)} name={r.title} available={r.store.available} />{/if}
     {/if}
     {#if r.owned}
       {#each [...new Map(r.owned.pledges.map((p) => [p.id, p])).values()].slice(0, 3) as p (p.id)}
@@ -375,7 +378,7 @@
                 {/if}{/if}
               </Card.Description>
               <Card.Action class="flex flex-wrap items-center gap-2">
-                <OpenCartButton count={cart.added} />
+                <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} />
                 <Button variant="outline" size="sm" disabled={paintsLoading} onclick={() => refreshPaints(true)}>{paintsLoading ? 'Loading…' : 'Refresh store paints'}</Button>
               </Card.Action>
             </Card.Header>
@@ -450,7 +453,7 @@
                                   <Table.Cell class="whitespace-normal">
                                     <Thumb src={r.store?.thumb ?? r.owned?.image} name={r.title} class="mr-1.5" />
                                     <strong class={cn(!r.owned && 'text-muted-foreground font-medium')}>{r.title}</strong>
-                                    {#if g.key.split('|')[0] !== 'packs'}<WikiLink href={wikiSearchUrl(r.title)} name={r.title} />{/if}
+                                    {#if g.key.split('|')[0] !== 'packs'}<WikiLink href={wikiPageUrl(r.title)} name={r.title} />{/if}
                                     {#if r.owned}
                                       <Tag kind="owned" count={r.owned.count} class="m-px" />
                                       {#if r.owned.giftable}<Badge variant="secondary" class="m-px">gift</Badge>{/if}
@@ -481,7 +484,7 @@
                       </Collapsible.Content>
                     </Collapsible.Root>
                   {/each}
-                  {#if groupBudget < groups.length}<p class="text-muted-foreground text-xs">… {groups.length - groupBudget} more ships loading</p>{/if}
+                  {#if groupBudget < groups.length}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {groups.length - groupBudget} more ships below</p>{/if}
                 </div>
               {/if}
             </Card.Content>
@@ -587,7 +590,7 @@
                         <div class="flex items-center gap-2.5">
                           <Thumb src={f.ship.thumb} name={f.ship.name} width={64} height={36} />
                           <div>
-                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiUrl(f.ship.name)} name={f.ship.name} /></div>
+                            <div class="flex items-center gap-0.5"><strong>{f.ship.name}</strong><WikiLink href={wikiPageUrl(f.ship.name)} name={f.ship.name} /></div>
                             {#if (f.ship.flyable && stageOf(f.ship.flyable) !== 'ready') || f.ship.size}
                               <div class="mt-0.5 flex flex-wrap gap-0.5">
                                 {#if f.ship.flyable && stageOf(f.ship.flyable) !== 'ready'}<Tag kind="stage" value={f.ship.flyable} size="xs" />{/if}

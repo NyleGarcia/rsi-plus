@@ -11,6 +11,7 @@
 import { token } from './api';
 import { SPECTRUM_ORIGIN } from './types';
 import { EXTRA_SHIPS } from './data/extra-ships';
+import { fmtUsd } from './currency';
 
 export interface Sku {
   id: number;
@@ -142,10 +143,8 @@ export function withExtraShips(ships: CatalogShip[]): CatalogShip[] {
 }
 
 export const isWarbondSku = (k: Pick<Sku, 'title'>) => /warbond/i.test(k.title);
-// Built once: `toLocaleString` makes a new formatter per call, which showed up in profiles of 500-row tables.
-const USD_WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
-const USD_CENTS = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-export const usd = (cents: number) => `$${(cents % 100 ? USD_CENTS : USD_WHOLE).format(cents / 100)}`;
+/** Cents → `$40` / `$40.50` (or the display currency, `lib/currency.ts`). */
+export const usd = (cents: number) => fmtUsd(cents / 100);
 /** `$40 (was $50)` when discounted, else the list price. */
 /** RSI's ribbon tests, so pages never match the strings themselves. */
 export const isLimitedTime = (it: Pick<StoreItem, 'tags'>) => (it.tags ?? []).some((g) => /limited/i.test(g));
@@ -196,45 +195,63 @@ export function matchShip(name: string, ships: CatalogShip[]): CatalogShip | nul
 function findShip(name: string, ships: CatalogShip[]): CatalogShip | null {
   const k = shipKey(name);
   if (!k) return null;
-  let best: CatalogShip | null = null;
-  for (const s of ships) {
-    const sk = shipKey(s.name);
-    if (sk === k) return s;
-    if (sk && (` ${k} `.includes(` ${sk} `)) && (!best || sk.length > shipKey(best.name).length)) best = s;
-  }
-  if (best) return best;
+  const ix = indexOf(ships);
+  const exact = ix.byKey.get(k);
+  if (exact) return exact;
+  let best: ShipEntry | null = null;
+  const padded = ` ${k} `;
+  for (const e of ix.entries) if (e.key && padded.includes(e.padded) && (!best || e.key.length > best.key.length)) best = e;
+  if (best) return best.ship;
   // Every word of the text is in the catalog name and what the catalog adds is only model-code bits ("Wolf" or
   // "Wolf L-21" → "L-21 Wolf"; never "L-22 Alpha Wolf", which adds a real word). Shortest catalog name wins.
   // Words no catalog name uses ("Starlifter" in "Hercules Starlifter C2", RSI's older hangar spelling) can't decide
   // anything — drop them, as long as a real word is left.
-  const vocab = vocabOf(ships);
-  const known = k.split(' ').filter((t) => vocab.has(t));
+  const known = k.split(' ').filter((t) => ix.vocab.has(t));
   const want = known.some((t) => t.length >= 3 && !/^\d+$/.test(t)) ? known : k.split(' ');
   if (!want.some((t) => t.length >= 3 && !/^\d+$/.test(t))) return null;
-  for (const s of ships) {
-    const toks = shipKey(s.name).split(' ');
-    if (!want.every((t) => toks.includes(t))) continue;
-    if (!toks.filter((t) => !want.includes(t)).every((t) => MODEL_BIT.test(t))) continue;
-    if (!best || toks.length < shipKey(best.name).split(' ').length || (toks.length === shipKey(best.name).split(' ').length && s.name.length < best.name.length)) best = s;
+  for (const e of ix.entries) {
+    if (!want.every((t) => e.toks.includes(t))) continue;
+    if (!e.toks.filter((t) => !want.includes(t)).every((t) => MODEL_BIT.test(t))) continue;
+    if (!best || e.toks.length < best.toks.length || (e.toks.length === best.toks.length && e.ship.name.length < best.ship.name.length)) best = e;
   }
-  if (best) return best;
+  if (best) return best.ship;
   // Last resort: same words once model codes are dropped on both sides ("F7A Hornet Mk II", a hull the store doesn't
   // sell, → F7C Hornet Mk II — same line, same paints; never a Mk I). Shortest catalog name wins.
-  const bare = (toks: string[]) => toks.filter((t) => !CODE_BIT.test(t)).join(' ');
-  const wantBare = bare(want);
+  const wantBare = bareOf(want);
   if (!wantBare) return null;
-  for (const s of ships) {
-    if (bare(shipKey(s.name).split(' ')) !== wantBare) continue;
-    if (!best || s.name.length < best.name.length) best = s;
+  for (const e of ix.entries) {
+    if (e.bare !== wantBare) continue;
+    if (!best || e.ship.name.length < best.ship.name.length) best = e;
   }
-  return best;
+  return best?.ship ?? null;
 }
-const vocabs = new WeakMap<object, Set<string>>();
-/** Every word of the catalog's ship keys, once per catalog array (`findShip` misses used to rebuild it per name). */
-function vocabOf(ships: CatalogShip[]): Set<string> {
-  let v = vocabs.get(ships);
-  if (!v) vocabs.set(ships, (v = new Set(ships.flatMap((s) => shipKey(s.name).split(' ')))));
-  return v;
+const bareOf = (toks: string[]) => toks.filter((t) => !CODE_BIT.test(t)).join(' ');
+interface ShipEntry {
+  ship: CatalogShip;
+  key: string;
+  padded: string;
+  toks: string[];
+  bare: string;
+}
+const indexes = new WeakMap<object, { byKey: Map<string, CatalogShip>; entries: ShipEntry[]; vocab: Set<string> }>();
+/**
+ * Once per catalog array: every ship's key, words and model-code-free words, the exact-key map and the vocabulary.
+ * `findShip` runs for every distinct item title of a hangar (thousands) and re-split each catalog name per title:
+ * ~300 ms each time Pledges opened.
+ */
+function indexOf(ships: CatalogShip[]) {
+  let ix = indexes.get(ships);
+  if (!ix) {
+    const byKey = new Map<string, CatalogShip>();
+    const entries = ships.map((ship) => {
+      const key = shipKey(ship.name);
+      if (key && !byKey.has(key)) byKey.set(key, ship); // first in catalog order wins, as the scan did
+      const toks = key.split(' ');
+      return { ship, key, padded: ` ${key} `, toks, bare: bareOf(toks) };
+    });
+    indexes.set(ships, (ix = { byKey, entries, vocab: new Set(entries.flatMap((e) => e.toks)) }));
+  }
+  return ix;
 }
 /** A model code or its fragments: "f7c", "a2", "l", "21" — not "mk" / "ii" / variant suffixes like "es", which tell hulls apart. */
 const CODE_BIT = /^([a-z]|\d{1,3}|[a-z]\d{1,3}[a-z]?)$/;
@@ -478,3 +495,7 @@ export function paintKey(title: string): string {
   paintKeys.set(title, k);
   return k;
 }
+/** RSI cuts long item titles short on the hangar page ("Lightning Bolt Co. Atzkav 'Starwalker' Sniper R..."). */
+const CUT = /\s*(?:\.{3}|…)\s*$/;
+/** A hangar title RSI cut short → the `paintKey` of what is left (matched as a prefix); null for a whole title. */
+export const cutKey = (title: string): string | null => (CUT.test(title) ? paintKey(title.replace(CUT, '')) || null : null);

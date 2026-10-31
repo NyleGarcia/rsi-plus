@@ -27,7 +27,8 @@ export interface OrgCacheEntry {
 
 /** nickname (lower-case) -> orgs */
 export type OrgCache = Record<string, OrgCacheEntry>;
-export const ORG_TTL = 24 * 60 * 60 * 1000;
+/** Org membership changes rarely; *Load all orgs* re-reads anything older, lazy loads skip anything younger. */
+export const ORG_TTL = 7 * 24 * 60 * 60 * 1000;
 
 export function mainOrgFromBadges(m: Pick<Member, 'meta'> | null | undefined): Pick<Org, 'sid' | 'name'> | null {
   for (const b of m?.meta?.badges ?? []) {

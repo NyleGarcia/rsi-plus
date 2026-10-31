@@ -25,6 +25,21 @@ const page = (body: string) => {
 };
 
 describe('hangar parser', () => {
+  it('in-game (UEC) purchases are not dollars', () => {
+    // Markup from a saved hangar page (2026-10-31): pledge 13531307, a 2018 in-game buggy.
+    const ptv = '<input type="hidden" class="js-pledge-configuration-value" value="$0.00 USD"><input type="hidden" class="js-pledge-currency" value="UEC"><input type="hidden" class="js-pledge-not-buybackable" value="1"><span class="availability  ">Attributed</span><a class="js-reclaim">Exchange</a>';
+    const p = parseHangarPage(page(li(4, 'Buggies - Greycat PTV', '¤15,000 UEC', [['PTV', 'Ship']], ptv) + li(5, 'Ursa Rover', '15,000 UEC', [['Ursa', 'Ship']])));
+    expect(p.map((x) => [x.value, x.uec])).toEqual([
+      [0, 15000],
+      [0, 15000],
+    ]);
+    expect(totals(p).value).toBe(0);
+    expect(p[0]).toMatchObject({ noBuyback: true, meltable: true });
+    expect(p[0]!.paidWith).toBeUndefined();
+    // the raw fields ride along for the debug export
+    expect(p[0]!.raw).toEqual({ value: '¤15,000 UEC', currency: 'UEC', configValue: '$0.00 USD', notBuybackable: '1', availability: 'Attributed' });
+  });
+
   it('parses ships, packages, upgrades and flags', () => {
     const doc = page(
       li(

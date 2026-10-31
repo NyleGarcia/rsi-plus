@@ -159,6 +159,11 @@
   // ---- RSI cart ----
   const cart = createCartLedger();
   const cartKey = (s: Step) => `${s.kind}:${s.fromId}>${s.toId}:${s.skuId ?? s.ref ?? ''}`;
+  /** The SKU a step puts in the cart (what RSI's cart lines are keyed by), for *in cart ×n*. */
+  const skuOfStep = (s: Step): number | null => {
+    const a = addable(s, byId);
+    return a.kind === 'standalone' ? a.skuId : a.kind === 'upgrade' ? a.ref.toSkuId : null;
+  };
   // A new plan = a new cart ledger (state is per step identity, so a re-plan with the same steps keeps it).
   const addableSteps = $derived(result ? result.steps.filter((s) => addable(s, byId).kind !== 'none') : []);
   const hasBuyback = $derived(addableSteps.some((s) => s.kind === 'buyback'));
@@ -539,6 +544,7 @@
                         <CartButton
                           text
                           state={c}
+                          inCart={cart.qtyOf(skuOfStep(s))}
                           busy={cart.busy}
                           onadd={() => addOne(s)}
                           label={s.kind === 'buyback' ? 'Add buy-back' : 'Add to cart'}
@@ -574,7 +580,7 @@
               {#if storeSteps > 0}
                 <Button size="sm" disabled={cart.busy} onclick={addAll}><ShoppingCart />{cart.busy ? 'Adding…' : `Add ${storeSteps} store step${storeSteps === 1 ? '' : 's'} to RSI cart`}</Button>
               {/if}
-              <OpenCartButton always size="sm" count={cart.added} />
+              <OpenCartButton always size="sm" count={cart.added} total={cart.snapshot?.qty ?? null} />
               <span class="text-muted-foreground text-[11px]">
                 Lines are added to your RSI cart in your signed-in session; nothing is paid here. Check the cart before checkout.
                 {#if hasBuyback} A buy-back must be the only line in the cart — add it separately and check it out alone.{/if}

@@ -4,7 +4,7 @@
    * that draws down the feed as rows come into view, rows that expand in place, new rows that slide in on top.
    * Arrow keys move between expandable rows, Enter / Space expands.
    */
-  import type { Component, Snippet } from 'svelte';
+  import { untrack, type Component, type Snippet } from 'svelte';
   import { slide } from 'svelte/transition';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Dot from '@lucide/svelte/icons/dot';
@@ -43,7 +43,12 @@
     const today = dayKey(now),
       yesterday = dayKey(now - 864e5);
     const by = new Map<string, TimelineEvent[]>();
-    for (const e of [...events].sort((a, b) => b.at - a.at)) by.set(dayKey(e.at), [...(by.get(dayKey(e.at)) ?? []), e]);
+    for (const e of [...events].sort((a, b) => b.at - a.at)) {
+      const k = dayKey(e.at);
+      const rows = by.get(k);
+      if (rows) rows.push(e);
+      else by.set(k, [e]);
+    }
     return [...by].map(([day, rows]) => ({ day, rows, label: day === today ? 'Today' : day === yesterday ? 'Yesterday' : new Date(rows[0]!.at).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }));
   });
   const when = (t: number) => {
@@ -64,26 +69,31 @@
   /** The connector draws when a row scrolls into view; rows revealed together are a beat apart. */
   let shown = $state<Set<string>>(new Set());
   let list = $state<HTMLElement | null>(null);
+  // One observer per rendered row set (not per revealed row): `shown` is read untracked, reveals batch per callback.
   $effect(() => {
     if (!list) return;
+    void groups;
     let next = 0;
     const io = new IntersectionObserver(
       (entries) => {
+        const add: string[] = [];
         for (const en of entries) {
           if (!en.isIntersecting) continue;
           const id = (en.target as HTMLElement).dataset.row!;
-          if (shown.has(id)) continue;
+          io.unobserve(en.target);
+          if (untrack(() => shown.has(id))) continue;
           const nowS = performance.now() / 1000;
           const start = Math.min(Math.max(nowS, next), nowS + 0.45);
           next = start + 0.09;
           (en.target as HTMLElement).style.setProperty('--d', `${Math.max(0, start - nowS)}s`);
-          shown = new Set([...shown, id]);
-          io.unobserve(en.target);
+          add.push(id);
         }
+        if (add.length) shown = new Set([...untrack(() => shown), ...add]);
       },
       { threshold: 0.2 },
     );
-    for (const row of list.querySelectorAll<HTMLElement>('[data-row]')) if (!shown.has(row.dataset.row!)) io.observe(row);
+    const seen = untrack(() => shown);
+    for (const row of list.querySelectorAll<HTMLElement>('[data-row]')) if (!seen.has(row.dataset.row!)) io.observe(row);
     return () => io.disconnect();
   });
   function onKey(e: KeyboardEvent) {
@@ -102,7 +112,7 @@
 <div class="grid" role="region" aria-label={label} bind:this={list} onkeydown={onKey}>
   {#each groups as g (g.day)}
     <section class="relative" aria-labelledby={`tl-${g.day.replace(/\W/g, '')}`}>
-      <h3 id={`tl-${g.day.replace(/\W/g, '')}`} class="bg-background/95 text-muted-foreground sticky top-0 z-10 m-0 flex items-baseline gap-2 py-2 text-[11px] font-semibold tracking-wide uppercase backdrop-blur">
+      <h3 id={`tl-${g.day.replace(/\W/g, '')}`} class="bg-background text-muted-foreground sticky top-0 z-10 m-0 flex items-baseline gap-2 py-2 text-[11px] font-semibold tracking-wide uppercase">
         {g.label}
         <span class="font-normal normal-case tabular-nums">{g.rows.length} {g.rows.length === 1 ? 'update' : 'updates'}</span>
       </h3>

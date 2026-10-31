@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   /**
    * Store → Browse: every pledge-store listing that isn't the ship catalog — paints, packs, game packages, gear,
    * add-ons, the Subscribers Store and standalone ships. Category *tabs* (All / Ships / Paints / Packs …) cut one
@@ -18,7 +19,7 @@
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { hashParam, useDeepLink } from '@/lib/deep-link.svelte';
-  import { ownedTitleCounts } from '@/lib/owned-counts';
+  import { ownedTitleCount, ownedTitleCounts } from '@/lib/owned-counts';
   import Check from '@lucide/svelte/icons/check';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import { bundleValue, contentKey, hasContents, insuranceOf, isExtra, priceIndex, type BundleValue } from '@/lib/bundle';
@@ -143,8 +144,8 @@
   }
   /** Normalized title → copies in the hangar (pledge names and every item inside them). */
   const ownedKeys = $derived(ownedTitleCounts(hangar?.pledges));
-  const ownedCount = (it: StoreItem) => ownedKeys.get(paintKey(it.name)) ?? 0;
-  const ownedPiece = (name: string) => ownedKeys.get(paintKey(name)) ?? 0;
+  const ownedCount = (it: StoreItem) => ownedTitleCount(ownedKeys, it.name);
+  const ownedPiece = (name: string) => ownedTitleCount(ownedKeys, name);
   /** Listing + the Concierge page's *Exclusive Store* specials that the search didn't return (same SKU id). */
   const all = $derived.by(() => {
     const list = items?.items ?? [];
@@ -298,8 +299,10 @@
    * page for ~0.9 s on *All* (measured headless). Starts over whenever the list changes (tab, filter, search, sort).
    */
   let budget = $derived.by(() => (void shown, 40));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (budget >= shown.length) return;
+    if (budget >= shown.length || !near) return;
     const t = setTimeout(() => (budget += 40), 16);
     return () => clearTimeout(t);
   });
@@ -351,7 +354,7 @@
         <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" href={buy.url} target="_blank" rel="noopener" tip="Open on the RSI store" aria-label={`Open ${name} on the RSI store`}><ExternalLink class="size-3" /></TipButton>
         {#if buy.sku != null}
           {@const sku = buy.sku}
-          <CartButton state={cart.of(sku)} onadd={() => addOne(sku)} {name} available={buy.available} hint={buy.available ? `Add ${name} to your RSI cart on its own (nothing is paid)` : null} />
+          <CartButton state={cart.of(sku)} inCart={cart.qtyOf(sku)} onadd={() => addOne(sku)} {name} available={buy.available} hint={buy.available ? `Add ${name} to your RSI cart on its own (nothing is paid)` : null} />
         {/if}
       </div>
     {/if}
@@ -367,7 +370,7 @@
       <Card.Action class="flex flex-wrap items-center gap-2">
         <TipButton variant="outline" href="#paint-rebuy" tip="Melt paints you own and buy them back together with RSI's multi-paint discount">Paint rebuy value →</TipButton>
         <Button variant="outline" disabled={loading} onclick={refresh}>{loading ? 'Loading…' : 'Refresh'}</Button>
-        <OpenCartButton count={cart.added} size="default" />
+        <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />
       </Card.Action>
     </Card.Header>
     <Card.Content class="grid gap-3">
@@ -473,7 +476,7 @@
               <Table.Cell class="text-right tabular-nums align-top">{usd(it.discounted)}{#if off}<div class="text-muted-foreground text-[11px] leading-4">list {usd(it.price)}</div>{/if}</Table.Cell>
               <Table.Cell class="text-right tabular-nums align-top">{#if off}<span class="text-success">−{off}%</span><div class="text-muted-foreground text-[11px] leading-4">{usd(it.price - it.discounted)} off</div>{:else}<span class="text-muted-foreground">—</span>{/if}</Table.Cell>
               <Table.Cell class="w-full text-right align-top">
-                <CartButton state={cart.of(it.id)} onadd={() => addOne(it.id)} name={it.name} available={it.available} hint={it.available ? 'Add to your RSI cart (nothing is paid)' : null} />
+                <CartButton state={cart.of(it.id)} inCart={cart.qtyOf(it.id)} onadd={() => addOne(it.id)} name={it.name} available={it.available} hint={it.available ? 'Add to your RSI cart (nothing is paid)' : null} />
               </Table.Cell>
             </Table.Row>
             {#if v && isOpen}
@@ -552,7 +555,7 @@
             {/if}
           {/each}
           {#if budget < shown.length}
-            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs"><span use:nearView={(v) => (near = v)}>… {shown.length - budget} more below</span></Table.Cell></Table.Row>
           {:else if !shown.length}
             <Empty colspan={5}>
               {#if loading}Loading…

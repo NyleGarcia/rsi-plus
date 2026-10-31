@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import { loadBuyback, loadBuybackDetails } from '@/lib/account';
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
@@ -266,15 +267,17 @@
   // Rows mount in chunks (40 first, then +60 a frame) so a long buyback list doesn't block the first paint; a new
   // filter or grouping starts over.
   let budget = $derived.by(() => (void groups, 40));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (budget >= visibleRows) return;
+    if (budget >= visibleRows || !near) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
 </script>
 
 {#snippet cartBtn(sku: number, qty = 1)}
-  <CartButton state={cart.of(sku)} onadd={() => addOne(sku, qty)} busy={cart.busy} {qty} />
+  <CartButton state={cart.of(sku)} inCart={cart.qtyOf(sku)} onadd={() => addOne(sku, qty)} busy={cart.busy} {qty} />
 {/snippet}
 
 {#snippet row(b: BuybackItem)}
@@ -352,7 +355,7 @@
           </TipButton>
         {/if}
         <LoadActions {loading} {data} noun="buyback" onstop={() => ctrl?.abort()} onload={load}>
-          {#if !loading}<OpenCartButton count={cart.added} size="default" />{/if}
+          {#if !loading}<OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />{/if}
         </LoadActions>
       {/if}
     </Card.Action>
@@ -434,7 +437,7 @@
         {/each}
         <Table.Body>
           {#if budget < visibleRows}
-            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs">… {visibleRows - budget} more loading</Table.Cell></Table.Row>
+            <Table.Row><Table.Cell colspan={5} class="text-muted-foreground text-xs"><span use:nearView={(v) => (near = v)}>… {visibleRows - budget} more below</span></Table.Cell></Table.Row>
           {/if}
           {#if !shown.length}<Empty colspan={5}>Nothing matches.</Empty>{/if}
         </Table.Body>

@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Icon-only link to an item's Star Citizen Wiki page (`lib/wiki.ts` builds the URL; null → renders nothing).
+   * Icon-only link to an item's Star Citizen Wiki page (`lib/wiki.ts` builds the URL, null when the wiki has no such page → renders nothing).
    * Pass the catalog / RSI item name, never a custom ship name — the tooltip and label show it.
    */
   import TipButton from './TipButton.svelte';

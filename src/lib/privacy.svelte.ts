@@ -6,6 +6,7 @@
  * `ownMoney()` / `ownUsd()`, which return `•••` while it is on, so nothing sensitive is even in the DOM.
  */
 import { usd } from './store';
+import { fmtUsd, moneySymbol } from './currency';
 
 export const privacy = $state({ on: false });
 export const MASK = '•••';
@@ -41,10 +42,9 @@ export const togglePrivacy = () => setPrivacy(!privacy.on);
 
 /** A value that is yours (a name, a ratio): `•••` in screenshare mode. */
 export const own = (s: string | number) => (privacy.on ? MASK : String(s));
-/** Money that is yours: keeps the `$` so columns still read as money. */
-export const ownMoney = (s: string) => (privacy.on ? `$${MASK}` : s);
+/** Money that is yours: keeps the currency symbol so columns still read as money. */
+export const ownMoney = (s: string) => (privacy.on ? `${moneySymbol()}${MASK}` : s);
 /** `usd(cents)` for amounts that are yours (melt credit, what you paid). */
 export const ownUsd = (cents: number) => ownMoney(usd(cents));
-/** Whole dollars (not cents) that are yours: `$1,234` / `$12.50`; `$•••` in screenshare mode. */
-export const ownDollars = (n: number) =>
-  ownMoney(`$${n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`);
+/** Dollars (not cents) that are yours: `$1,234` / `$12.50` (or the display currency); `$•••` in screenshare mode. */
+export const ownDollars = (n: number) => ownMoney(fmtUsd(n));

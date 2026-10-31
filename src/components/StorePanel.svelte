@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import Combobox from './Combobox.svelte';
   import Segmented from './Segmented.svelte';
   import { bg } from '@/lib/messages';
@@ -18,7 +19,7 @@
   import LazyTip from './LazyTip.svelte';
   import TipButton from './TipButton.svelte';
   import WikiLink from './WikiLink.svelte';
-  import { wikiUrl } from '@/lib/wiki';
+  import { wikiPageUrl } from '@/lib/wiki';
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Card from '@/components/ui/card';
@@ -179,8 +180,10 @@
   });
   /** Rows on screen: first 40 with the click, 40 more a frame — *All hulls* (240 rows) blocked for ~250 ms in one go. */
   let budget = $derived.by(() => (void shown, 40));
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
-    if (budget >= shown.length) return;
+    if (budget >= shown.length || !near) return;
     const t = setTimeout(() => (budget += 40), 16);
     return () => clearTimeout(t);
   });
@@ -239,7 +242,7 @@
               <div class="flex items-center gap-2.5">
                 <Thumb src={s.thumb} name={s.name} width={64} height={36} />
                 <div class="grid gap-0.5">
-                  <div class="flex items-center gap-0.5"><a class={LINK_QUIET} href={s.link} target="_blank" rel="noopener"><strong>{s.name}</strong></a><WikiLink href={wikiUrl(s.name)} name={s.name} /></div>
+                  <div class="flex items-center gap-0.5"><a class={LINK_QUIET} href={s.link} target="_blank" rel="noopener"><strong>{s.name}</strong></a><WikiLink href={wikiPageUrl(s.name)} name={s.name} /></div>
                   <div class="text-muted-foreground text-[11px]">{s.manufacturer} · {s.focus} · {s.flyable}</div>
                   {#if vipIds.has(s.id) || stageOf(s.flyable) !== 'ready' || s.size}
                     <div class="flex flex-wrap gap-1">
@@ -285,7 +288,7 @@
           </Table.Row>
         {/each}
         {#if budget < shown.length}
-          <Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs">… {shown.length - budget} more loading</Table.Cell></Table.Row>
+          <Table.Row><Table.Cell colspan={6} class="text-muted-foreground text-xs"><span use:nearView={(v) => (near = v)}>… {shown.length - budget} more below</span></Table.Cell></Table.Row>
         {:else if !shown.length}
           <Empty colspan={6}>{loading ? 'Loading…' : cat ? 'Nothing matches.' : 'No catalog yet — Refresh prices reads it.'}</Empty>
         {/if}

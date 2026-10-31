@@ -19,7 +19,7 @@
 .sp-row.sp-read:not(.sp-pinned) { opacity: 0.55; transition: opacity 0.15s; }
 .sp-row.sp-read:hover { opacity: 1; }
 .sp-hide-read .sp-row.sp-read:not(.sp-pinned):not(.sp-watched) { display: none !important; }
-.sp-row.sp-muted { opacity: 0.25; max-height: 34px; overflow: hidden; filter: grayscale(1); }
+.sp-row.sp-muted { opacity: 0.25; max-height: 34px; overflow: hidden; }
 .sp-row.sp-muted:hover { opacity: 0.8; max-height: none; }
 .sp-mute-hide .sp-row.sp-muted { display: none !important; }
 .sp-dev .sp-row.sp-dev-row { box-shadow: inset 3px 0 0 #ffb547; }

@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import titles from '@/lib/data/wiki-titles.json';
 import { categorize, type Category } from '@/lib/items';
 import type { CatalogShip } from '@/lib/store';
-import { itemWikiUrl, storeWikiUrl, wikiSearchUrl, wikiUrl } from '@/lib/wiki';
+import { itemWikiUrl, storeWikiUrl, wikiPageUrl, wikiUrl } from '@/lib/wiki';
+import { setWikiTitles, wikiTitle } from '@/lib/wiki-pages.svelte';
 
 const ship = (name: string): CatalogShip => ({ id: 1, name, manufacturer: '', focus: '', msrp: 0, flyable: '', link: '', thumb: null, standalone: [], ccu: [] });
 
+// Pages the wiki has (articles and redirects), as `scripts/wiki-titles.mjs` writes them.
+const PAGES = ['Odin', 'Carrack Expedition', 'Avenger Titan', 'Aurora MR', 'Arrowhead Sniper Rifle', 'Pembroke Armor', 'Thing', 'Cutlass Red Paint', 'Aurora Paint'];
+
 describe('wiki', () => {
+  beforeEach(() => setWikiTitles(PAGES));
+
   it('wikiUrl: spaces → underscores, readable punctuation kept, first letter as given', () => {
     expect(wikiUrl('Odin')).toBe('https://starcitizen.tools/Odin');
     expect(wikiUrl('F7C Hornet Mk II')).toBe('https://starcitizen.tools/F7C_Hornet_Mk_II');
@@ -21,15 +28,37 @@ describe('wiki', () => {
     expect(wikiUrl('Größe')).toBe('https://starcitizen.tools/Gr%C3%B6%C3%9Fe');
   });
 
-  it('wikiSearchUrl: query-encoded, jumps with go=Go', () => {
-    expect(wikiSearchUrl('Arrowhead Sniper Rifle')).toBe('https://starcitizen.tools/index.php?search=Arrowhead%20Sniper%20Rifle&go=Go');
-    expect(wikiSearchUrl("Xi'an  (Paint) & more")).toBe("https://starcitizen.tools/index.php?search=Xi'an%20(Paint)%20%26%20more&go=Go");
+  it('wikiPageUrl: only names the wiki has a page for, by its own title; case and spacing ignored', () => {
+    expect(wikiPageUrl('Odin')).toBe('https://starcitizen.tools/Odin');
+    expect(wikiPageUrl('  arrowhead  sniper RIFLE ')).toBe('https://starcitizen.tools/Arrowhead_Sniper_Rifle');
+    expect(wikiPageUrl('Aurora MR')).toBe('https://starcitizen.tools/Aurora_MR'); // a redirect: the wiki forwards it
+    expect(wikiPageUrl('Whitecap Paint')).toBeNull();
+    expect(wikiPageUrl('   ')).toBeNull();
   });
 
-  it('itemWikiUrl: ships use the catalog name; covered kinds search; the rest get no link', () => {
+  it('no link before the title list has loaded; the first lookup loads it', async () => {
+    vi.resetModules();
+    const fresh = await import('@/lib/wiki-pages.svelte');
+    expect(fresh.wikiTitle('Odin')).toBeNull();
+    await fresh.loadWikiTitles();
+    expect(fresh.wikiTitle('Odin')).toBe('Odin');
+  });
+
+  it('the bundled list holds ships, vehicles and gear the panels link', () => {
+    setWikiTitles(titles);
+    for (const n of ['Odin', 'Avenger Titan', 'Carrack Expedition', 'Arrowhead Sniper Rifle', 'Pembroke Armor', 'Ursa Rover', 'Origin 300i']) expect(wikiTitle(n), n).not.toBeNull();
+    expect(wikiTitle('Lifetime Insurance')).toBeNull();
+  });
+
+  it('itemWikiUrl: ships use the catalog name, then the title; covered kinds by title; the rest get no link', () => {
     expect(itemWikiUrl('ship', 'Odin - LTI', ship('Odin'))).toBe('https://starcitizen.tools/Odin');
-    expect(itemWikiUrl('ship', 'Unknown Hull', null)).toBe(wikiSearchUrl('Unknown Hull'));
-    for (const c of ['paint', 'armor', 'weapon', 'fps', 'component'] as Category[]) expect(itemWikiUrl(c, 'Thing', null)).toBe(wikiSearchUrl('Thing'));
+    expect(itemWikiUrl('ship', 'Avenger Titan', ship('Avenger Titan Renegade'))).toBe('https://starcitizen.tools/Avenger_Titan');
+    expect(itemWikiUrl('ship', 'Unknown Hull', null)).toBeNull();
+    expect(itemWikiUrl('ship', 'Unknown Hull', ship('Unknown Hull'))).toBeNull();
+    for (const c of ['paint', 'armor', 'weapon', 'fps', 'component'] as Category[]) {
+      expect(itemWikiUrl(c, 'Thing', null)).toBe('https://starcitizen.tools/Thing');
+      expect(itemWikiUrl(c, 'No Such Thing', null)).toBeNull();
+    }
     for (const c of ['decoration', 'hangar', 'game', 'insurance', 'credits', 'other'] as Category[]) expect(itemWikiUrl(c, 'Thing', null)).toBeNull();
     expect(itemWikiUrl('paint', '  ', null)).toBeNull();
     expect(itemWikiUrl(categorize('Odin', 'Ship'), 'Odin', ship('Odin'))).toBe('https://starcitizen.tools/Odin');
@@ -38,9 +67,11 @@ describe('wiki', () => {
 
   it('storeWikiUrl: ships / paints / gear link; packs, packages and subscribers do not; add-ons by title', () => {
     expect(storeWikiUrl('ships', 'Carrack Expedition', ship('Carrack Expedition'))).toBe('https://starcitizen.tools/Carrack_Expedition');
-    expect(storeWikiUrl('paints', 'Cutlass Red Paint')).toBe(wikiSearchUrl('Cutlass Red Paint'));
-    expect(storeWikiUrl('gear', 'Pembroke Armor')).toBe(wikiSearchUrl('Pembroke Armor'));
-    expect(storeWikiUrl('gear', 'Arrowhead Sniper Rifle')).toBe(wikiSearchUrl('Arrowhead Sniper Rifle'));
+    expect(storeWikiUrl('ships', 'Hull Z', ship('Hull Z'))).toBeNull();
+    expect(storeWikiUrl('paints', 'Cutlass Red Paint')).toBe('https://starcitizen.tools/Cutlass_Red_Paint');
+    expect(storeWikiUrl('paints', 'Cutlass Blue Paint')).toBeNull();
+    expect(storeWikiUrl('gear', 'Pembroke Armor')).toBe('https://starcitizen.tools/Pembroke_Armor');
+    expect(storeWikiUrl('gear', 'Arrowhead Sniper Rifle')).toBe('https://starcitizen.tools/Arrowhead_Sniper_Rifle');
     // Concierge specials land in `gear`: flair, credits and other one-offs have no wiki page.
     expect(storeWikiUrl('gear', "Chairman's Club Plaque")).toBeNull();
     expect(storeWikiUrl('gear', '50,000 UEC')).toBeNull();
@@ -48,6 +79,6 @@ describe('wiki', () => {
     expect(storeWikiUrl('packages', 'Starter Package')).toBeNull();
     expect(storeWikiUrl('subscribers', 'Coin')).toBeNull();
     expect(storeWikiUrl('addons', 'Hangar Flair Poster')).toBeNull();
-    expect(storeWikiUrl('addons', 'Aurora Paint')).toBe(wikiSearchUrl('Aurora Paint'));
+    expect(storeWikiUrl('addons', 'Aurora Paint')).toBe('https://starcitizen.tools/Aurora_Paint');
   });
 });

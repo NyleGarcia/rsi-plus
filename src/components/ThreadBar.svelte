@@ -109,7 +109,6 @@
   .help,
   .pip {
     position: fixed;
-    backdrop-filter: blur(8px);
   }
   .bar {
     right: 18px;

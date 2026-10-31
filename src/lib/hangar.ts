@@ -29,8 +29,10 @@ export interface Upgrade {
 export interface Pledge {
   id: number;
   name: string;
-  /** Melt value in USD (0 for gifted / no-value items). */
+  /** Melt value in USD (0 for gifted / no-value items, and for items bought in game — see `uec`). */
   value: number;
+  /** Price in UEC when RSI lists the pledge in UEC (bought in game with aUEC/UEC, not real money); `value` is 0 then. */
+  uec?: number;
   /** "Created" date text as shown (e.g. "October 01, 2026"). */
   date: string;
   type: PledgeType;
@@ -68,6 +70,8 @@ export interface Pledge {
   /** Ships in the pledge RSI lets you name (`js-pledge-nameable-ships`), and names already reserved (`js-pledge-name-reservations`). */
   nameable?: string[];
   reservedNames?: string[];
+  /** RSI's hidden fields as read, untouched (empty ones left out) — for the debug export. Absent on old saves. */
+  raw?: Record<string, string>;
 }
 
 export interface BuybackItem {
@@ -92,7 +96,7 @@ export interface BuybackItem {
 }
 
 import { text, textNodes } from './dom';
-import { parseMoney, r2 } from './money';
+import { parseAmount, parseMoney, r2 } from './money';
 export { parseMoney };
 const val = (root: ParentNode, sel: string) => (root.querySelector(sel) as HTMLInputElement | null)?.value?.trim() ?? '';
 
@@ -223,6 +227,19 @@ export function creditsDebug(root: ParentNode): string {
   return `${signedIn ? 'hangar list present' : 'no hangar list (logged out?)'} · near "credit": ${near(/credit/i)} · near "UEC": ${near(/\bUEC\b/)} · elements: ${classes.join(', ') || 'none'}`;
 }
 
+const RAW_FIELDS = { value: '.js-pledge-value', currency: '.js-pledge-currency', configValue: '.js-pledge-configuration-value', notBuybackable: '.js-pledge-not-buybackable' } as const;
+/** The hidden inputs money and flags are parsed from, plus the availability text, as RSI wrote them. */
+function rawFields(li: Element): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, sel] of Object.entries(RAW_FIELDS)) {
+    const v = val(li, sel);
+    if (v) out[k] = v;
+  }
+  const av = text(li.querySelector('.availability'));
+  if (av) out.availability = av;
+  return out;
+}
+
 /** Parse one hangar page. Returns [] for an empty page. */
 export function parseHangarPage(root: ParentNode): Pledge[] {
   const out: Pledge[] = [];
@@ -241,11 +258,15 @@ export function parseHangarPage(root: ParentNode): Pledge[] {
     const upgrade = parseUpgradeJson(val(li, '.js-upgrade-data')) ?? (/^upgrade\b/i.test(name) ? upgradeFromName(name) : null);
     const ships = items.filter((i) => i.kind.toLowerCase() === 'ship').map((i) => i.title);
     const titles = items.map((i) => i.title).join(' | ');
-    const value = parseMoney(val(li, '.js-pledge-value'));
+    // In-game purchases carry their UEC price in the same field ("¤15,000 UEC"): not dollars.
+    const price = parseAmount(val(li, '.js-pledge-value'));
+    const inGame = price.currency === 'UEC';
+    const value = inGame ? 0 : price.amount;
     out.push({
       id,
       name,
       value,
+      ...(inGame ? { uec: Math.abs(price.amount) } : {}),
       date: text(li.querySelector('.date-col')).replace(/^created:?\s*/i, ''),
       type: classify(name, items, upgrade),
       items,
@@ -261,11 +282,13 @@ export function parseHangarPage(root: ParentNode): Pledge[] {
       nickname: [...li.querySelectorAll('.custom-name-text')].map((e) => text(e)).filter(Boolean).join(', '),
       ...(image ? { image } : {}),
       ...(val(li, '.js-pledge-not-buybackable') === '1' ? { noBuyback: true } : {}),
-      ...((cur) => (cur ? { paidWith: /store credit/i.test(cur) ? ('credit' as const) : ('cash' as const) } : {}))(val(li, '.js-pledge-currency')),
+      // "UEC" (in-game buy; RSI's button says Exchange) pays back neither credit nor cash.
+      ...((cur) => (cur && !/\buec\b/i.test(cur) ? { paidWith: /store credit/i.test(cur) ? ('credit' as const) : ('cash' as const) } : {}))(val(li, '.js-pledge-currency')),
       ...((cv) => (cv > 0 ? { configValue: cv } : {}))(parseMoney(val(li, '.js-pledge-configuration-value'))),
       ...((av) => (av && !/^attributed$/i.test(av) ? { availability: av } : {}))(text(li.querySelector('.availability'))),
       ...((n) => (n.length ? { nameable: n } : {}))(jsonNames(li, '.js-pledge-nameable-ships')),
       ...((n) => (n.length ? { reservedNames: n } : {}))(jsonNames(li, '.js-pledge-name-reservations')),
+      raw: rawFields(li),
     });
   }
   return out;

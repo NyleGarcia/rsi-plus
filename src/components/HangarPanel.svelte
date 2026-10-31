@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nearView } from '@/lib/near-view';
   import { fetchCredits, loadHangar, updateHangar } from '@/lib/account';
   import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
@@ -416,9 +417,11 @@
     onScreenView = view;
     return Math.max(40, Math.min(keep, rowCount));
   });
+  /** The "more loading" line is near the viewport (`lib/near-view.ts`): rows grow only then. */
+  let near = $state(true);
   $effect(() => {
     onScreen = Math.min(budget, rowCount);
-    if (budget >= rowCount) return;
+    if (budget >= rowCount || !near) return;
     const t = setTimeout(() => (budget += 60), 16);
     return () => clearTimeout(t);
   });
@@ -593,6 +596,7 @@
 {#snippet list()}
   {#if !byShip}
     {@render pledgeTable(visible.slice(0, budget))}
+    {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
   {:else}
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">{groups.length} ships{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
@@ -621,7 +625,7 @@
         </Collapsible.Root>
         {/if}
       {/each}
-      {#if budget < rowCount}<p class="text-muted-foreground text-xs">… {rowCount - budget} more loading</p>{/if}
+      {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
     </div>
   {/if}
 {/snippet}
