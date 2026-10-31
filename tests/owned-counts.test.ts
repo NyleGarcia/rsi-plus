@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
-import { ownedHulls, ownedTitleCounts } from '@/lib/owned-counts';
+import { ownedHulls, ownedTitleCount, ownedTitleCounts } from '@/lib/owned-counts';
 import { paintKey } from '@/lib/store';
 
 const pledge = (id: number, name: string, items: [string, string][], extra: Partial<Pledge> = {}): Pledge => ({
@@ -16,12 +16,25 @@ describe('ownedTitleCounts', () => {
       pledge(1, 'Cutlass - Frost Paint', [['Cutlass - Frost Paint', 'Skin']]),
       pledge(2, 'Package - Starter', [['Cutlass - Frost Paint', 'Skin'], ['Cutlass Black', 'Ship']]),
     ]);
-    expect(m.get(paintKey('Cutlass - Frost Paint'))).toBe(2);
-    expect(m.get(paintKey('Cutlass Black'))).toBe(1);
-    expect(m.get(paintKey('Package - Starter'))).toBe(1);
+    expect(m.exact.get(paintKey('Cutlass - Frost Paint'))).toBe(2);
+    expect(m.exact.get(paintKey('Cutlass Black'))).toBe(1);
+    expect(m.exact.get(paintKey('Package - Starter'))).toBe(1);
+    expect(ownedTitleCount(m, 'Cutlass Frost Livery')).toBe(2);
+  });
+  it('matches a store title against a hangar title RSI cut short with "..." (prefix, once per pledge)', () => {
+    const m = ownedTitleCounts([
+      pledge(1, 'RSI Discovery Month Digital Goodies Pack', [["Lightning Bolt Co. Atzkav 'Starwalker' Sniper R...", 'FPS Weapon'], ["Gemini S71 'Infrared' Rifle", 'FPS Weapon']]),
+      pledge(2, "Stegman's IndVest 'Pathfinder' S...", [["Stegman's IndVest 'Pathfinder' S...", 'Armor']]),
+    ]);
+    expect(m.cut.size).toBe(2);
+    expect(ownedTitleCount(m, "Lightning Bolt Co. Atzkav 'Starwalker' Sniper Rifle")).toBe(1);
+    expect(ownedTitleCount(m, "Gemini S71 'Infrared' Rifle")).toBe(1);
+    expect(ownedTitleCount(m, "Stegman's IndVest 'Pathfinder' Set")).toBe(1); // name + item, one pledge, one copy
+    expect(ownedTitleCount(m, "Lightning Bolt Co. Atzkav 'Deadeye' Sniper Rifle")).toBe(0);
+    expect(ownedTitleCount(m, 'Lightning Bolt Co. Atzkav')).toBe(0); // shorter than the cut title: not a match
   });
   it('empty without a hangar', () => {
-    expect(ownedTitleCounts(null).size).toBe(0);
+    expect(ownedTitleCounts(null).exact.size).toBe(0);
   });
 });
 

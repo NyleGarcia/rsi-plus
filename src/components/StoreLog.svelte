@@ -8,8 +8,8 @@
   import Minus from '@lucide/svelte/icons/minus';
   import { catalogItem, gameShipsItem, hangarItem, storeItemsItem, storeLogItem, storeSnapshotItem } from '@/lib/settings';
   import type { GameShip } from '@/lib/items';
-  import { ownedHulls as ownedHullMap, ownedTitleCounts } from '@/lib/owned-counts';
-  import { isBestValue, isLimitedTime, isLowStock, isNewListing, paintKey, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
+  import { ownedHulls as ownedHullMap, ownedTitleCount, ownedTitleCounts } from '@/lib/owned-counts';
+  import { isBestValue, isLimitedTime, isLowStock, isNewListing, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
   import { cleanLog, dismiss, mergeChanges, skuName, tally, type EntryKind, type MergedChange, type StoreChange, type StoreEntry, type StoreSnapshot } from '@/lib/storelog';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import X from '@lucide/svelte/icons/x';
@@ -86,7 +86,7 @@
       const n = id ? (ownedHulls.get(id)?.count ?? 0) : 0;
       return n ? (e.kind === 'ccu' ? `hull owned${n > 1 ? ` ×${n}` : ''}` : `owned ×${n}`) : null;
     }
-    const n = ownedKeys.get(paintKey(nameOf(e))) ?? 0;
+    const n = ownedTitleCount(ownedKeys, nameOf(e));
     return n ? `owned ×${n}` : null;
   };
   // ---- cart: an item's listing id and a standalone's SKU id are what the cart takes; a CCU needs a source hull → planner ----
@@ -185,7 +185,7 @@
     </Card.Description>
     {#if log.length}
       <Card.Action class="flex flex-wrap items-center gap-2">
-        <OpenCartButton count={cart.added} size="default" />
+        <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />
         <Button variant="outline" onclick={dropAll}>{show === 'all' ? 'Dismiss all' : `Dismiss ${show === 'add' ? 'added' : 'removed'}`}</Button>
         <Segmented
           options={[
@@ -272,7 +272,7 @@
                             {@const to = e.ship ?? known.get(e.key)?.ship}
                             {#if to}<TipButton variant="ghost" size="icon-xs" class="text-primary size-5 shrink-0" href={`#ccu?to=${to}`} tip="Plan a CCU chain to this hull (a CCU needs a ship to start from)" aria-label="Plan CCU"><Route class="size-3" /></TipButton>{/if}
                           {:else if add && skuOf(e) != null}
-                            <CartButton state={cart.of(e.key)} onadd={() => addOne(e)} name={nameOf(e)} />
+                            <CartButton state={cart.of(e.key)} inCart={cart.qtyOf(skuOf(e))} onadd={() => addOne(e)} name={nameOf(e)} />
                           {/if}
                         </div>
                       </div>

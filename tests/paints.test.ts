@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BuybackItem, Pledge } from '@/lib/hangar';
-import { storePaintIndex } from '@/lib/items';
+import { storePaintFor, storePaintIndex } from '@/lib/items';
 import { bestScenario, bundleScenarios, bundleTotals, buybackCompare, costAlone, countTitles, hangarCounts, packHint, storeLinksFor, titleWithCount, gainAt, meltOnlySplit, nextPaintTier, optionAt, optionPay, optionSubset, paintDiscount, paintLine, planBundle, rebuyCandidates, storePacks } from '@/lib/paints';
 import { inventory, ownedShipsWithPaints } from '@/lib/items';
 import type { CatalogShip } from '@/lib/store';
@@ -373,5 +373,15 @@ describe('buyback compare', () => {
     // Mixed entry: the Carrack has a store page, the insurance has none → not fully buyable, one link.
     expect(c.missing[0]!.store.map((l) => l.title)).toEqual(['Carrack']);
     expect(storeLinksFor(['Carrack Paint - Ghoulish Green', 'Odd Mug', 'Hornet - Pyrotechnic Paint'], ships, idx)).toEqual([{ title: 'Carrack Paint - Ghoulish Green', url: 'https://rsi/2', price: 2000, sku: 2 }]); // Hornet paint out of stock
+  });
+});
+
+describe('storePaintFor', () => {
+  const row = (title: string) => ({ key: `paint:${title}`, title, image: null, category: 'paint' as const, count: 1, pledges: [], ship: null, fits: [], fitsVia: null, giftable: 0, lti: 0, insurance: '' }) as unknown as Parameters<typeof storePaintFor>[0];
+  it('by normalized title, else by prefix when the hangar page cut the title short', () => {
+    expect(storePaintFor(row('890 Jump - Skyline Livery'), idx)?.id).toBe(8);
+    expect(storePaintFor(row('Carrack - Ghoulish Gr...'), idx)?.id).toBe(2);
+    expect(storePaintFor(row('Carrack - Nope...'), idx)).toBeNull();
+    expect(storePaintFor(row('Carrack - Nope Paint'), idx)).toBeNull();
   });
 });

@@ -37,8 +37,8 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 | `HintBadge` | Badge props + `hint`, `variant`, `size: 'default'\|'xs'` | Badge with a Tooltip, keyboard-focusable; `xs` for counts in titles / row corners |
 | `LazyTip` | `tip`, `side`, `trigger` snippet `({ props })` | Tooltip around anything; spread `props` on the trigger. Mounts on first hover / focus |
 | `Tag` | `kind`, `value` (insurance/sale), `count` (owned), `size`, `label`, `hint` | Warbond / LTI / owned / Concierge / … |
-| `CartButton` | `state` (ledger entry), `onadd`, `name`, `available`, `busy`, `qty`, `text` | + cart / adding… / in cart / error |
-| `OpenCartButton` | `count`, `always`, `size` | "Open RSI cart (n)" header button |
+| `CartButton` | `state` (ledger entry), `inCart` (ledger `qtyOf`), `onadd`, `name`, `available`, `busy`, `qty`, `text` | + cart / adding… / in cart / error; *in cart ×n* badge, first click arms *Add another?* |
+| `OpenCartButton` | `count`, `total` (ledger `snapshot.qty`), `always`, `size` | "Open RSI cart (n added · m in cart)" header button |
 | `Empty` | `colspan?` | the empty state |
 | `LoadStatus` | `loading`, `data`, `count`, `noun`, `empty`, children | "Loading page 3 / 12…" + progress / "n pledges · loaded …" |
 | `LoadActions` | `loading`, `data`, `noun`, `onstop`, `onload(resume)`, `onupdate`, `updateHint`, `size`, children | Stop / Resume / Update / Reload ladder |
