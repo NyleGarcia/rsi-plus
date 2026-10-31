@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.8.0...v0.9.0) (2026-10-31)
+
+
+### Features
+
+* **cart:** show what is already in the RSI cart; orgs load as you scroll; truncated pack titles count as owned ([ba8dedd](https://github.com/NyleGarcia/rsi-plus/commit/ba8dedd9467d2d4902198a835dc7d03e8a386909))
+* **settings:** display currency, debug export; in-game UEC pledges are not dollars ([b095290](https://github.com/NyleGarcia/rsi-plus/commit/b0952907739db39b6bc0db5004cb890fd37787f7))
+
+
+### Bug Fixes
+
+* **wiki:** link only names the wiki has a page for ([e48c760](https://github.com/NyleGarcia/rsi-plus/commit/e48c760aa7ad9f30e85191d0cfd29acd3396954e))
+
+
+### Performance Improvements
+
+* **hub:** paint clicks first, lazy rows, no blur layers, indexed ship matching ([274b52e](https://github.com/NyleGarcia/rsi-plus/commit/274b52e74481dee68867773643612378b45fc20b))
+
 ## [0.8.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.7.0...v0.8.0) (2026-10-31)
 
 

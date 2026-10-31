@@ -6,6 +6,8 @@ updated: 2026-10-31
 # Changelog
 
 ## Unreleased
+
+## 0.9.0 — 2026-10-31
 - **What's in your RSI cart already.** Browse, Ships (paints by ship), Store changes, Buyback and the CCU planner read your RSI cart back when they open and after every add: lines already in it show *in cart ×n*, and the first click on such a line only asks *Add another?* — a second click adds, so a duplicate is a choice, not an accident. *Open RSI cart* shows the cart's item count.
 - **Friends: orgs load as you scroll, requests fold away.** A friend row scrolled into view fetches its orgs on its own (missing or expired only, ten handles a batch, ~1 citizen page/s) — no need to press *Load all orgs* for the people you are looking at; the cache now lasts 7 days instead of 24 h since org membership rarely changes (*Load all orgs* still re-reads anything older). *Incoming* and *Sent* friend requests are foldable sections (remembered), so an empty request block no longer takes the top of the page.
 - **Pack pieces the hangar page names only halfway now count as owned.** RSI cuts long item titles short on the hangar page ("Lightning Bolt Co. Atzkav 'Starwalker' Sniper R..."), so Browse showed a pack you own as 22 of 23 in your hangar and the Store changes page missed the *owned ×n* tag. A cut-short title now matches a store title that starts with it (Browse, Store changes, and the hangar paint → store paint link on Ships).
