@@ -15,7 +15,8 @@
  *   Pledge values go only when *Send pledge values* is on (and, on Firefox, its financial data-collection category is
  *   granted); otherwise `pledge_cost` is sent empty. Only a hangar read as the handle logged in now is sent
  *   (`hangarItem.handle`), and at most `MAX_SYNC_ROWS` rows. Hulls StarOrg doesn't know come back in `not_found` and
- *   are shown on the card.
+ *   are shown on the card. *Preview* (`previewPayload`) builds the same body locally, with no token and no request;
+ *   `STARORG_FIELDS` describes every field of it.
  * - **Disconnect** logs the token out server-side (its `jti` is denylisted, so a copied token dies too), forgets it
  *   and drops the host permission (plus Firefox's data-collection categories). Under `incognito: split` each context
  *   has its own token but the host permission is shared: it is dropped only when the other context holds no live
@@ -117,6 +118,36 @@ export function buildPayload(
   };
 }
 
+/**
+ * Every field of the `PUT /api/fleet/hangar/sync` body in plain words, for the card's *What is sent* list (PRIVACY.md
+ * says the same). `satisfies Record<…>` makes a field added to or dropped from `SyncPayload` / `StarOrgRow` a type error
+ * until it is described here; `tests/starorg.test.ts` checks the keys against a real `buildPayload`.
+ */
+export const STARORG_FIELDS = {
+  top: {
+    format: 'The file format, always "hangarxplor/1"',
+    client: '"rsi-plus/" and the RSI+ version',
+    rsi_handle: 'Your RSI handle: the one logged in on RSI, which the saved hangar was read as',
+    exported_at: 'When the list was built (UTC date and time)',
+    rows: 'One row per ship, as below',
+  } satisfies Record<keyof SyncPayload, string>,
+  row: {
+    ship_code: 'A code for the ship model, e.g. "AEGS_Avenger_Titan"',
+    ship_name: 'The name you gave that ship in your hangar, else the ship model',
+    name: 'The ship model, e.g. "Avenger Titan"',
+    manufacturer_code: 'The maker’s short code, e.g. "AEGS" (empty if unknown)',
+    manufacturer_name: 'The maker, e.g. "Aegis Dynamics" (empty if unknown)',
+    lti: 'Whether the pledge has lifetime insurance (false for in-game ships)',
+    warbond: 'Whether the pledge was a warbond (false for in-game ships)',
+    entity_type: 'Always "ship"',
+    pledge_id: 'The RSI pledge number the ship is in (empty for in-game ships)',
+    pledge_name: 'The pledge’s title, or "In-game (bought)" / "In-game (earned)"',
+    pledge_cost: 'The pledge’s value, e.g. "$45.00 USD" ("$0.00 USD" for in-game ships); empty unless Send pledge values is on',
+    insurance: 'The insurance term the pledge lists, e.g. "LTI" or "120 mo"; left out when it lists none, and for in-game ships',
+    acquired: '"pledge" for a hangar ship, "game" for one you added on My ships (bought or earned in the game)',
+  } satisfies Record<keyof StarOrgRow, string>,
+} as const;
+
 /** cyrb53: a fast, stable 53-bit string hash (not cryptographic — it only detects change). */
 function cyrb53(s: string): string {
   let h1 = 0xdeadbeef;
@@ -132,7 +163,7 @@ function cyrb53(s: string): string {
 }
 
 /**
- * Hash of the row set as StarOrg would store it: pledge id, hull, nickname, flags, insurance, source and the (possibly
+ * Hash of the row set as StarOrg would store it: pledge id, hull, ship name, flags, insurance, source and the (possibly
  * blanked) value of every row, order-insensitive. Same rows → same hash, whatever order the hangar lists them in.
  */
 export function changeHash(rows: StarOrgRow[]): string {
@@ -455,6 +486,18 @@ async function doSend(catalog: () => Promise<CatalogShip[]>, { onlyIfChanged = f
     if (prev?.ok && prev.hash === changeHash(payload.rows) && prev.handle === me.handle) return null;
   }
   return push(payload);
+}
+
+/**
+ * The payload a send would carry now, built locally for the card's *Preview*: the saved hangar, *My ships*, the same
+ * pledge-value rule as a send, and the handle the hangar was read as (a send also checks RSI still shows that login).
+ * Needs no token and makes no StarOrg request. An incomplete hangar gives `error` instead.
+ */
+export async function previewPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ payload: SyncPayload } | { error: string }> {
+  const hangar = await hangarItem.getValue();
+  if (!hangar?.complete) return { error: 'Your whole hangar isn’t loaded yet (Hangar → Pledges), so there is nothing to preview.' };
+  const [{ starorgSendCost }, game, ships] = await Promise.all([getSettings(), gameShipsItem.getValue(), catalog()]);
+  return { payload: buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: hangar.handle ?? '' }) };
 }
 
 /** `GET /api/fleet/hangar/sync`: when StarOrg last received each of your RSI handles. null = not connected / failed. */

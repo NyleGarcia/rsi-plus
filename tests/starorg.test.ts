@@ -17,7 +17,9 @@ import {
   MISMATCH,
   mismatchMessage,
   pkcePair,
+  previewPayload,
   push,
+  STARORG_FIELDS,
   s256,
   sendHangar,
   hostsOf,
@@ -73,6 +75,38 @@ describe('payload builder', () => {
   it('blanks pledge_cost on every row unless Send pledge values is on', () => {
     expect(payload(false).rows.map((r) => r.pledge_cost)).toEqual(['', '', '']);
     expect(payload(true).rows.map((r) => r.pledge_cost)).toEqual(['$45.00 USD', '$0.00 USD', '$110.00 USD']);
+  });
+  it('STARORG_FIELDS describes exactly the fields a payload carries (the card’s What is sent list cannot drift)', () => {
+    const p = payload(true);
+    expect(Object.keys(p).sort()).toEqual(Object.keys(STARORG_FIELDS.top).sort());
+    // Union over a pledged hull with insurance, one without, and an in-game ship: every key any row can carry.
+    const rowKeys = new Set(p.rows.flatMap((r) => Object.keys(r)));
+    expect([...rowKeys].sort()).toEqual(Object.keys(STARORG_FIELDS.row).sort());
+    expect(Object.values({ ...STARORG_FIELDS.top, ...STARORG_FIELDS.row }).every((d) => d.length > 0)).toBe(true);
+  });
+});
+
+describe('previewPayload', () => {
+  const catalog = async () => ships;
+  it('builds the send body from the saved hangar with no token and no request', async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
+    await gameShipsItem.setValue(game);
+    const r = await previewPayload(catalog);
+    expect(fetchMock).not.toHaveBeenCalled();
+    if (!('payload' in r)) throw new Error(r.error);
+    const { exported_at: _a, client: _c, ...rest } = r.payload;
+    const { exported_at: _b, client: _d, ...want } = buildPayload(pledges, game, ships, { sendCost: false, rsiHandle: 'zedwil' });
+    expect(rest).toEqual(want);
+  });
+  it('follows Send pledge values', async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
+    await patchSettings({ starorgSendCost: true });
+    const r = await previewPayload(catalog);
+    expect('payload' in r && r.payload.rows.map((x) => x.pledge_cost)).toEqual(['$45.00 USD', '$110.00 USD']);
+  });
+  it('says so when the hangar is not fully loaded', async () => {
+    await hangarItem.setValue({ at: 1, pledges, complete: false, handle: 'zedwil' });
+    expect(await previewPayload(catalog)).toEqual({ error: expect.stringMatching(/isn’t loaded/) });
   });
 });
 

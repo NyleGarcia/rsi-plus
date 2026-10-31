@@ -3,18 +3,24 @@
    * Settings → Integrations → StarOrg Tools: connect / disconnect, who StarOrg knows you as, the last send, *Send
    * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync / Send pledge values switches.
    * Shown only while the *StarOrg Tools* switch above it is on. Every network call is in `lib/starorg.ts` and runs only
-   * while connected.
+   * while connected. *What is sent* lists every field from `STARORG_FIELDS` before connecting; *Preview* builds the exact
+   * body locally (`previewPayload`, no token, no request) and shows it — in screenshare mode with the handle, ship names
+   * and values masked on screen (*Copy JSON* still copies the real body).
    */
-  import { connect, currentAuth, disconnect, originOf, usableAuth, requestCostAccess, sendHangar, status, STARORG_TARGETS, type StarOrgAuth, type StarOrgSync, type StarOrgTarget } from '@/lib/starorg';
+  import { connect, currentAuth, disconnect, originOf, usableAuth, previewPayload, requestCostAccess, sendHangar, status, STARORG_FIELDS, STARORG_TARGETS, type StarOrgAuth, type StarOrgSync, type StarOrgTarget, type SyncPayload } from '@/lib/starorg';
   import { catalogItem, getSettings, patchSettings, settingsItem, starorgItem, starorgSyncItem, type Settings } from '@/lib/settings';
   import { STARORG_TOGGLES } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
   import { ago, fmtDateTime } from '@/lib/dates';
-  import { own } from '@/lib/privacy.svelte';
+  import { MASK, own, privacy } from '@/lib/privacy.svelte';
+  import { transient } from '@/lib/flash.svelte';
   import { LINK } from '@/lib/ui';
   import { Button } from '@/components/ui/button';
   import * as Alert from '@/components/ui/alert';
+  import * as Collapsible from '@/components/ui/collapsible';
+  import * as Dialog from '@/components/ui/dialog';
   import * as Select from '@/components/ui/select';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import SwitchRow from './SwitchRow.svelte';
   import ConfirmButton from './ConfirmButton.svelte';
   import HintBadge from './HintBadge.svelte';
@@ -23,7 +29,7 @@
   let auth = $state<StarOrgAuth | null>(null);
   let sync = $state<StarOrgSync | null>(null);
   let s = $state<Settings | null>(null);
-  let busy = $state<'connect' | 'send' | 'disconnect' | null>(null);
+  let busy = $state<'connect' | 'send' | 'disconnect' | 'preview' | null>(null);
   let error = $state<string | null>(null);
   /** StarOrg's own record of the last push per RSI handle (GET /sync), newest first. */
   let remote = $state<{ rsi_handle: string; last_sync_at: string | null }[] | null>(null);
@@ -92,11 +98,45 @@
   // connect() asks for the host permission first, synchronously inside this click (browsers need the gesture).
   const onConnect = () => run('connect', () => connect(s?.starorgTarget ?? 'prod'));
   const onDisconnect = () => run('disconnect', disconnect);
+  const loadCatalog = async () => ((await catalogItem.getValue()) ?? (await bg({ type: 'catalog:get' }))).ships;
   const onSend = () =>
     run('send', async () => {
-      const r = await sendHangar(async () => ((await catalogItem.getValue()) ?? (await bg({ type: 'catalog:get' }))).ships);
+      const r = await sendHangar(loadCatalog);
       if (!r) error = 'Not connected to StarOrg Tools.';
     });
+
+  /** The body a send would carry, as last previewed. */
+  let preview = $state<SyncPayload | null>(null);
+  let previewOpen = $state(false);
+  const copied = transient(2000);
+  const onPreview = () =>
+    run('preview', async () => {
+      const r = await previewPayload(loadCatalog);
+      if ('error' in r) throw new Error(r.error);
+      preview = r.payload;
+      previewOpen = true;
+    });
+  /** Screenshare: the handle, ship names and values are masked on screen only. */
+  const previewText = $derived(
+    !preview
+      ? ''
+      : JSON.stringify(
+          privacy.on
+            ? { ...preview, rsi_handle: MASK, rows: preview.rows.map((r) => ({ ...r, ship_name: MASK, pledge_cost: r.pledge_cost && `$${MASK}` })) }
+            : preview,
+          null,
+          2,
+        ),
+  );
+  async function onCopy() {
+    if (!preview) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(preview, null, 2));
+      copied.show('Copied');
+    } catch {
+      copied.show('Copy blocked — select the text instead');
+    }
+  }
 
   const lastRemote = $derived(remote?.[0] ?? null);
 </script>
@@ -116,8 +156,53 @@
   </div>
 
   <p class="text-muted-foreground text-xs">
-    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (hull, nickname, LTI / warbond / insurance, pledge id and pledge name; pledge values only if you turn that on). Off until you press Connect; nothing else ever leaves RSI.
+    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge number and title; pledge values only if you turn that on) with your RSI handle. Nothing is sent until you press Connect, and nothing else from RSI is ever sent.
   </p>
+
+  <Collapsible.Root>
+    <Collapsible.Trigger>
+      {#snippet child({ props })}
+        <Button {...props} variant="link" size="xs" class="h-auto justify-self-start p-0">
+          <ChevronDown class="transition-transform [[data-state=closed]>&]:-rotate-90" aria-hidden="true" />What is sent
+        </Button>
+      {/snippet}
+    </Collapsible.Trigger>
+    <Collapsible.Content class="grid gap-2 pt-2 text-xs">
+      <p class="text-muted-foreground">
+        Each send is one request to {origin}/api/fleet/hangar/sync, carrying your StarOrg sign-in token and this, exactly:
+      </p>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {#each Object.entries(STARORG_FIELDS.top) as [k, d] (k)}<dt><code>{k}</code></dt><dd class="text-muted-foreground">{d}</dd>{/each}
+      </dl>
+      <p class="text-muted-foreground">Each ship row (pledged hulls, plus the ships you added on <em>My ships</em>):</p>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {#each Object.entries(STARORG_FIELDS.row) as [k, d] (k)}<dt><code>{k}</code></dt><dd class="text-muted-foreground">{d}</dd>{/each}
+      </dl>
+      <p class="text-muted-foreground">
+        Never sent: pledge dates, store credit, buyback, orders or billing, the rest of a pledge (paints, gear, upgrades), your labels, Spectrum, friends, other saved logins, or any cookie or RSI login. Besides sending, RSI+ talks to StarOrg Tools only to sign you in, to ask when it last got your hangar, and to sign out.
+      </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" onclick={onPreview} disabled={busy !== null}>{busy === 'preview' ? 'Building…' : 'Preview'}</Button>
+        <span class="text-muted-foreground">Builds what a send would contain now, here in the browser. Nothing is sent.</span>
+      </div>
+    </Collapsible.Content>
+  </Collapsible.Root>
+
+  <Dialog.Root bind:open={previewOpen}>
+    <Dialog.Content class="sm:max-w-2xl">
+      <Dialog.Header>
+        <Dialog.Title>What a send would contain</Dialog.Title>
+        <Dialog.Description>
+          {preview?.rows.length ?? 0} ship row{preview?.rows.length === 1 ? '' : 's'}, built here from your saved hangar. Nothing was sent.{#if privacy.on} Screenshare mode: your handle, ship names and values are masked here; <em>Copy JSON</em> copies the real list.{/if}
+        </Dialog.Description>
+      </Dialog.Header>
+      <pre class="bg-muted max-h-[60vh] overflow-auto rounded-md p-3 text-xs">{previewText}</pre>
+      <Dialog.Footer>
+        {#if copied.text}<span class="text-muted-foreground self-center text-xs" role="status">{copied.text}</span>{/if}
+        <Button size="sm" variant="outline" onclick={onCopy}>Copy JSON</Button>
+      </Dialog.Footer>
+    </Dialog.Content>
+  </Dialog.Root>
 
   <div class="flex flex-wrap items-center gap-2 text-sm">
     <span id="starorg-site" class="text-muted-foreground">Site</span>

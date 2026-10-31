@@ -1,6 +1,6 @@
 # RSI+ Privacy Policy
 
-_Last updated: 2026-10-29_
+_Last updated: 2026-10-30_
 
 RSI+ is a browser extension that improves the Roberts Space Industries website (Spectrum, hangar, buyback, pledge store). It runs entirely in your browser. There is no RSI+ server, account, or analytics. It talks only to RSI, and to StarOrg Tools if you connect it.
 
@@ -9,9 +9,32 @@ RSI+ is a browser extension that improves the Roberts Space Industries website (
 - **Roberts Space Industries (robertsspaceindustries.com) — the only site it talks to.** Your RSI session cookie (`Rsi-Token`, read so the background can call Spectrum's API on your behalf, exactly as the site does), Spectrum threads, channels, replies and your friends list, your hangar, buyback and store-credit pages, the public pledge-store catalog, and the public funding statistics. Used to track what you have read, mute and watch things, manage friend requests, list and value your pledges, plan CCU chains and paint buybacks, and notify you.
 - **Account switcher (optional, off until you turn it on in Settings):** *Save this login* copies your RSI cookies into the extension's storage so you can switch between your own accounts. Nothing is saved unless you press it; *Forget* deletes it.
 - **Public citizen pages (optional):** *Load all orgs* on the Friends tab reads your friends' public RSI profile pages to show their organisations.
-- **StarOrg Tools (optional, off until you turn it on and press Connect):** Settings → Integrations → StarOrg Tools. You choose the site: production (`starorg.tools`) or the dev site (`dev.starorg.tools`). Optional: connect StarOrg Tools to send your ship list (hull, nickname, LTI / warbond / insurance, pledge id and pledge name; pledge values only if you turn that on). Off until you press Connect; nothing else ever leaves RSI.
+- **StarOrg Tools (optional, off until you turn it on and press Connect):** Settings → Integrations → StarOrg Tools. You choose the site: production (`starorg.tools`) or the dev site (`dev.starorg.tools`), and every request goes only to the site you connected to. Connected, RSI+ sends your ship list there, and nothing else from RSI. Nothing is sent until you press Connect. The card's *What is sent* list names the same fields as below, and its *Preview* button shows the exact list a send would contain, built in your browser without sending anything.
   - *Connect* asks your browser for permission to reach the site you chose (`starorg.tools` or `dev.starorg.tools`; on Firefox also for the optional data-collection categories "personally identifying information" and "website content"), then opens StarOrg's own sign-in (Discord). RSI+ never sees your Discord or StarOrg password; it keeps the StarOrg sign-in token in the extension's local storage on this device (never in browser sync), for up to 90 days. If you cancel the sign-in or it fails, the permission is given back.
-  - What a send contains: your RSI handle (the one logged in on RSI), and for each ship in your hangar and each in-game ship you entered on *My ships*: the hull name and code, maker, your nickname for it, LTI / warbond, the insurance term, the pledge id and pledge name, and whether it was pledged or bought in-game. Pledge values are sent only when *Send pledge values* is on (on Firefox, turning it on also asks for the "financial and payment information" category; refused, it stays off). Only a hangar read while the same RSI handle was logged in is sent. Nothing else from RSI (no store credit, buyback, orders, Spectrum, friends or cookies) is sent.
+  - **Every request RSI+ makes to StarOrg Tools.** RSI+ sends none of your browser's cookies with them (neither RSI's nor StarOrg's); after sign-in, the StarOrg sign-in token is what identifies you. Your browser adds its usual headers, such as its user agent.
+    1. *Sign-in* — `GET /api/auth/extension/login`, opened in the browser's sign-in window, with three values: a one-time PKCE challenge, the method name `S256` and the extension's redirect address. The page is StarOrg's own; what you enter there goes to StarOrg and Discord, never to RSI+.
+    2. *Sign-in exchange* — `POST /api/auth/extension/exchange` with the one-time code StarOrg handed back and the matching PKCE verifier. No RSI data. StarOrg answers with the token and who it knows you as (Discord id, username, RSI handle and whether it is verified); there is no separate "who am I" request.
+    3. *Send hangar* — `PUT /api/fleet/hangar/sync` with the token and the ship list below.
+    4. *Sync status* — `GET /api/fleet/hangar/sync` with the token only, no body: only while the StarOrg Tools card is on screen and connected (when it opens, and after each send), to show when StarOrg last received your hangar.
+    5. *Sign-out* — `POST /api/auth/logout` with the token only, no body: on *Disconnect*, when you turn the *StarOrg Tools* switch off, and if you turn it off while the sign-in window is open.
+  - **What a send contains**, field by field (the HangarXPLOR fleet format):
+    - `format` — always `hangarxplor/1`.
+    - `client` — `rsi-plus/` and the RSI+ version.
+    - `rsi_handle` — your RSI handle: the one logged in on RSI. Only a hangar read while that same handle was logged in is sent.
+    - `exported_at` — when the list was built (UTC date and time).
+    - `rows` — one row per ship: each ship hull in your hangar's pledges, and each copy of a ship you added on *My ships* (bought or earned in the game); at most 500 per send. Each row holds:
+      - `ship_code` — a code for the ship model, e.g. `AEGS_Avenger_Titan`.
+      - `ship_name` — the name you gave that ship in your hangar, else the ship model. In a pack, each ship carries only its own name.
+      - `name` — the ship model, e.g. `Avenger Titan`.
+      - `manufacturer_code` / `manufacturer_name` — the maker, e.g. `AEGS` / `Aegis Dynamics` (empty if unknown).
+      - `lti`, `warbond` — whether the pledge has lifetime insurance / was a warbond (`false` for in-game ships).
+      - `insurance` — the insurance term the pledge lists, e.g. `LTI` or `120 mo`; left out when it lists none, and for in-game ships.
+      - `entity_type` — always `ship`.
+      - `pledge_id` — the RSI pledge number the ship is in (empty for in-game ships).
+      - `pledge_name` — the pledge's title, or `In-game (bought)` / `In-game (earned)`.
+      - `pledge_cost` — **empty unless *Send pledge values* is on**; then the pledge's value, e.g. `$45.00 USD` (`$0.00 USD` for in-game ships). On Firefox, turning it on also asks for the "financial and payment information" category; refused, it stays off.
+      - `acquired` — `pledge` for a hangar ship, `game` for one from *My ships*.
+  - **Never sent to StarOrg Tools:** pledge dates, store credit, buyback, orders or billing, the rest of a pledge's contents (paints, gear, upgrades — only ship hulls), whether a pledge is giftable or meltable, your labels, wishlist, CCU chains or paint plans, Spectrum or friends, your RSI display name or avatar, other saved logins, your RSI session or any cookie.
   - When it is sent: when you press *Send hangar now*, or, with *Auto-sync* on, after each full hangar load, and once a week, when RSI+ re-reads your hangar from RSI and sends it if your ship list changed since the last successful send (not in passive mode). Screenshare mode hides things on screen only; it does not change what is sent.
   - *Disconnect* signs the token out on StarOrg Tools, deletes it from the extension and removes the permission (on Firefox, the data-collection categories too). Chromium only: if an incognito window is also connected (it signs in separately), the shared permission stays until that one disconnects too. The ships already sent stay in your StarOrg Tools hangar until you remove them there, under StarOrg Tools' own privacy policy.
 
