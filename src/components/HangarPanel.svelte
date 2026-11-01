@@ -16,6 +16,7 @@
   import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
+  import { pledgeMsrp } from '@/lib/wallet';
   import Stat from './Stat.svelte';
   import StatGrid from './StatGrid.svelte';
   import LoadStatus from './LoadStatus.svelte';
@@ -76,7 +77,7 @@
     labels = plain;
     pledgeLabelsItem.setValue(plain);
   };
-  type Col = 'name' | 'type' | 'value' | 'date' | 'flags' | 'qty';
+  type Col = 'name' | 'type' | 'value' | 'msrp' | 'date' | 'flags' | 'qty';
   let sort = $state<SortState<Col>>({ key: 'date', dir: 'desc' });
   let ctrl: AbortController | null = null;
 
@@ -223,6 +224,23 @@
     const list = applyFacets(base, facets, facetValues, pledgeRanges);
     return query ? list.filter((p) => [p.name, p.nickname, ...p.items.map((i) => i.title)].some((s) => s.toLowerCase().includes(query))) : list;
   });
+  /** Today's MSRP of each pledge's ships (pledge id → USD, null when unpriced): melt value vs buying the ships now. */
+  const msrpOf = $derived.by(() => {
+    const ships = cat?.ships ?? [];
+    return new Map(all.map((p) => [p.id, ships.length ? pledgeMsrp(p, ships) : null]));
+  });
+  /** Saved vs MSRP over the pledges on show that have a price (MSRP − melt value), and how many count. */
+  const savedSum = $derived.by(() => {
+    let msrp = 0, paid = 0, n = 0;
+    for (const p of shown) {
+      const m = msrpOf.get(p.id);
+      if (m == null) continue;
+      msrp += m;
+      paid += p.value;
+      n++;
+    }
+    return { msrp, paid, saved: msrp - paid, n };
+  });
   const stacks = $derived.by(() => {
     const st = grouping === 'identical' ? stackPledges(shown) : shown.map((p) => ({ key: String(p.id), rep: p, entries: [p] }) as PledgeStack);
     // Ties keep RSI's order (newest first); same-day pledges stay in that order.
@@ -230,6 +248,7 @@
       name: (s) => s.rep.name,
       type: (s) => s.rep.type,
       value: (s) => s.rep.value,
+      msrp: (s) => { const m = msrpOf.get(s.rep.id); return m == null ? null : m - s.rep.value; },
       date: (s) => dateValue(s.rep.date),
       flags: (s) => [s.rep.lti, s.rep.warbond, s.entries.some((p) => p.giftable), s.rep.upgraded, s.rep.hasGame].filter(Boolean).length,
       qty: (s) => s.entries.length,
@@ -251,7 +270,9 @@
   // ---- panes: Pledges (the list) / Melt calculator (same list with the tick + "Would lose" columns) ----
   type Pane = 'pledges' | 'melt';
   const PREFS = 'rsiplus:hangar';
-  type Prefs = Partial<{ byShip: boolean; hiddenSets: string[]; facets: FacetValues; group: 'identical' | 'none' }>;
+  type Prefs = Partial<{ byShip: boolean; shipShow: ShipShow; hiddenSets: string[]; facets: FacetValues; group: 'identical' | 'none' }>;
+  /** Which ship groups show by ship: all, ships you own, ships you hold only paints / parts / CCUs for, pledges tied to no ship. */
+  type ShipShow = 'all' | 'owned' | 'unowned' | 'loose';
   const savedPrefs = (() => {
     try {
       return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Prefs;
@@ -263,6 +284,7 @@
   let { pane = 'pledges' }: { pane?: Pane } = $props();
   /** Group the list by ship: each hull with the paints / parts / CCUs for it nested under it (every pledge keeps its own row). */
   let byShip = $state(savedPrefs.byShip ?? false);
+  let shipShow = $state<ShipShow>(savedPrefs.shipShow ?? 'all');
   /** Event / flair sets (Luminalia, IAE, Subscriber, "RSI Disc.", "AA" …) whose pledges are hidden from the list. */
   let hiddenSets = $state<string[]>(savedPrefs.hiddenSets ?? []);
   /** Facet choices on the Pledges list (FacetBar). */
@@ -271,7 +293,7 @@
   let grouping = $state<'identical' | 'none'>(savedPrefs.group ?? 'identical');
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ byShip, hiddenSets, facets: facetValues, group: grouping }));
+      localStorage.setItem(PREFS, JSON.stringify({ byShip, shipShow, hiddenSets, facets: facetValues, group: grouping }));
     } catch {
       /* no persistence — fine */
     }
@@ -295,7 +317,7 @@
         }
         return { ...g, rows, value: rows.reduce((n, st) => n + st.rep.value * st.entries.length, 0), count: rows.reduce((n, st) => n + st.entries.length, 0) };
       })
-      .filter((g) => g.rows.length);
+      .filter((g) => g.rows.length && (shipShow === 'all' || shipShow === (g.key === '~' ? 'loose' : g.owned ? 'owned' : 'unowned')));
   });
   let closed = $state<Set<string>>(new Set());
   const toggleGroup = (k: string) => {
@@ -498,6 +520,7 @@
                 </Stat>
               {/if}
               <Stat value={money(sum.value)} label="melt value" />
+              {#if savedSum.n}<Stat value={money(savedSum.saved)} label="saved vs MSRP" valueTone={savedSum.saved < 0 ? 'err' : null} hint={`Ships' store price today (${money(savedSum.msrp)}) minus what ${savedSum.n} pledge${savedSum.n === 1 ? '' : 's'} with them cost (melt value ${money(savedSum.paid)}). Pledges without a ship the store prices are left out.`} />{/if}
               <Stat value={sum.pledges} label="pledges" />
               <Stat value={sum.ships} label="ships" />
               <Stat value={sum.upgrades} label="CCUs" />
@@ -599,7 +622,19 @@
     {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
   {:else}
     <div class="flex flex-wrap items-center gap-2 text-xs">
-      <span class="text-muted-foreground">{groups.length} ships{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
+      <span class="text-muted-foreground">Show:</span>
+      <Segmented
+        options={[
+          { id: 'all', label: 'all' },
+          { id: 'owned', label: 'ships you own' },
+          { id: 'unowned', label: 'ships not owned', hint: 'Paints, parts and CCUs for a ship you don\'t have' },
+          { id: 'loose', label: 'not tied to a ship', hint: 'Gear, flair, game packages and items RSI+ can\'t match to any ship' },
+        ]}
+        bind:value={shipShow}
+        ariaLabel="Which ships to show"
+        size="sm"
+      />
+      <span class="text-muted-foreground">{groups.length} {groups.length === 1 ? 'group' : 'groups'}{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
       <span class="grow"></span>
       <Button variant="outline" size="sm" onclick={() => (closed = new Set())}>Expand all</Button>
       <Button variant="outline" size="sm" onclick={() => (closed = new Set(groups.map((g) => g.key)))}>Collapse all</Button>
@@ -615,7 +650,7 @@
             {#if g.ship?.thumb}<Thumb src={g.ship.thumb} name={g.label} width={40} height={22} />{/if}
             <strong class={g.ship && !g.owned ? 'text-muted-foreground' : ''}>{g.label}</strong>
             {#if g.ship}
-              {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `${g.hulls} hulls` : 'hull'}</Badge>{:else}<Badge variant="warning">no hull</Badge>{/if}
+              {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `you own ${g.hulls}` : 'you own it'}</Badge>{:else}<Badge variant="outline">ship not owned · only its paints / parts / CCUs</Badge>{/if}
             {/if}
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
           </Collapsible.Trigger>
@@ -643,7 +678,7 @@
       ariaLabel="Group pledges"
       size="sm"
     />
-    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row" checked={byShip} onchange={(v) => (byShip = v)} />
+    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row. Ships you don't own but hold paints, parts or CCUs for are listed too, after the ones you own" checked={byShip} onchange={(v) => (byShip = v)} />
     <SwitchRow id="hangar-all-items" size="sm" label="Show all items in every pledge" checked={allItems} onchange={(v) => (allItems = v)} />
     {#if setOptions.length}
       <DropdownMenu.Root>
@@ -671,7 +706,23 @@
 {/snippet}
 
 {#snippet pledgeTable(rows: PledgeStack[])}
-          <Table.Root>
+          <!-- By ship every group is its own table: fixed column widths keep the columns lined up from group to group. -->
+          <Table.Root class={byShip ? 'min-w-[1100px] table-fixed' : ''}>
+            {#if byShip}
+              <colgroup>
+                {#if melting}<col class="w-10" />{/if}
+                <col />
+                <col class="w-16" />
+                <col class="w-24" />
+                <col class="w-24" />
+                <col class="w-32" />
+                <col class="w-28" />
+                <col class="w-56" />
+                <col class="w-20" />
+                {#if melting}<col class="w-48" />{/if}
+                <col class="w-60" />
+              </colgroup>
+            {/if}
             <Table.Header>
               <Table.Row>
                 {#if melting}<Table.Head><Checkbox aria-label="Pick all shown" checked={allShownPicked} onCheckedChange={(v) => pickAll(shown, v)} /></Table.Head>{/if}
@@ -679,6 +730,11 @@
                 <SortTh key="qty" bind:sort firstDir="desc">Qty</SortTh>
                 <SortTh key="type" bind:sort>Type</SortTh>
                 <SortTh key="value" bind:sort firstDir="desc" numeric>Value</SortTh>
+                <SortTh key="msrp" bind:sort firstDir="desc" numeric>
+                  <LazyTip tip="The ships' store price today, and what you saved against it (MSRP − melt value). Sorts by saved. An upgraded pledge is priced at the ship it was upgraded to, so cheap CCU chains show up here. Ships only: game packages and paints aren't priced">
+                    {#snippet trigger({ props })}<span {...props}>MSRP</span>{/snippet}
+                  </LazyTip>
+                </SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
                 <Table.Head>
@@ -751,7 +807,17 @@
                   </Table.Cell>
                   <Table.Cell>{p.type}</Table.Cell>
                   <Table.Cell class="text-right tabular-nums">{money(p.value)}{#if n > 1}<div class="text-muted-foreground text-xs">{money(p.value * n)} total</div>{/if}</Table.Cell>
-                  <Table.Cell class="text-muted-foreground text-xs">{n > 1 ? `${dateCell(s.entries[n - 1]!.date)} – ${dateCell(p.date)}` : dateCell(p.date)}</Table.Cell>
+                  <Table.Cell class="text-right tabular-nums">
+                    {@const m = msrpOf.get(p.id)}
+                    {#if m == null}<span class="text-muted-foreground">—</span>
+                    {:else}
+                      {money(m)}
+                      {@const d = m - p.value}
+                      {#if d > 0}<div class="text-success text-xs">saved {money(d)} ({Math.round((d / m) * 100)}%)</div>
+                      {:else if d < 0}<div class="text-muted-foreground text-xs">{money(-d)} over</div>{/if}
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell class="text-muted-foreground text-xs whitespace-normal">{n > 1 ? `${dateCell(s.entries[n - 1]!.date)} – ${dateCell(p.date)}` : dateCell(p.date)}</Table.Cell>
                   <Table.Cell class="whitespace-normal">
                     <div class="flex flex-wrap gap-0.5">
                       {#if p.insurance}<Tag kind="insurance" value={p.insurance} />{:else if p.lti}<Tag kind="insurance" value="LTI" />{/if}

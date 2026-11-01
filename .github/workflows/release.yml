@@ -137,3 +137,46 @@ jobs:
             exit 0
           fi
           npx wxt submit --chrome-api-version v2 --chrome-zip .output/*-chrome.zip
+
+  # After a release, merge main back into dev so dev carries the bumped version (.release-please-manifest.json — the
+  # prerelease numbering reads it), CHANGELOG.md and the rolled docs/changelog.md. The docs/changelog.md conflict
+  # (main rolled Unreleased, dev added to it) is resolved by scripts/backmerge-changelog.mjs; any other conflict opens
+  # a main → dev PR to merge by hand. Pushed with GITHUB_TOKEN, so it starts no workflows: the next dev push builds
+  # the next prerelease.
+  backmerge:
+    needs: [release-please, assets]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Merge main into dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git merge-base --is-ancestor origin/main HEAD; then echo "dev already has main"; exit 0; fi
+          msg="chore: merge main ($TAG) back into dev"
+          if ! git merge --no-ff -m "$msg" origin/main; then
+            conflicts=$(git diff --name-only --diff-filter=U)
+            if [ "$conflicts" = "docs/changelog.md" ]; then
+              node scripts/backmerge-changelog.mjs origin/main HEAD
+              git add docs/changelog.md
+              git commit --no-edit
+            else
+              git merge --abort
+              echo "::warning::main → dev back-merge conflicts outside docs/changelog.md: $(echo $conflicts) — opening a PR"
+              gh pr create --base dev --head main --title "$msg" \
+                --body "Automatic back-merge after $TAG hit conflicts in: $(echo $conflicts). Resolve and merge so dev carries the new version." \
+                || echo "::warning::PR not created (one may already be open)"
+              exit 0
+            fi
+          fi
+          git push origin HEAD:dev
