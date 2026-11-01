@@ -706,7 +706,23 @@
 {/snippet}
 
 {#snippet pledgeTable(rows: PledgeStack[])}
-          <Table.Root>
+          <!-- By ship every group is its own table: fixed column widths keep the columns lined up from group to group. -->
+          <Table.Root class={byShip ? 'min-w-[1100px] table-fixed' : ''}>
+            {#if byShip}
+              <colgroup>
+                {#if melting}<col class="w-10" />{/if}
+                <col />
+                <col class="w-16" />
+                <col class="w-24" />
+                <col class="w-24" />
+                <col class="w-32" />
+                <col class="w-28" />
+                <col class="w-56" />
+                <col class="w-20" />
+                {#if melting}<col class="w-48" />{/if}
+                <col class="w-60" />
+              </colgroup>
+            {/if}
             <Table.Header>
               <Table.Row>
                 {#if melting}<Table.Head><Checkbox aria-label="Pick all shown" checked={allShownPicked} onCheckedChange={(v) => pickAll(shown, v)} /></Table.Head>{/if}
@@ -801,7 +817,7 @@
                       {:else if d < 0}<div class="text-muted-foreground text-xs">{money(-d)} over</div>{/if}
                     {/if}
                   </Table.Cell>
-                  <Table.Cell class="text-muted-foreground text-xs">{n > 1 ? `${dateCell(s.entries[n - 1]!.date)} – ${dateCell(p.date)}` : dateCell(p.date)}</Table.Cell>
+                  <Table.Cell class="text-muted-foreground text-xs whitespace-normal">{n > 1 ? `${dateCell(s.entries[n - 1]!.date)} – ${dateCell(p.date)}` : dateCell(p.date)}</Table.Cell>
                   <Table.Cell class="whitespace-normal">
                     <div class="flex flex-wrap gap-0.5">
                       {#if p.insurance}<Tag kind="insurance" value={p.insurance} />{:else if p.lti}<Tag kind="insurance" value="LTI" />{/if}
