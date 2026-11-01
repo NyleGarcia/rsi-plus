@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.10.0...v0.11.0) (2026-11-01)
+
+
+### Features
+
+* **hangar:** sticky header that sorts ships and pledges, per-ship sort, sortable labels and entries; accent pills and live slider values ([bd39136](https://github.com/NyleGarcia/rsi-plus/commit/bd391367025b351af96518a2e7b60c90ec120117))
+
 ## [0.10.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.9.0...v0.10.0) (2026-11-01)
 
 

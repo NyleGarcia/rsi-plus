@@ -6,6 +6,8 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+
+## 0.11.0 — 2026-11-01
 - **Easier to see what's picked.** Option switches (Show, Ships by, Group, and the rest across the hub) mark the picked option in the accent colour instead of a faint grey. Range filters (*Melt value* and the like) show the range live while you drag the slider (above it and in the min / max boxes); the list still updates when you let go.
 - **Pledges: every column sorts; Group by ship gets one sticky header.** *Labels* (A→Z, unlabelled last) and *Hangar entries* (pledge number, newest first) are now sortable too. With *Group by ship* on, the column header is no longer repeated in every ship: one header stays at the top while you scroll and sorts both the ships and the pledges inside each (*Pledge* by ship name; *Qty*, *Value*, *MSRP* and *Created* by each ship's pledge count, melt value, saving and newest pledge), still as ships you own, then not owned, then not related to a ship. Each open ship with two or more pledges also has its own *Sort* menu in its row, which sorts just that ship's pledges by any column (pick again to flip) until you choose *Same as the header*. Each ship no longer gets its own sideways scrollbar.
 
