@@ -492,7 +492,7 @@ export type ShipRole = 'hull' | 'paint' | 'item' | 'ccu';
 const ROLE_RANK: Record<ShipRole, number> = { hull: 0, paint: 1, item: 2, ccu: 3 };
 
 export interface ShipGroup {
-  /** `s:<catalog ship id>`, or `~` for pledges tied to no ship. */
+  /** `s:<catalog ship id>`, or `~` for pledges related to no ship. */
   key: string;
   label: string;
   ship: CatalogShip | null;
@@ -509,7 +509,7 @@ export interface ShipGroup {
 /**
  * Every pledge under each ship it is for: the pledge holding the hull, pledges with paints / components that fit it
  * (a family paint sits under every hull of the family), CCUs whose target it is. A pack with two ships appears under both.
- * Pledges tied to no catalog ship (gear, game-only, subscriber flair, unknown names) end up in the `~` group, last.
+ * Pledges related to no catalog ship (gear, game-only, subscriber flair, unknown names) end up in the `~` group, last.
  * Groups: owned hulls A→Z, then ships you only hold paints / CCUs for, then `~`.
  */
 export function shipGroups(pledges: Pledge[], ships: CatalogShip[]): ShipGroup[] {
@@ -536,7 +536,7 @@ export function shipGroups(pledges: Pledge[], ships: CatalogShip[]): ShipGroup[]
   }
   const groups = new Map<string, ShipGroup>();
   const add = (key: string, ship: CatalogShip | null, p: Pledge, role: ShipRole) => {
-    const g: ShipGroup = groups.get(key) ?? { key, label: ship?.name ?? 'Not tied to a ship', ship, owned: false, hulls: ship ? (hulls.get(ship.id) ?? 0) : 0, pledges: [], role: new Map() };
+    const g: ShipGroup = groups.get(key) ?? { key, label: ship?.name ?? 'Not related to a ship', ship, owned: false, hulls: ship ? (hulls.get(ship.id) ?? 0) : 0, pledges: [], role: new Map() };
     g.pledges.push(p);
     g.role.set(p.id, role);
     g.owned ||= role === 'hull';
