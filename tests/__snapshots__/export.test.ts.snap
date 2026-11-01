@@ -58,6 +58,7 @@ exports[`fleet export (catalog-drift fixture) > is stable across runs and input 
   "ANVL_Hurricane	ANVL	Hurricane",
   "ANVL_Legionnaire	ANVL	Legionnaire",
   "ANVL_Liberator	ANVL	Liberator",
+  "ANVL_Odin	ANVL	Odin",
   "ANVL_Paladin	ANVL	Paladin",
   "ANVL_Spartan	ANVL	Spartan",
   "ANVL_Terrapin	ANVL	Terrapin",

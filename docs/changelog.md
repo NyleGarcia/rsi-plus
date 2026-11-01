@@ -6,6 +6,7 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+- **Odin, F8C Lightning and other ships the store doesn't list now count as ships you own.** *Group by ship* put a ship that RSI's ship list doesn't carry into *Not related to a ship*, e.g. the Odin (sold only through the Odin Founders Club) and the F8C Lightning / Executive Edition (event and Concierge rewards). Such a ship now gets its own *you own it* group under its hangar name. The Odin is also added to the catalog at its $5,000 pledge price (with Kraken, Javelin and Idris-M), so its MSRP, paints and CCU planning work; the F8C has no pledge price, so it shows no MSRP.
 - **LTI counts ships, like the ships count.** The Pledges *LTI* tile (now *ships with LTI*) and Wallet's *Ships · LTI* counted LTI pledges while *ships* counted ships, so a hangar with packs read e.g. 71 ships but 61 LTI. Both now count ships on LTI pledges (a pack's ships each count): 71 ships, 70 with LTI. The tile's hover gives the pledge count, which is what the *Insurance* filter counts.
 
 ## 0.11.0 — 2026-11-01

@@ -492,9 +492,10 @@ export type ShipRole = 'hull' | 'paint' | 'item' | 'ccu';
 const ROLE_RANK: Record<ShipRole, number> = { hull: 0, paint: 1, item: 2, ccu: 3 };
 
 export interface ShipGroup {
-  /** `s:<catalog ship id>`, or `~` for pledges related to no ship. */
+  /** `s:<catalog ship id>`, `n:<item key>` for a hangar ship the catalog doesn't know, or `~` for pledges related to no ship. */
   key: string;
   label: string;
+  /** Null for `~` and for a ship the catalog doesn't know (`n:` — still a ship you own). */
   ship: CatalogShip | null;
   /** A pledge in it holds the hull (vs only paints / parts / CCUs for the ship). */
   owned: boolean;
@@ -509,7 +510,8 @@ export interface ShipGroup {
 /**
  * Every pledge under each ship it is for: the pledge holding the hull, pledges with paints / components that fit it
  * (a family paint sits under every hull of the family), CCUs whose target it is. A pack with two ships appears under both.
- * Pledges related to no catalog ship (gear, game-only, subscriber flair, unknown names) end up in the `~` group, last.
+ * A ship in the hangar the catalog doesn't list (a limited or Concierge-only hull) still gets its own owned group by
+ * its hangar name (`n:`). Pledges related to no ship (gear, game-only, subscriber flair) end up in the `~` group, last.
  * Groups: owned hulls A→Z, then ships you only hold paints / CCUs for, then `~`.
  */
 export function shipGroups(pledges: Pledge[], ships: CatalogShip[]): ShipGroup[] {
@@ -522,8 +524,12 @@ export function shipGroups(pledges: Pledge[], ships: CatalogShip[]): ShipGroup[]
   };
   const shipById = new Map(ships.map((s) => [s.id, s]));
   const hulls = new Map<number, number>();
+  /** Ships the catalog doesn't know, by pledge: group key, hangar name, copies. */
+  const unknown = new Map<number, { key: string; label: string; hulls: number }[]>();
   for (const r of inventory(pledges, ships)) {
-    if (r.category === 'ship' && r.ship) {
+    if (r.category === 'ship' && !r.ship) {
+      for (const p of r.pledges) unknown.set(p.id, [...(unknown.get(p.id) ?? []), { key: `n:${r.key}`, label: r.title, hulls: r.count }]);
+    } else if (r.category === 'ship' && r.ship) {
       for (const p of r.pledges) set(p.id, r.ship.id, 'hull');
       hulls.set(r.ship.id, (hulls.get(r.ship.id) ?? 0) + r.count);
     } else if (r.fits.length) {
@@ -544,8 +550,15 @@ export function shipGroups(pledges: Pledge[], ships: CatalogShip[]): ShipGroup[]
   };
   for (const p of pledges) {
     const m = tie.get(p.id);
-    if (!m?.size) add('~', null, p, 'item');
-    else for (const [sid, role] of m) add(`s:${sid}`, shipById.get(sid) ?? null, p, role);
+    const u = unknown.get(p.id) ?? [];
+    for (const x of u) {
+      add(x.key, null, p, 'hull');
+      const g = groups.get(x.key)!;
+      g.label = x.label;
+      g.hulls = x.hulls;
+    }
+    if (m?.size) for (const [sid, role] of m) add(`s:${sid}`, shipById.get(sid) ?? null, p, role);
+    else if (!u.length) add('~', null, p, 'item');
   }
   for (const g of groups.values()) g.pledges.sort((a, b) => ROLE_RANK[g.role.get(a.id)!] - ROLE_RANK[g.role.get(b.id)!]);
   return [...groups.values()].sort((a, b) => {

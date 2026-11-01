@@ -709,9 +709,7 @@
             {#if open}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
             {#if g.ship?.thumb}<Thumb src={g.ship.thumb} name={g.label} width={40} height={22} />{/if}
             <strong class={g.ship && !g.owned ? 'text-muted-foreground' : ''}>{g.label}</strong>
-            {#if g.ship}
-              {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `you own ${g.hulls}` : 'you own it'}</Badge>{:else}<Badge variant="outline">ship not owned · only its paints / parts / CCUs</Badge>{/if}
-            {/if}
+            {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `you own ${g.hulls}` : 'you own it'}</Badge>{:else if g.ship}<Badge variant="outline">ship not owned · only its paints / parts / CCUs</Badge>{/if}
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
           </Collapsible.Trigger>
           {#if open && g.rows.length > 1}
