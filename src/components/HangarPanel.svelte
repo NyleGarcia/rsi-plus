@@ -251,7 +251,9 @@
   // ---- panes: Pledges (the list) / Melt calculator (same list with the tick + "Would lose" columns) ----
   type Pane = 'pledges' | 'melt';
   const PREFS = 'rsiplus:hangar';
-  type Prefs = Partial<{ byShip: boolean; hiddenSets: string[]; facets: FacetValues; group: 'identical' | 'none' }>;
+  type Prefs = Partial<{ byShip: boolean; shipShow: ShipShow; hiddenSets: string[]; facets: FacetValues; group: 'identical' | 'none' }>;
+  /** Which ship groups show by ship: all, ships you own, ships you hold only paints / parts / CCUs for, pledges tied to no ship. */
+  type ShipShow = 'all' | 'owned' | 'unowned' | 'loose';
   const savedPrefs = (() => {
     try {
       return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Prefs;
@@ -263,6 +265,7 @@
   let { pane = 'pledges' }: { pane?: Pane } = $props();
   /** Group the list by ship: each hull with the paints / parts / CCUs for it nested under it (every pledge keeps its own row). */
   let byShip = $state(savedPrefs.byShip ?? false);
+  let shipShow = $state<ShipShow>(savedPrefs.shipShow ?? 'all');
   /** Event / flair sets (Luminalia, IAE, Subscriber, "RSI Disc.", "AA" …) whose pledges are hidden from the list. */
   let hiddenSets = $state<string[]>(savedPrefs.hiddenSets ?? []);
   /** Facet choices on the Pledges list (FacetBar). */
@@ -271,7 +274,7 @@
   let grouping = $state<'identical' | 'none'>(savedPrefs.group ?? 'identical');
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ byShip, hiddenSets, facets: facetValues, group: grouping }));
+      localStorage.setItem(PREFS, JSON.stringify({ byShip, shipShow, hiddenSets, facets: facetValues, group: grouping }));
     } catch {
       /* no persistence — fine */
     }
@@ -295,7 +298,7 @@
         }
         return { ...g, rows, value: rows.reduce((n, st) => n + st.rep.value * st.entries.length, 0), count: rows.reduce((n, st) => n + st.entries.length, 0) };
       })
-      .filter((g) => g.rows.length);
+      .filter((g) => g.rows.length && (shipShow === 'all' || shipShow === (g.key === '~' ? 'loose' : g.owned ? 'owned' : 'unowned')));
   });
   let closed = $state<Set<string>>(new Set());
   const toggleGroup = (k: string) => {
@@ -599,7 +602,19 @@
     {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
   {:else}
     <div class="flex flex-wrap items-center gap-2 text-xs">
-      <span class="text-muted-foreground">{groups.length} ships{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
+      <span class="text-muted-foreground">Show:</span>
+      <Segmented
+        options={[
+          { id: 'all', label: 'all' },
+          { id: 'owned', label: 'ships you own' },
+          { id: 'unowned', label: 'ships not owned', hint: 'Paints, parts and CCUs for a ship you don\'t have' },
+          { id: 'loose', label: 'not tied to a ship', hint: 'Gear, flair, game packages and items RSI+ can\'t match to any ship' },
+        ]}
+        bind:value={shipShow}
+        ariaLabel="Which ships to show"
+        size="sm"
+      />
+      <span class="text-muted-foreground">{groups.length} {groups.length === 1 ? 'group' : 'groups'}{cat ? '' : ' · store ship list still loading, paints and CCUs will attach once it is in'}</span>
       <span class="grow"></span>
       <Button variant="outline" size="sm" onclick={() => (closed = new Set())}>Expand all</Button>
       <Button variant="outline" size="sm" onclick={() => (closed = new Set(groups.map((g) => g.key)))}>Collapse all</Button>
@@ -615,7 +630,7 @@
             {#if g.ship?.thumb}<Thumb src={g.ship.thumb} name={g.label} width={40} height={22} />{/if}
             <strong class={g.ship && !g.owned ? 'text-muted-foreground' : ''}>{g.label}</strong>
             {#if g.ship}
-              {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `${g.hulls} hulls` : 'hull'}</Badge>{:else}<Badge variant="warning">no hull</Badge>{/if}
+              {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `you own ${g.hulls}` : 'you own it'}</Badge>{:else}<Badge variant="outline">ship not owned · only its paints / parts / CCUs</Badge>{/if}
             {/if}
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
           </Collapsible.Trigger>
@@ -643,7 +658,7 @@
       ariaLabel="Group pledges"
       size="sm"
     />
-    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row" checked={byShip} onchange={(v) => (byShip = v)} />
+    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row. Ships you don't own but hold paints, parts or CCUs for are listed too, after the ones you own" checked={byShip} onchange={(v) => (byShip = v)} />
     <SwitchRow id="hangar-all-items" size="sm" label="Show all items in every pledge" checked={allItems} onchange={(v) => (allItems = v)} />
     {#if setOptions.length}
       <DropdownMenu.Root>
