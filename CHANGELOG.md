@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.9.0...v0.10.0) (2026-11-01)
+
+
+### Features
+
+* **hangar:** clearer ship-owned badges and a Show filter for group by ship ([f316076](https://github.com/NyleGarcia/rsi-plus/commit/f31607621e095b5dc9b6973a071fa4d4bbac7ff0))
+* **hangar:** MSRP column and saved-vs-MSRP total on pledges (upgraded pledges priced at their CCU target) ([b38faed](https://github.com/NyleGarcia/rsi-plus/commit/b38faedd8f85e86effdfe4bb324aeb71913b14c2))
+
+
+### Bug Fixes
+
+* **hangar:** line up pledge table columns across ship groups ([9d5f50d](https://github.com/NyleGarcia/rsi-plus/commit/9d5f50d0b0519f3442bea85499d4283c6a214798))
+
 ## [0.9.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.8.0...v0.9.0) (2026-10-31)
 
 
