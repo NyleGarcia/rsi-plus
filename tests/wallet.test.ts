@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pledge } from '@/lib/hangar';
 import type { CatalogShip } from '@/lib/store';
-import { ccuOverview, fleetValue, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, paymentOf, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
+import { ccuOverview, fleetValue, pledgeMsrp, fundingStats, parseFunding, periodElapsed, pointLabel, shareOfFunding, paymentOf, spendByPayment, spendByMonth, spendByType, spendByYear, spendSummary } from '@/lib/wallet';
 
 const pledge = (id: number, value: number, date: string, type: Pledge['type'] = 'ship', warbond = false): Pledge => ({
   id,
@@ -137,6 +137,18 @@ describe('fleet value', () => {
       ['Aurora MR', 25, 30],
     ]);
     expect(f).toMatchObject({ paid: 125, msrp: 150, packs: 1 });
+  });
+});
+
+describe('pledge msrp', () => {
+  it('sums the ships\' MSRP; null without a priced ship or a dollar value', () => {
+    expect(pledgeMsrp({ ...pledge(1, 25, 'x'), ships: ['Aurora MR'] }, cat)).toBe(30);
+    expect(pledgeMsrp({ ...pledge(2, 500, 'x'), ships: ['Aurora MR', 'Carrack'] }, cat)).toBe(630);
+    expect(pledgeMsrp({ ...pledge(3, 500, 'x'), ships: ['Aurora MR', 'Unknown Ship'] }, cat)).toBeNull();
+    expect(pledgeMsrp({ ...pledge(4, 10, 'x', 'paint'), ships: [] }, cat)).toBeNull();
+    expect(pledgeMsrp({ ...pledge(5, 0, 'x'), ships: ['Carrack'] }, cat)).toBeNull();
+    // Upgraded: the name still says the old hull, the ship inside is the CCU target — priced at the target.
+    expect(pledgeMsrp({ ...pledge(6, 45, 'Aurora MR Starter'), upgraded: true, ships: ['Cutlass Black'] }, cat)).toBe(120);
   });
 });
 

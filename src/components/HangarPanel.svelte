@@ -16,6 +16,7 @@
   import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
   import { dateValue, sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
+  import { pledgeMsrp } from '@/lib/wallet';
   import Stat from './Stat.svelte';
   import StatGrid from './StatGrid.svelte';
   import LoadStatus from './LoadStatus.svelte';
@@ -76,7 +77,7 @@
     labels = plain;
     pledgeLabelsItem.setValue(plain);
   };
-  type Col = 'name' | 'type' | 'value' | 'date' | 'flags' | 'qty';
+  type Col = 'name' | 'type' | 'value' | 'msrp' | 'date' | 'flags' | 'qty';
   let sort = $state<SortState<Col>>({ key: 'date', dir: 'desc' });
   let ctrl: AbortController | null = null;
 
@@ -223,6 +224,23 @@
     const list = applyFacets(base, facets, facetValues, pledgeRanges);
     return query ? list.filter((p) => [p.name, p.nickname, ...p.items.map((i) => i.title)].some((s) => s.toLowerCase().includes(query))) : list;
   });
+  /** Today's MSRP of each pledge's ships (pledge id → USD, null when unpriced): melt value vs buying the ships now. */
+  const msrpOf = $derived.by(() => {
+    const ships = cat?.ships ?? [];
+    return new Map(all.map((p) => [p.id, ships.length ? pledgeMsrp(p, ships) : null]));
+  });
+  /** Saved vs MSRP over the pledges on show that have a price (MSRP − melt value), and how many count. */
+  const savedSum = $derived.by(() => {
+    let msrp = 0, paid = 0, n = 0;
+    for (const p of shown) {
+      const m = msrpOf.get(p.id);
+      if (m == null) continue;
+      msrp += m;
+      paid += p.value;
+      n++;
+    }
+    return { msrp, paid, saved: msrp - paid, n };
+  });
   const stacks = $derived.by(() => {
     const st = grouping === 'identical' ? stackPledges(shown) : shown.map((p) => ({ key: String(p.id), rep: p, entries: [p] }) as PledgeStack);
     // Ties keep RSI's order (newest first); same-day pledges stay in that order.
@@ -230,6 +248,7 @@
       name: (s) => s.rep.name,
       type: (s) => s.rep.type,
       value: (s) => s.rep.value,
+      msrp: (s) => { const m = msrpOf.get(s.rep.id); return m == null ? null : m - s.rep.value; },
       date: (s) => dateValue(s.rep.date),
       flags: (s) => [s.rep.lti, s.rep.warbond, s.entries.some((p) => p.giftable), s.rep.upgraded, s.rep.hasGame].filter(Boolean).length,
       qty: (s) => s.entries.length,
@@ -501,6 +520,7 @@
                 </Stat>
               {/if}
               <Stat value={money(sum.value)} label="melt value" />
+              {#if savedSum.n}<Stat value={money(savedSum.saved)} label="saved vs MSRP" valueTone={savedSum.saved < 0 ? 'err' : null} hint={`Ships' store price today (${money(savedSum.msrp)}) minus what ${savedSum.n} pledge${savedSum.n === 1 ? '' : 's'} with them cost (melt value ${money(savedSum.paid)}). Pledges without a ship the store prices are left out.`} />{/if}
               <Stat value={sum.pledges} label="pledges" />
               <Stat value={sum.ships} label="ships" />
               <Stat value={sum.upgrades} label="CCUs" />
@@ -694,6 +714,11 @@
                 <SortTh key="qty" bind:sort firstDir="desc">Qty</SortTh>
                 <SortTh key="type" bind:sort>Type</SortTh>
                 <SortTh key="value" bind:sort firstDir="desc" numeric>Value</SortTh>
+                <SortTh key="msrp" bind:sort firstDir="desc" numeric>
+                  <LazyTip tip="The ships' store price today, and what you saved against it (MSRP − melt value). Sorts by saved. An upgraded pledge is priced at the ship it was upgraded to, so cheap CCU chains show up here. Ships only: game packages and paints aren't priced">
+                    {#snippet trigger({ props })}<span {...props}>MSRP</span>{/snippet}
+                  </LazyTip>
+                </SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
                 <Table.Head>
@@ -766,6 +791,16 @@
                   </Table.Cell>
                   <Table.Cell>{p.type}</Table.Cell>
                   <Table.Cell class="text-right tabular-nums">{money(p.value)}{#if n > 1}<div class="text-muted-foreground text-xs">{money(p.value * n)} total</div>{/if}</Table.Cell>
+                  <Table.Cell class="text-right tabular-nums">
+                    {@const m = msrpOf.get(p.id)}
+                    {#if m == null}<span class="text-muted-foreground">—</span>
+                    {:else}
+                      {money(m)}
+                      {@const d = m - p.value}
+                      {#if d > 0}<div class="text-success text-xs">saved {money(d)} ({Math.round((d / m) * 100)}%)</div>
+                      {:else if d < 0}<div class="text-muted-foreground text-xs">{money(-d)} over</div>{/if}
+                    {/if}
+                  </Table.Cell>
                   <Table.Cell class="text-muted-foreground text-xs">{n > 1 ? `${dateCell(s.entries[n - 1]!.date)} – ${dateCell(p.date)}` : dateCell(p.date)}</Table.Cell>
                   <Table.Cell class="whitespace-normal">
                     <div class="flex flex-wrap gap-0.5">

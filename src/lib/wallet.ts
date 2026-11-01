@@ -210,6 +210,23 @@ export function fleetValue(pledges: Pledge[], ships: CatalogShip[]): FleetValue 
   return { rows, paid: r2(rows.reduce((n, r) => n + r.paid, 0)), msrp: r2(rows.reduce((n, r) => n + r.msrp, 0)), packs };
 }
 
+/**
+ * Today's store MSRP (USD) of the ships in a pledge, summed — what they would cost bought outright now, to set against
+ * the melt value (what you paid). Null when the pledge holds no ship, a ship the catalog can't match or price
+ * (Concierge-only, retired), or has no dollar value (gifted / bought in game). Ships only: a game package or paints
+ * in the pledge aren't priced, so a game package can show as costing more than its ships.
+ */
+export function pledgeMsrp(p: Pledge, ships: CatalogShip[]): number | null {
+  if (!p.ships.length || !(p.value > 0)) return null;
+  let cents = 0;
+  for (const title of p.ships) {
+    const s = matchShip(title, ships);
+    if (!s?.msrp) return null;
+    cents += s.msrp;
+  }
+  return cents / 100;
+}
+
 // ---- CCU portfolio (CCU Game "CCU Overview") ----
 
 export interface CcuRow {
