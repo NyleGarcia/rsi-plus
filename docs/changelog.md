@@ -6,6 +6,8 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+
+## 0.10.0 — 2026-11-01
 - **Pledges: MSRP and what you saved.** A new *MSRP* column on Pledges and the Melt calculator shows the ships' store price today next to the melt value (what you paid), with *saved $X (N%)* under it — or *$X over* when the pledge cost more — and sorts by the saving. An upgraded pledge is priced at the ship the CCUs took it to, so a Carrack reached from a $45 Aurora through cheap CCUs shows what the chain saved. A *saved vs MSRP* tile adds it up over the pledges on show. Ships only: pledges with no ship, a ship the store doesn't price (Concierge-only, retired), or no dollar value (gifted, bought in game) show —; game packages and paints aren't priced, so a game package can read as *over*.
 - **Group by ship: clearer badges and a Show filter.** The ship badge said *hull* / *no hull*; it now says *you own it* (or *you own 2*) and *ship not owned · only its paints / parts / CCUs* (grey, not a warning). A *Show* switch above the groups picks all, ships you own, ships not owned, or pledges not tied to any ship (gear, flair, game packages, unmatched items); remembered. The columns now line up from one ship to the next (every group's table uses the same column widths).
 
