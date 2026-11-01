@@ -77,7 +77,9 @@ describe('hangar parser', () => {
     expect(p[1]!.items.map((i) => i.image ?? null)).toEqual([null, null]);
     expect(p[0]!.items).toEqual([{ title: 'Cutlass Black', kind: 'Ship', image: 'https://media.robertsspaceindustries.com/abc/product_thumb_medium_and_small.jpg' }, { title: 'Lifetime Insurance', kind: 'Insurance' }]);
     expect(p[2]!.upgrade).toEqual({ fromId: 11, fromName: 'Aurora MR', toId: 42, toName: 'Cutlass Black' });
-    expect(totals(p)).toMatchObject({ pledges: 3, value: 1240, ships: 2, upgrades: 1, lti: 1, giftable: 1 });
+    expect(totals(p)).toMatchObject({ pledges: 3, value: 1240, ships: 2, upgrades: 1, lti: 1, ltiPledges: 1, giftable: 1 });
+    // A pack's ships each count toward LTI ships; the pledge counts once.
+    expect(totals([{ ...p[0]!, ships: ['Cutlass Black', 'Aurora MR'] }])).toMatchObject({ ships: 2, lti: 2, ltiPledges: 1 });
     expect(hangarCsv(p).split('\n')[1]).toBe('1,Cutlass Black Warbond,ship,110,"October 01, 2026",Cutlass Black,true,LTI,true,true,true,,,credit,,');
   });
 

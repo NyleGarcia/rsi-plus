@@ -185,6 +185,15 @@ describe('items', () => {
     expect(g[2]!.role.get(5)).toBe('paint');
   });
 
+  it('shipGroups: a hangar ship the catalog does not list is still an owned ship (Odin), not "not related"', () => {
+    const list = [pledge(1, [['Odin', 'Ship'], ['Odin - Blockade Paint', 'Skin']], { lti: true }), pledge(2, [['Pembroke Helmet Sunburst', 'FPS Equipment']], { type: 'gear' })];
+    const g = shipGroups(list, ships);
+    expect(g.map((x) => [x.key.split(':')[0], x.label, x.owned, x.hulls, x.pledges.map((p) => p.id)])).toEqual([
+      ['n', 'Odin', true, 1, [1]],
+      ['~', 'Not related to a ship', false, 0, [2]],
+    ]);
+  });
+
   it('Greycat M-series: MXC paints fit the MTC and MDC; a many-ship pack does not say which hull a nameless paint fits', () => {
     const cat = [ship(1, 'MTC'), ship(2, 'MDC'), ship(3, 'Spartan'), ship(4, 'Orion'), ship(5, 'Galaxy')];
     expect(shipsFor('MXC - Icefront Camo Paint', cat).map((s) => s.id)).toEqual([1, 2]);
