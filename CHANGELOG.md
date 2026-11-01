@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.11.1...v0.12.0) (2026-11-01)
+
+
+### Features
+
+* **hangar:** folded ship rows show insurance, role / size / stage, MSRP, saved and giftable copies ([b07ed89](https://github.com/NyleGarcia/rsi-plus/commit/b07ed896821c2964c24f125e3e067db96703add0))
+
 ## [0.11.1](https://github.com/NyleGarcia/rsi-plus/compare/v0.11.0...v0.11.1) (2026-11-01)
 
 
