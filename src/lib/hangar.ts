@@ -394,7 +394,10 @@ export interface HangarTotals {
   value: number;
   ships: number;
   upgrades: number;
+  /** Ships on LTI pledges (a pack's ships each count), so it lines up with `ships`. */
   lti: number;
+  /** Pledges with LTI (what the Insurance filter counts). */
+  ltiPledges: number;
   giftable: number;
   byType: Record<PledgeType, { count: number; value: number }>;
 }
@@ -411,7 +414,8 @@ export function totals(list: Pledge[]): HangarTotals {
     value: r2(list.reduce((s, p) => s + p.value, 0)),
     ships: list.reduce((s, p) => s + p.ships.length, 0),
     upgrades: list.filter((p) => p.upgrade).length,
-    lti: list.filter((p) => p.lti).length,
+    lti: list.reduce((s, p) => s + (p.lti ? p.ships.length : 0), 0),
+    ltiPledges: list.filter((p) => p.lti).length,
     giftable: list.filter((p) => p.giftable).length,
     byType,
   };

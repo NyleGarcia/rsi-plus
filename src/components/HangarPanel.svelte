@@ -573,7 +573,7 @@
               <Stat value={sum.pledges} label="pledges" />
               <Stat value={sum.ships} label="ships" />
               <Stat value={sum.upgrades} label="CCUs" />
-              <Stat value={sum.lti} label="LTI" />
+              <Stat value={sum.lti} label="ships with LTI" hint={`${sum.lti} of ${sum.ships} ships, on ${sum.ltiPledges} pledge${sum.ltiPledges === 1 ? '' : 's'} (a pack's ships each count; the Insurance filter counts pledges)`} />
               <Stat value={sum.giftable} label="giftable" />
             </StatGrid>
             {@render filters()}

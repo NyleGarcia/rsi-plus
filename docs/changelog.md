@@ -6,6 +6,7 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+- **LTI counts ships, like the ships count.** The Pledges *LTI* tile (now *ships with LTI*) and Wallet's *Ships · LTI* counted LTI pledges while *ships* counted ships, so a hangar with packs read e.g. 71 ships but 61 LTI. Both now count ships on LTI pledges (a pack's ships each count): 71 ships, 70 with LTI. The tile's hover gives the pledge count, which is what the *Insurance* filter counts.
 
 ## 0.11.0 — 2026-11-01
 - **Easier to see what's picked.** Option switches (Show, Ships by, Group, and the rest across the hub) mark the picked option in the accent colour instead of a faint grey. Range filters (*Melt value* and the like) show the range live while you drag the slider (above it and in the min / max boxes); the list still updates when you let go.
