@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1](https://github.com/NyleGarcia/rsi-plus/compare/v0.11.0...v0.11.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **hangar:** LTI counts ships on LTI pledges so it lines up with the ships count ([9058325](https://github.com/NyleGarcia/rsi-plus/commit/905832551f7cf8fa6e463902236da3789df86839))
+* **hangar:** ships the catalog doesn't list (Odin, F8C) are owned ships; add Odin at its $5,000 pledge price ([9738992](https://github.com/NyleGarcia/rsi-plus/commit/9738992477fb0330be281350ff1f654b0effb521))
+
 ## [0.11.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.10.0...v0.11.0) (2026-11-01)
 
 
