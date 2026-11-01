@@ -6,6 +6,7 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+- **Group by ship: more in the folded row.** Each ship's row now shows, without opening it, its insurance (LTI in yellow, other terms grey), role, size and stage (e.g. *Corvette · Capital · Flyable*), store MSRP, what the pledges under it saved vs MSRP, and how many copies are giftable.
 
 ## 0.11.1 — 2026-11-01
 - **Odin, F8C Lightning and other ships the store doesn't list now count as ships you own.** *Group by ship* put a ship that RSI's ship list doesn't carry into *Not related to a ship*, e.g. the Odin (sold only through the Odin Founders Club) and the F8C Lightning / Executive Edition (event and Concierge rewards). Such a ship now gets its own *you own it* group under its hangar name. The Odin is also added to the catalog at its $5,000 pledge price (with Kraken, Javelin and Idris-M), so its MSRP, paints and CCU planning work; the F8C has no pledge price, so it shows no MSRP.

@@ -347,7 +347,11 @@
         rows.sort((a, b) => pos.get(a.rep.id)! - pos.get(b.rep.id)!);
         const own = groupSort[g.key];
         if (own) rows.splice(0, rows.length, ...sortBy(rows, own, colValue));
-        let value = 0, count = 0, saved = 0, newest = 0;
+        let value = 0, count = 0, saved = 0, newest = 0, giftable = 0;
+        // The ship's own pledges (the hull, not paints / parts / CCUs for it): insurance and giftable copies for the folded row.
+        const hullPledges = g.pledges.filter((p) => g.role.get(p.id) === 'hull');
+        const insurance = [...new Set(hullPledges.map((p) => p.insurance || (p.lti ? 'LTI' : '')).filter(Boolean))].sort((a, b) => (a === 'LTI' ? -1 : b === 'LTI' ? 1 : a.localeCompare(b)));
+        for (const p of hullPledges) if (p.giftable) giftable++;
         for (const st of rows) {
           const n = st.entries.length;
           value += st.rep.value * n;
@@ -356,7 +360,7 @@
           if (m != null) saved += (m - st.rep.value) * n;
           for (const e of st.entries) newest = Math.max(newest, dateValue(e.date) || 0);
         }
-        return { ...g, rows, value, count, saved, newest };
+        return { ...g, rows, value, count, saved, newest, insurance, giftable };
       })
       .filter((g) => g.rows.length && (shipShow === 'all' || shipShow === (g.key === '~' ? 'loose' : g.owned ? 'owned' : 'unowned')))
       .sort((a, b) => {
@@ -710,7 +714,15 @@
             {#if g.ship?.thumb}<Thumb src={g.ship.thumb} name={g.label} width={40} height={22} />{/if}
             <strong class={g.ship && !g.owned ? 'text-muted-foreground' : ''}>{g.label}</strong>
             {#if g.owned}<Badge variant="success"><Check /> {g.hulls > 1 ? `you own ${g.hulls}` : 'you own it'}</Badge>{:else if g.ship}<Badge variant="outline">ship not owned · only its paints / parts / CCUs</Badge>{/if}
+            {#each g.insurance as ins (ins)}<Badge variant={ins === 'LTI' ? 'warning' : 'muted'}>{ins === 'LTI' ? 'LTI' : `${ins} insurance`}</Badge>{/each}
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
+            {#if g.ship}
+              <span class="text-muted-foreground text-[11px]">
+                {[g.ship.focus, g.ship.size, g.ship.flyable].filter(Boolean).join(' · ')}{#if g.ship.msrp > 0} · MSRP {money(g.ship.msrp / 100)}{/if}
+              </span>
+            {/if}
+            {#if g.saved > 0}<span class="text-success text-[11px]">saved {money(g.saved)}</span>{/if}
+            {#if g.giftable}<span class="text-info text-[11px]">{g.giftable} giftable</span>{/if}
           </Collapsible.Trigger>
           {#if open && g.rows.length > 1}
             <DropdownMenu.Root>
