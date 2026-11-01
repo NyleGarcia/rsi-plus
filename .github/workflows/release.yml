@@ -126,17 +126,35 @@ jobs:
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
           token_format: access_token
           access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+      # Verified CRX uploads (docs/release.md): once the item is opted in, the store only takes a CRX signed with our
+      # key, so with CHROME_VERIFIED_CRX=true the built extension is packed into a CRX3 by Chrome and that is uploaded.
+      - name: Sign a CRX for verified upload
+        id: crx
+        if: vars.CHROME_VERIFIED_CRX == 'true'
+        env:
+          CHROME_CRX_KEY: ${{ secrets.CHROME_CRX_KEY }}
+        run: |
+          [ -n "$CHROME_CRX_KEY" ] || { echo "::error::CHROME_VERIFIED_CRX is on but the CHROME_CRX_KEY secret is missing"; exit 1; }
+          umask 077
+          printf '%s\n' "$CHROME_CRX_KEY" > "$RUNNER_TEMP/crx.pem"
+          google-chrome --headless=new --no-sandbox --user-data-dir="$RUNNER_TEMP/chrome" \
+            --pack-extension="$PWD/.output/chrome-mv3" --pack-extension-key="$RUNNER_TEMP/crx.pem"
+          rm -f "$RUNNER_TEMP/crx.pem"
+          [ "$(head -c 4 .output/chrome-mv3.crx)" = "Cr24" ] || { echo "::error::no CRX3 produced"; exit 1; }
+          echo "file=.output/chrome-mv3.crx" >> "$GITHUB_OUTPUT"
       - name: Submit to the Chrome Web Store (API v2)
         env:
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
           CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN: ${{ steps.gcp.outputs.access_token }}
+          CRX: ${{ steps.crx.outputs.file }}
         run: |
           if [ -z "$CHROME_SERVICE_ACCOUNT_ACCESS_TOKEN" ] || [ -z "$CHROME_PUBLISHER_ID" ]; then
             echo "::warning::Web Store publishing not configured (GCP_* variables / CHROME_* secrets) — zip attached to the release, nothing submitted (docs/release.md)"
             exit 0
           fi
-          npx wxt submit --chrome-api-version v2 --chrome-zip .output/*-chrome.zip
+          # publish-browser-extension streams the file as-is to :upload, so a CRX goes up the same way as a zip.
+          npx wxt submit --chrome-api-version v2 --chrome-zip "${CRX:-$(ls .output/*-chrome.zip)}"
 
   # After a release, merge main back into dev so dev carries the bumped version (.release-please-manifest.json — the
   # prerelease numbering reads it), CHANGELOG.md and the rolled docs/changelog.md. The docs/changelog.md conflict

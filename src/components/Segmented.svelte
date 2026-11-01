@@ -55,8 +55,9 @@
   }
   const itemCls = $derived(
     cn(
-      'relative z-[1] rounded-[7px] border-0 bg-transparent font-semibold whitespace-nowrap text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45 data-[state=on]:text-foreground',
-      !pill.ready && 'data-[state=on]:bg-accent',
+      'relative z-[1] rounded-[7px] border-0 bg-transparent font-semibold whitespace-nowrap text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45 data-[state=on]:text-primary-foreground data-[state=on]:hover:text-primary-foreground',
+      // The Toggle paints a picked item `bg-muted`, which hid the pill: clear it once the pill is in place.
+      pill.ready ? 'data-[state=on]:bg-transparent' : 'data-[state=on]:bg-primary',
       size === 'sm' ? 'h-auto px-[9px] py-[3px] text-xs' : 'h-auto px-[11px] py-[5px] text-[12.5px]',
     ),
   );
@@ -72,7 +73,7 @@
 >
   <span
     class={cn(
-      'pointer-events-none absolute top-[3px] bottom-[3px] left-0 rounded-[7px] bg-accent opacity-0 shadow-sm transition-[transform,width,opacity] duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none',
+      'pointer-events-none absolute top-[3px] bottom-[3px] left-0 rounded-[7px] bg-primary opacity-0 shadow-sm transition-[transform,width,opacity] duration-[220ms] ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none',
       pill.ready && 'opacity-100',
     )}
     style="transform: translateX({pill.x}px); width: {pill.w}px"

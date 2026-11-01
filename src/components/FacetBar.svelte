@@ -103,6 +103,8 @@
     const step = r.unit === 'usd' ? 5 : 1;
     return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
   };
+  /** Thumb positions while a slider is dragged (range id → [min, max]): shown live, applied on release. */
+  let dragging = $state<Record<string, number[]>>({});
   function setRange(id: string, v: RangeValue) {
     values = { ...values, [id]: v.min == null && v.max == null ? undefined : v };
   }
@@ -168,6 +170,7 @@
   {@const v = rangeVal(r.id)}
   {@const [lo, hi] = domain(r)}
   {@const on = v.min != null || v.max != null}
+  {@const cur = dragging[r.id] ?? [v.min ?? lo, v.max ?? hi]}
   <Popover.Root open={openId === r.id} onOpenChange={(o) => (openId = o ? r.id : openId === r.id ? null : openId)}>
     <Popover.Trigger>
       {#snippet child({ props })}
@@ -179,14 +182,31 @@
     </Popover.Trigger>
     <Popover.Content align="start" class="w-72 p-3">
       <div class="grid gap-3">
-        <div class="text-muted-foreground flex justify-between text-xs tabular-nums"><span>{money(r, lo)}</span><span>{money(r, hi)}</span></div>
+        <div class="flex items-baseline justify-between text-xs tabular-nums">
+          <span class="text-muted-foreground">{money(r, lo)}</span>
+          <span class={cn('font-semibold', dragging[r.id] || on ? 'text-primary' : 'text-muted-foreground')} aria-live="polite">{money(r, cur[0]!)} – {money(r, cur[1]!)}</span>
+          <span class="text-muted-foreground">{money(r, hi)}</span>
+        </div>
         {#if hi > lo}
-          <Slider type="multiple" min={lo} max={hi} step={r.unit === 'usd' ? 1 : 1} value={[v.min ?? lo, v.max ?? hi]} onValueCommit={(val: number[]) => setRange(r.id, { min: val[0]! <= lo ? null : val[0]!, max: val[1]! >= hi ? null : val[1]! })} aria-label={`${r.label} range`} />
+          <Slider
+            type="multiple"
+            min={lo}
+            max={hi}
+            step={1}
+            value={[v.min ?? lo, v.max ?? hi]}
+            onValueChange={(val: number[]) => (dragging = { ...dragging, [r.id]: val })}
+            onValueCommit={(val: number[]) => {
+              const { [r.id]: _, ...rest } = dragging;
+              dragging = rest;
+              setRange(r.id, { min: val[0]! <= lo ? null : val[0]!, max: val[1]! >= hi ? null : val[1]! });
+            }}
+            aria-label={`${r.label} range`}
+          />
         {/if}
         <div class="flex items-center gap-2">
-          <Input class="w-full" inputmode="decimal" placeholder={r.unit === 'usd' ? '$ min' : 'min'} aria-label={`${r.label} minimum`} value={v.min ?? ''} onchange={(e) => setRange(r.id, { ...v, min: Number((e.currentTarget as HTMLInputElement).value.replace(/[^0-9.]/g, '')) || null })} />
+          <Input class="w-full" inputmode="decimal" placeholder={r.unit === 'usd' ? '$ min' : 'min'} aria-label={`${r.label} minimum`} value={dragging[r.id] ? (dragging[r.id]![0]! <= lo ? '' : dragging[r.id]![0]) : (v.min ?? '')} onchange={(e) => setRange(r.id, { ...v, min: Number((e.currentTarget as HTMLInputElement).value.replace(/[^0-9.]/g, '')) || null })} />
           <span class="text-muted-foreground">–</span>
-          <Input class="w-full" inputmode="decimal" placeholder={r.unit === 'usd' ? '$ max' : 'max'} aria-label={`${r.label} maximum`} value={v.max ?? ''} onchange={(e) => setRange(r.id, { ...v, max: Number((e.currentTarget as HTMLInputElement).value.replace(/[^0-9.]/g, '')) || null })} />
+          <Input class="w-full" inputmode="decimal" placeholder={r.unit === 'usd' ? '$ max' : 'max'} aria-label={`${r.label} maximum`} value={dragging[r.id] ? (dragging[r.id]![1]! >= hi ? '' : dragging[r.id]![1]) : (v.max ?? '')} onchange={(e) => setRange(r.id, { ...v, max: Number((e.currentTarget as HTMLInputElement).value.replace(/[^0-9.]/g, '')) || null })} />
         </div>
         {#if on}<Button variant="ghost" size="xs" class="justify-start" onclick={() => setRange(r.id, { min: null, max: null })}><X /> Clear {r.label.toLowerCase()}</Button>{/if}
       </div>

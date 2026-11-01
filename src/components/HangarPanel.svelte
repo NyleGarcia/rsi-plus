@@ -11,10 +11,10 @@
   import FacetBar from './FacetBar.svelte';
   import { bg } from '@/lib/messages';
   import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
-  import { cleanLabels, idsWith, KEEP, MELT, type Labels } from '@/lib/labels';
+  import { cleanLabels, idsWith, KEEP, labelsOf, MELT, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
   import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
-  import { dateValue, sortBy, type SortState } from '@/lib/sort';
+  import { compare, dateValue, nextSort, sortBy, type SortState, type SortValue } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import { pledgeMsrp } from '@/lib/wallet';
   import Stat from './Stat.svelte';
@@ -52,6 +52,7 @@
   import { Input } from '@/components/ui/input';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Check from '@lucide/svelte/icons/check';
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down';
   import X from '@lucide/svelte/icons/x';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -77,7 +78,7 @@
     labels = plain;
     pledgeLabelsItem.setValue(plain);
   };
-  type Col = 'name' | 'type' | 'value' | 'msrp' | 'date' | 'flags' | 'qty';
+  type Col = 'name' | 'type' | 'value' | 'msrp' | 'date' | 'flags' | 'qty' | 'labels' | 'id';
   let sort = $state<SortState<Col>>({ key: 'date', dir: 'desc' });
   let ctrl: AbortController | null = null;
 
@@ -244,7 +245,10 @@
   const stacks = $derived.by(() => {
     const st = grouping === 'identical' ? stackPledges(shown) : shown.map((p) => ({ key: String(p.id), rep: p, entries: [p] }) as PledgeStack);
     // Ties keep RSI's order (newest first); same-day pledges stay in that order.
-    return sortBy(st, sort, {
+    return sortBy(st, sort, colValue);
+  });
+  /** Sort value of each column for a row (the table header and each ship's own sort). */
+  const colValue: Record<Col, (s: PledgeStack) => SortValue> = {
       name: (s) => s.rep.name,
       type: (s) => s.rep.type,
       value: (s) => s.rep.value,
@@ -252,8 +256,27 @@
       date: (s) => dateValue(s.rep.date),
       flags: (s) => [s.rep.lti, s.rep.warbond, s.entries.some((p) => p.giftable), s.rep.upgraded, s.rep.hasGame].filter(Boolean).length,
       qty: (s) => s.entries.length,
-    });
-  });
+      id: (s) => Math.min(...s.entries.map((p) => p.id)),
+      labels: (s) => [...new Set(s.entries.flatMap((p) => labelsOf(labels, p.id)))].sort().join(', ') || null,
+  };
+  /** Column names for each ship's own sort menu, with the direction a first pick takes. */
+  const COLS: { key: Col; label: string; dir: 'asc' | 'desc' }[] = [
+    { key: 'name', label: 'Pledge', dir: 'asc' },
+    { key: 'qty', label: 'Qty', dir: 'desc' },
+    { key: 'type', label: 'Type', dir: 'asc' },
+    { key: 'value', label: 'Value', dir: 'desc' },
+    { key: 'msrp', label: 'MSRP (saved)', dir: 'desc' },
+    { key: 'date', label: 'Created', dir: 'desc' },
+    { key: 'flags', label: 'Flags', dir: 'desc' },
+    { key: 'labels', label: 'Labels', dir: 'asc' },
+    { key: 'id', label: 'Hangar entries', dir: 'desc' },
+  ];
+  /** A ship's own sort for the pledges under it (group key → sort); ships without one follow the header. */
+  let groupSort = $state<Record<string, SortState<Col>>>({});
+  const setGroupSort = (k: string, v: SortState<Col> | null) => {
+    const { [k]: _, ...rest } = groupSort;
+    groupSort = v ? { ...rest, [k]: v } : rest;
+  };
   const sum = $derived(totals(shown));
   /** Pledges RSI marks as never returning to buyback, among the ones picked to melt. */
   const noBuybackPicked = $derived(all.filter((p) => picked.has(p.id) && p.noBuyback));
@@ -271,7 +294,7 @@
   type Pane = 'pledges' | 'melt';
   const PREFS = 'rsiplus:hangar';
   type Prefs = Partial<{ byShip: boolean; shipShow: ShipShow; hiddenSets: string[]; facets: FacetValues; group: 'identical' | 'none' }>;
-  /** Which ship groups show by ship: all, ships you own, ships you hold only paints / parts / CCUs for, pledges tied to no ship. */
+  /** Which ship groups show by ship: all, ships you own, ships you hold only paints / parts / CCUs for, pledges related to no ship. */
   type ShipShow = 'all' | 'owned' | 'unowned' | 'loose';
   const savedPrefs = (() => {
     try {
@@ -299,10 +322,16 @@
     }
   });
   const melting = $derived(pane === 'melt');
-  /** Ship groups over the whole hangar (so "owned" is right whatever the filters), each reduced to the stacks on show. */
+  /**
+   * Ship groups over the whole hangar (so "owned" is right whatever the filters), each reduced to the stacks on show in
+   * the table's sort order. Groups keep their tiers (ships you own, then not owned, then not related to a ship) and within
+   * a tier follow the same column: *Pledge* by ship name, *Qty* / *Value* / *MSRP* / *Created* by the ship's total pledges /
+   * melt value / saved / newest pledge, the rest by where the ship's first pledge lands; ties by ship name.
+   */
   const groups = $derived.by(() => {
     if (!byShip) return [];
     const idx = new Map(visible.map((st) => [st.rep.id, st]));
+    const pos = new Map(visible.map((st, i) => [st.rep.id, i]));
     const seen = new Set<string>();
     return shipGroups(all, cat?.ships ?? [])
       .map((g) => {
@@ -315,9 +344,29 @@
           seen.add(k);
           rows.push(st);
         }
-        return { ...g, rows, value: rows.reduce((n, st) => n + st.rep.value * st.entries.length, 0), count: rows.reduce((n, st) => n + st.entries.length, 0) };
+        rows.sort((a, b) => pos.get(a.rep.id)! - pos.get(b.rep.id)!);
+        const own = groupSort[g.key];
+        if (own) rows.splice(0, rows.length, ...sortBy(rows, own, colValue));
+        let value = 0, count = 0, saved = 0, newest = 0;
+        for (const st of rows) {
+          const n = st.entries.length;
+          value += st.rep.value * n;
+          count += n;
+          const m = msrpOf.get(st.rep.id);
+          if (m != null) saved += (m - st.rep.value) * n;
+          for (const e of st.entries) newest = Math.max(newest, dateValue(e.date) || 0);
+        }
+        return { ...g, rows, value, count, saved, newest };
       })
-      .filter((g) => g.rows.length && (shipShow === 'all' || shipShow === (g.key === '~' ? 'loose' : g.owned ? 'owned' : 'unowned')));
+      .filter((g) => g.rows.length && (shipShow === 'all' || shipShow === (g.key === '~' ? 'loose' : g.owned ? 'owned' : 'unowned')))
+      .sort((a, b) => {
+        const tier = (g: { key: string; owned: boolean }) => (g.key === '~' ? 2 : g.owned ? 0 : 1);
+        if (tier(a) !== tier(b)) return tier(a) - tier(b);
+        const by: Partial<Record<Col, (g: typeof a) => number | string>> = { name: (g) => g.label, qty: (g) => g.count, value: (g) => g.value, msrp: (g) => g.saved, date: (g) => g.newest };
+        const f = by[sort.key];
+        const r = f ? compare(f(a), f(b), sort.dir) : pos.get(a.rows[0]!.rep.id)! - pos.get(b.rows[0]!.rep.id)!;
+        return r || compare(a.label, b.label, 'asc');
+      });
   });
   let closed = $state<Set<string>>(new Set());
   const toggleGroup = (k: string) => {
@@ -480,7 +529,7 @@
 </script>
 
 {#snippet ext()}<ExternalLink class={LINK_ICON} aria-hidden="true" />{/snippet}
-  <Card.Root>
+  <Card.Root class="overflow-visible">
     <Card.Header>
       <Card.Title>{pane === 'melt' ? 'Melt calculator' : 'Pledges'}</Card.Title>
       <LoadStatus
@@ -621,6 +670,8 @@
     {@render pledgeTable(visible.slice(0, budget))}
     {#if budget < rowCount}<p class="text-muted-foreground text-xs" use:nearView={(v) => (near = v)}>… {rowCount - budget} more below</p>{/if}
   {:else}
+    <!-- Sticky under the hub header: Show and the one column header for every group's table. -->
+    <div class="bg-card sticky top-14 z-10 -mx-1 grid gap-1 px-1 pt-1">
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <span class="text-muted-foreground">Show:</span>
       <Segmented
@@ -628,7 +679,7 @@
           { id: 'all', label: 'all' },
           { id: 'owned', label: 'ships you own' },
           { id: 'unowned', label: 'ships not owned', hint: 'Paints, parts and CCUs for a ship you don\'t have' },
-          { id: 'loose', label: 'not tied to a ship', hint: 'Gear, flair, game packages and items RSI+ can\'t match to any ship' },
+          { id: 'loose', label: 'not related to a ship', hint: 'Gear, flair, game packages and anything RSI+ can\'t match to a ship. Paints and parts sit under the ship they fit, even when that ship is in another pledge' },
         ]}
         bind:value={shipShow}
         ariaLabel="Which ships to show"
@@ -639,13 +690,22 @@
       <Button variant="outline" size="sm" onclick={() => (closed = new Set())}>Expand all</Button>
       <Button variant="outline" size="sm" onclick={() => (closed = new Set(groups.map((g) => g.key)))}>Collapse all</Button>
     </div>
+    <div class="border-x border-transparent px-2">
+      <Table.Root class="table-fixed">
+        {@render cols()}
+        {@render head()}
+      </Table.Root>
+    </div>
+    </div>
     <div class="grid gap-2">
       {#if !groups.length}<Empty>Nothing matches.</Empty>{/if}
       {#each groups as g, gi (g.key)}
         {@const open = !closed.has(g.key)}
         {#if groupStarts[gi]! < budget}
+        {@const own = groupSort[g.key]}
         <Collapsible.Root {open} onOpenChange={() => toggleGroup(g.key)} class="rounded-lg border px-2 pt-0.5 pb-1.5">
-          <Collapsible.Trigger class="focus-visible:ring-ring/50 flex w-full cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] outline-none focus-visible:ring-2">
+          <div class="flex items-center gap-2">
+          <Collapsible.Trigger class="focus-visible:ring-ring/50 flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-2 rounded py-1.5 text-left text-[13px] outline-none focus-visible:ring-2">
             {#if open}<ChevronDown class="text-muted-foreground size-3.5" aria-hidden="true" />{:else}<ChevronRight class="text-muted-foreground size-3.5" aria-hidden="true" />{/if}
             {#if g.ship?.thumb}<Thumb src={g.ship.thumb} name={g.label} width={40} height={22} />{/if}
             <strong class={g.ship && !g.owned ? 'text-muted-foreground' : ''}>{g.label}</strong>
@@ -654,6 +714,28 @@
             {/if}
             <span class="text-muted-foreground text-[11px]">{g.count} pledge{g.count === 1 ? '' : 's'} · {money(g.value)}</span>
           </Collapsible.Trigger>
+          {#if open && g.rows.length > 1}
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button {...props} variant="ghost" size="xs" class={cn('shrink-0', own ? 'text-primary' : 'text-muted-foreground')} aria-label={`Sort the pledges of ${g.label}`}>
+                    <ArrowUpDown class="size-3.5" />{own ? `${COLS.find((c) => c.key === own.key)?.label} ${own.dir === 'asc' ? '↑' : '↓'}` : 'Sort'}
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end" class="w-48">
+                <DropdownMenu.Label class="text-muted-foreground text-[11px] font-normal">Sort this ship's pledges</DropdownMenu.Label>
+                <DropdownMenu.Item onSelect={() => setGroupSort(g.key, null)}>{#if !own}<Check class="size-3.5" />{:else}<span class="size-3.5"></span>{/if} Same as the header</DropdownMenu.Item>
+                <DropdownMenu.Separator />
+                {#each COLS as c (c.key)}
+                  <DropdownMenu.Item closeOnSelect={false} onSelect={() => setGroupSort(g.key, nextSort(own ?? { key: c.key, dir: c.dir === 'asc' ? 'desc' : 'asc' }, c.key, c.dir))}>
+                    {#if own?.key === c.key}<span class="text-primary w-3.5 text-center">{own.dir === 'asc' ? '↑' : '↓'}</span>{:else}<span class="w-3.5"></span>{/if} {c.label}
+                  </DropdownMenu.Item>
+                {/each}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          {/if}
+          </div>
           <Collapsible.Content>
             {#if open}{@render pledgeTable(g.rows.slice(0, Math.max(0, budget - groupStarts[gi]!)))}{/if}
           </Collapsible.Content>
@@ -678,7 +760,7 @@
       ariaLabel="Group pledges"
       size="sm"
     />
-    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row. Ships you don't own but hold paints, parts or CCUs for are listed too, after the ones you own" checked={byShip} onchange={(v) => (byShip = v)} />
+    <SwitchRow id="hangar-by-ship" size="sm" label="Group by ship" hint="Each ship with the paints, parts and CCUs for it nested under it; every pledge keeps its own row." checked={byShip} onchange={(v) => (byShip = v)} />
     <SwitchRow id="hangar-all-items" size="sm" label="Show all items in every pledge" checked={allItems} onchange={(v) => (allItems = v)} />
     {#if setOptions.length}
       <DropdownMenu.Root>
@@ -705,10 +787,7 @@
   </FacetBar>
 {/snippet}
 
-{#snippet pledgeTable(rows: PledgeStack[])}
-          <!-- By ship every group is its own table: fixed column widths keep the columns lined up from group to group. -->
-          <Table.Root class={byShip ? 'min-w-[1100px] table-fixed' : ''}>
-            {#if byShip}
+{#snippet cols()}
               <colgroup>
                 {#if melting}<col class="w-10" />{/if}
                 <col />
@@ -717,12 +796,14 @@
                 <col class="w-24" />
                 <col class="w-32" />
                 <col class="w-28" />
-                <col class="w-56" />
+                <col class="w-48" />
                 <col class="w-20" />
                 {#if melting}<col class="w-48" />{/if}
-                <col class="w-60" />
+                <col class="w-80" />
               </colgroup>
-            {/if}
+{/snippet}
+
+{#snippet head()}
             <Table.Header>
               <Table.Row>
                 {#if melting}<Table.Head><Checkbox aria-label="Pick all shown" checked={allShownPicked} onCheckedChange={(v) => pickAll(shown, v)} /></Table.Head>{/if}
@@ -737,11 +818,11 @@
                 </SortTh>
                 <SortTh key="date" bind:sort firstDir="desc">Created</SortTh>
                 <SortTh key="flags" bind:sort firstDir="desc">Flags</SortTh>
-                <Table.Head>
-                  <LazyTip tip="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners">
-                    {#snippet trigger({ props })}<button type="button" {...props} class="cursor-default">Labels</button>{/snippet}
+                <SortTh key="labels" bind:sort>
+                  <LazyTip tip="Your own labels — Keep, LTI token, CCU fodder and Melt steer the planners. Sorts A→Z by label, unlabelled last">
+                    {#snippet trigger({ props })}<span {...props}>Labels</span>{/snippet}
                   </LazyTip>
-                </Table.Head>
+                </SortTh>
                 {#if melting}
                   <Table.Head>
                     <LazyTip tip="Items that disappear for good if you melt one more of these on top of what's picked">
@@ -749,9 +830,15 @@
                     </LazyTip>
                   </Table.Head>
                 {/if}
-                <Table.Head>Hangar entries</Table.Head>
+                <SortTh key="id" bind:sort firstDir="desc">Hangar entries</SortTh>
               </Table.Row>
             </Table.Header>
+{/snippet}
+
+{#snippet pledgeTable(rows: PledgeStack[])}
+          <!-- By ship every group is its own table under one sticky header: fixed column widths keep them lined up. -->
+          <Table.Root class={byShip ? 'table-fixed' : ''}>
+            {#if byShip}{@render cols()}{:else}{@render head()}{/if}
             <Table.Body>
               {#each rows as s (s.rep.id)}
                 {@const p = s.rep}
