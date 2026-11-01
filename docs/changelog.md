@@ -6,6 +6,8 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+
+## 0.12.0 — 2026-11-01
 - **Group by ship: more in the folded row.** Each ship's row now shows, without opening it, its insurance (LTI in yellow, other terms grey), role, size and stage (e.g. *Corvette · Capital · Flyable*), store MSRP, what the pledges under it saved vs MSRP, and how many copies are giftable.
 
 ## 0.11.1 — 2026-11-01
