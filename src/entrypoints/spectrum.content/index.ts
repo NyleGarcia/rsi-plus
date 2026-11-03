@@ -2,6 +2,7 @@ import { mount, unmount } from 'svelte';
 import ThreadBar from '@/components/ThreadBar.svelte';
 import { classify } from '@/lib/capture';
 import { HOOK_CONFIG_KEY, HOOK_TAG, type HookConfig } from '@/lib/hook-config';
+import { trackPath } from '@/lib/page-path.svelte';
 import { firstNewReply, markRead, markUnread, type ReadState } from '@/lib/read';
 import { getSettings, getWatches, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
 import { toast, ui } from '@/lib/state.svelte';
@@ -65,7 +66,8 @@ export default defineContentScript({
       onCaptured(e.data.payload.path, e.data.payload.json);
     });
 
-    ctx.addEventListener(window, 'wxt:locationchange', () => onRoute());
+    trackPath(ctx);
+    ctx.addEventListener(window, 'wxt:locationchange', (e) => onRoute(e.newUrl.pathname));
     await domReady();
     onRoute();
     let pending = 0;
@@ -144,8 +146,9 @@ function onCaptured(path: string, json: any) {
   }
 }
 
-function onRoute() {
-  const { slug } = parsePath(location.pathname);
+/** `pathname`: the page being entered (on a route change `location` may still hold the old one — see `page-path`). */
+function onRoute(pathname = location.pathname) {
+  const { slug } = parsePath(pathname);
   if (!slug) ui.view = null;
   else if (ui.view?.thread.slug !== slug) {
     ui.view = null;

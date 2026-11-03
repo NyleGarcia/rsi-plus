@@ -21,6 +21,7 @@ export const SETTING_TOGGLES: SettingToggle[] = [
   { key: 'notifyAllFriends', label: 'Notify for every friend coming online', hint: 'Otherwise only friends marked with the bell' },
   { key: 'partySound', label: 'Ding on party auto-accept', hint: 'Short sound when party mode accepts a request' },
   { key: 'siteBar', label: 'RSI+ bar on store & account pages' },
+  { key: 'spectrumBar', label: 'RSI+ bar on Spectrum', hint: 'Watch / mark-unread bar, bottom right of forum channels and threads' },
   { key: 'accountSwitcher', label: 'Account switcher', hint: 'Save RSI logins and swap between them from the hub header and the popup' },
 ];
 export const QUICK_TOGGLES = SETTING_TOGGLES.filter((t) => t.quick);

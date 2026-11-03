@@ -57,6 +57,8 @@ export interface Settings {
   partySound: boolean;
   /** RSI+ bar on store ship pages and account pages. */
   siteBar: boolean;
+  /** RSI+ bar on Spectrum forum channel / thread pages (watch, mark unread, jump to new). */
+  spectrumBar: boolean;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
   accountSwitcher: boolean;
   /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
@@ -91,6 +93,7 @@ export const DEFAULTS: Settings = {
   partyRemindHours: 12,
   partySound: true,
   siteBar: true,
+  spectrumBar: true,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',

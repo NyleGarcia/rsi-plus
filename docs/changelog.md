@@ -6,6 +6,7 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+- **The Spectrum bar no longer follows you into chat, and can be turned off.** The bar (*S+*, bottom right) didn't notice Spectrum's in-page navigation: open a forum channel, then go to a chat lobby, and it stayed on top of the chat's emoji and send buttons, and × only shrank it to an *S+* button in the same spot. It now shows only on forum channels and threads and goes away as soon as you leave them. A new switch, Settings → *RSI+ bar on Spectrum*, hides it completely (toasts and the `?` key help still show). The switch *RSI+ bar on store & account pages* only ever covered RSI's store and account pages. The store / account bar also missed in-page navigation and now updates as you move between ship and account pages.
 
 ## 0.12.0 — 2026-11-01
 - **Group by ship: more in the folded row.** Each ship's row now shows, without opening it, its insurance (LTI in yellow, other terms grey), role, size and stage (e.g. *Corvette · Capital · Flyable*), store MSRP, what the pledges under it saved vs MSRP, and how many copies are giftable.

@@ -6,6 +6,7 @@
  */
 import { ui } from '@/lib/state.svelte';
 import { parsePath } from '@/lib/types';
+import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import type { Actions } from './index';
 
 const typing = (t: EventTarget | null) =>
@@ -38,7 +39,7 @@ function focusedThread(actions: Actions) {
   return slug ? (actions.thread(slug) ?? ui.view?.thread ?? null) : null;
 }
 
-export function startKeys(ctx: { onInvalidated(cb: () => void): void }, actions: Actions) {
+export function startKeys(ctx: ContentScriptContext, actions: Actions) {
   const onKey = (e: KeyboardEvent) => {
     if (!ui.settings.keyboard || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
     const t = focusedThread(actions);
@@ -86,7 +87,7 @@ export function startKeys(ctx: { onInvalidated(cb: () => void): void }, actions:
   window.addEventListener('keydown', onKey, true);
   ctx.onInvalidated(() => window.removeEventListener('keydown', onKey, true));
   // Route change: the focused element is gone.
-  window.addEventListener('wxt:locationchange', () => {
+  ctx.addEventListener(window, 'wxt:locationchange', () => {
     focusEl?.classList.remove('sp-focus');
     focusEl = null;
   });
