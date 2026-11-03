@@ -51,6 +51,18 @@ export function rowFor(a: HTMLAnchorElement, slug: string, maxDepth = 8): HTMLEl
   return null;
 }
 
+/** Settings → Spectrum tools off: take back everything `decorate` added (badges, buttons, row classes, muted bodies). */
+export function undecorate() {
+  for (const n of document.querySelectorAll('.sp-ui')) n.remove();
+  for (const n of document.querySelectorAll<HTMLElement>('[data-sp]')) {
+    delete n.dataset.sp;
+    delete n.dataset.spSlug;
+    if (n.title.startsWith('RSI+')) n.removeAttribute('title');
+    n.classList.remove('sp-row', 'sp-read', 'sp-new', 'sp-unseen', 'sp-pinned', 'sp-muted', 'sp-dev-row', 'sp-watched', 'sp-keyword');
+  }
+  for (const n of document.querySelectorAll('.sp-muted-body, .sp-focus')) n.classList.remove('sp-muted-body', 'sp-focus');
+}
+
 export function decorate(actions: Actions) {
   if (!st) return;
   paintRows(actions);

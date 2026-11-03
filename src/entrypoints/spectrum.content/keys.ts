@@ -41,7 +41,7 @@ function focusedThread(actions: Actions) {
 
 export function startKeys(ctx: ContentScriptContext, actions: Actions) {
   const onKey = (e: KeyboardEvent) => {
-    if (!ui.settings.keyboard || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+    if (!ui.settings.spectrumTools || !ui.settings.keyboard || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
     const t = focusedThread(actions);
     switch (e.key) {
       case 'j':

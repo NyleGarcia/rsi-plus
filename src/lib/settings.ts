@@ -57,6 +57,12 @@ export interface Settings {
   partySound: boolean;
   /** RSI+ bar on store ship pages and account pages. */
   siteBar: boolean;
+  /**
+   * Master switch for what RSI+ does on Spectrum and for Spectrum watches: read tracking, row / reply decorations, mutes,
+   * theme, shortcuts, the bar, and the background check of watched threads / channels. Off: Spectrum pages are left
+   * alone. Friends (list, requests, online alerts, party mode) and the rest of RSI+ keep working.
+   */
+  spectrumTools: boolean;
   /** RSI+ bar on Spectrum forum channel / thread pages (watch, mark unread, jump to new). */
   spectrumBar: boolean;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
@@ -94,6 +100,7 @@ export const DEFAULTS: Settings = {
   partySound: true,
   siteBar: true,
   spectrumBar: true,
+  spectrumTools: true,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',

@@ -10,8 +10,8 @@
   let { actions }: { actions: Actions } = $props();
 
   const route = $derived(parsePath(page.path));
-  /** Settings → "RSI+ bar on Spectrum". Off hides the bar and its S+ pip; toasts and the key help still show. */
-  const barOn = $derived(ui.settings.spectrumBar);
+  /** Settings → "RSI+ bar on Spectrum" (and "Spectrum tools"). Off hides the bar and its S+ pip; toasts and the key help still show. */
+  const barOn = $derived(ui.settings.spectrumTools && ui.settings.spectrumBar);
   const channelPage = $derived(!!route.channelId && !route.slug);
 
   let channelNames = $state<Record<string, string>>({});

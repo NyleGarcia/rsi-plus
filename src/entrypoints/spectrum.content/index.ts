@@ -8,7 +8,7 @@ import { getSettings, getWatches, patchSettings, readItem, settingsItem, watches
 import { toast, ui } from '@/lib/state.svelte';
 import { parsePath, threadUrl, type ThreadSummary } from '@/lib/types';
 import { NO_WATCHES, type Watches } from '@/lib/watch';
-import { decorate, setDecorState } from './decorate';
+import { decorate, setDecorState, undecorate } from './decorate';
 import { startKeys } from './keys';
 import themeCss from './theme.css?inline';
 
@@ -119,14 +119,16 @@ function injectStyle() {
 
 function applySettings(s: Settings) {
   ui.settings = s;
+  /** Settings → Spectrum tools: off leaves the page as Spectrum draws it (no classes, no hook filtering, no paint). */
+  const on = s.spectrumTools;
   const root = document.documentElement.classList;
-  root.toggle('sp-theme', s.theme);
-  root.toggle('sp-wide', s.wide);
-  root.toggle('sp-compact', s.compact);
-  root.toggle('sp-dev', s.devHighlight);
-  root.toggle('sp-hide-read', s.readTracking && s.hideRead);
-  root.toggle('sp-mute-hide', s.muteMode === 'hide');
-  const cfg: HookConfig = { dropMuted: s.muteMode === 'hide', mutes: s.mutes };
+  root.toggle('sp-theme', on && s.theme);
+  root.toggle('sp-wide', on && s.wide);
+  root.toggle('sp-compact', on && s.compact);
+  root.toggle('sp-dev', on && s.devHighlight);
+  root.toggle('sp-hide-read', on && s.readTracking && s.hideRead);
+  root.toggle('sp-mute-hide', on && s.muteMode === 'hide');
+  const cfg: HookConfig = { dropMuted: on && s.muteMode === 'hide', mutes: s.mutes };
   try {
     localStorage.setItem(HOOK_CONFIG_KEY, JSON.stringify(cfg));
   } catch {}
@@ -136,6 +138,7 @@ function applySettings(s: Settings) {
 
 function refresh() {
   if (!document.body) return;
+  if (!ui.settings.spectrumTools) return void undecorate();
   liftBar();
   setDecorState({ settings: ui.settings, read, watches, threads, listed });
   decorate(actions);
@@ -242,6 +245,7 @@ function openThread(t: ThreadSummary, replies: import('@/lib/types').Reply[] | u
         firstNewUrl: first ? threadUrl(t.channel_id, t.slug, first.id) : null,
       };
   syncWatched();
+  if (!ui.settings.spectrumTools) return;
   if (ui.settings.readTracking) {
     read = markRead(read, t);
     saveReadSoon(t.id);
