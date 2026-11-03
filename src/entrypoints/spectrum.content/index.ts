@@ -81,6 +81,15 @@ export default defineContentScript({
       }, 120);
     });
     observer.observe(document.body, { childList: true, subtree: true });
+    // Sticky footers can move as the thread scrolls (they unstick at the end): re-measure once a frame at most.
+    let liftQueued = false;
+    const liftSoon = () => {
+      if (liftQueued) return;
+      liftQueued = true;
+      requestAnimationFrame(() => ((liftQueued = false), liftBar()));
+    };
+    ctx.addEventListener(window, 'resize', liftSoon);
+    ctx.addEventListener(document, 'scroll', liftSoon, { capture: true, passive: true });
     ctx.onInvalidated(() => observer.disconnect());
     startKeys(ctx, actions);
 
@@ -127,8 +136,40 @@ function applySettings(s: Settings) {
 
 function refresh() {
   if (!document.body) return;
+  liftBar();
   setDecorState({ settings: ui.settings, read, watches, threads, listed });
   decorate(actions);
+}
+
+/**
+ * Spectrum pins its own controls to the bottom right of a thread (reply pager "1 / 6", Reply) — right where the bar
+ * sits. Find the fixed / sticky element under the bottom-right corner and lift the bar above it. Only on forum pages
+ * (the only pages with a bar); runs with `refresh` (throttled by the DOM observer) and on resize.
+ */
+function liftBar() {
+  if (!parsePath(location.pathname).channelId) return void (ui.barLift = 0);
+  const host = document.querySelector('spectrum-plus');
+  const vh = window.innerHeight;
+  let lift = 0;
+  const seen = new Set<Element>();
+  for (const x of [window.innerWidth - 30, window.innerWidth - 200, window.innerWidth - 380]) {
+    for (const hit of document.elementsFromPoint(x, vh - 8)) {
+      if (host?.contains(hit) || hit === document.body || hit === document.documentElement) continue;
+      let n: Element | null = hit;
+      while (n && n !== document.body && !seen.has(n)) {
+        seen.add(n);
+        const pos = getComputedStyle(n).position;
+        if (pos === 'fixed' || pos === 'sticky') {
+          const r = n.getBoundingClientRect();
+          // A footer strip, not a full-height column or the page's scroll container.
+          if (r.height > 0 && r.height < vh / 3 && r.bottom >= vh - 2) lift = Math.max(lift, vh - r.top);
+          break;
+        }
+        n = n.parentElement;
+      }
+    }
+  }
+  if (lift !== ui.barLift) ui.barLift = lift;
 }
 
 function onCaptured(path: string, json: any) {
@@ -241,9 +282,14 @@ export const actions = {
       await patchSettings({ mutes: { ...cur.mutes, authors: cur.mutes.authors.filter((a) => a !== nick) } });
     });
   },
-  async watchAuthor(nickname: string, displayname: string) {
+  /** Reply's Watch author button: watch, or stop watching when already watched. */
+  async toggleAuthor(nickname: string, displayname: string) {
     const w = await getWatches();
-    if (w.authors.some((a) => a.nickname.toLowerCase() === nickname.toLowerCase())) return toast(`Already watching @${nickname}`);
+    const nick = nickname.toLowerCase();
+    if (w.authors.some((a) => a.nickname.toLowerCase() === nick)) {
+      await watchesItem.setValue({ ...w, authors: w.authors.filter((a) => a.nickname.toLowerCase() !== nick) });
+      return toast(`Stopped watching @${nickname}`);
+    }
     await watchesItem.setValue({ ...w, authors: [...w.authors, { nickname, displayname }] });
     toast(
       w.channels.length

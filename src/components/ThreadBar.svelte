@@ -39,7 +39,7 @@
   ];
 </script>
 
-<div class="sp rp">
+<div class="sp rp" style:--lift="{ui.barLift}px">
   {#if !barOn}
     <!-- bar turned off in Settings -->
   {:else if ui.view && !collapsed}
@@ -111,7 +111,7 @@
   }
   .bar {
     right: 18px;
-    bottom: 18px;
+    bottom: calc(18px + var(--lift, 0px));
     display: flex;
     align-items: center;
     gap: 8px;
@@ -132,7 +132,7 @@
   }
   .pip {
     right: 18px;
-    bottom: 18px;
+    bottom: calc(18px + var(--lift, 0px));
     padding: 6px 9px;
     color: var(--rp-accent);
     font-weight: 800;
@@ -140,7 +140,7 @@
   }
   .toast {
     left: 50%;
-    bottom: 70px;
+    bottom: calc(70px + var(--lift, 0px));
     transform: translateX(-50%);
     padding: 9px 14px;
     display: flex;

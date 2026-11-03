@@ -41,6 +41,7 @@
   border-radius: 6px; padding: 1px 7px; font: 11px/1.6 system-ui, sans-serif; cursor: pointer;
 }
 .sp-mini:hover { background: rgb(255 255 255 / 0.12); color: #fff; }
+.sp-mini.sp-on { color: #ffd166; border-color: rgb(255 209 102 / 0.4); }
 
 /* ---- dev highlight ---- */
 .sp-dev .forum-thread-item.is-highlighted-staff { box-shadow: inset 3px 0 0 #ffb547; background: rgb(255 181 71 / 0.06); }
