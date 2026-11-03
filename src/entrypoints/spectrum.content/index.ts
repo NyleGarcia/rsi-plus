@@ -96,7 +96,7 @@ export default defineContentScript({
     const bar = await createShadowRootUi(ctx, {
       name: 'spectrum-plus',
       position: 'overlay',
-      zIndex: 2147483000,
+      zIndex: 2147483000, // no effect: WXT resets the host with `:host { all: initial !important }`; see site-bar.css
       anchor: 'html',
       onMount: (root) => mount(ThreadBar, { target: root, props: { actions } }),
       onRemove: (app) => app && unmount(app),

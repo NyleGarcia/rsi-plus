@@ -10,9 +10,13 @@
   font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--rp-fg);
 }
-/* Floating surface: bar, toast, help, pip. */
+/* Floating surface: bar, toast, help, pip (all position: fixed).
+ * The z-index goes here, not on the shadow host: WXT resets the host with `:host { all: initial !important }`, which
+ * beats the host's inline z-index / position, so the host makes no stacking context and the page's own positioned
+ * elements (Spectrum's thread footer) would paint over the bar. */
 .rp-surface {
-  background: rgb(14 18 24 / 0.94);
+  z-index: 2147483647;
+  background: rgb(14 18 24); /* opaque: nothing of the page shows through */
   border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 12px;
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);

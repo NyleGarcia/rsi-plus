@@ -20,7 +20,7 @@ export default defineContentScript({
     const ui = await createShadowRootUi(ctx, {
       name: 'rsi-plus',
       position: 'overlay',
-      zIndex: 2147483000,
+      zIndex: 2147483000, // no effect: WXT resets the host with `:host { all: initial !important }`; see site-bar.css
       anchor: 'html',
       onMount: (root) => mount(SiteBar, { target: root }),
       onRemove: (app) => app && unmount(app),
