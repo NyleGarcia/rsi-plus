@@ -151,16 +151,23 @@ function refresh() {
 function liftBar() {
   if (!parsePath(location.pathname).channelId) return void (ui.barLift = 0);
   const host = document.querySelector('spectrum-plus');
+  const vw = window.innerWidth;
   const vh = window.innerHeight;
   const docScrolls = (document.scrollingElement?.scrollHeight ?? 0) > vh + 1;
   let lift = 0;
-  for (const x of [window.innerWidth - 30, window.innerWidth - 200, window.innerWidth - 380]) {
-    for (const hit of document.elementsFromPoint(x, vh - 8)) {
-      if (host?.contains(hit) || hit === document.body || hit === document.documentElement) continue;
-      const top = pinnedStripTop(hit, vh, docScrolls);
-      if (top !== null) lift = Math.max(lift, vh - top);
+  const done = new Set<Element>();
+  // Sample the strip the bar occupies (right ~500 px, bottom ~60 px): Spectrum's footer (`.list-navigator`: pager,
+  // Reply) is narrower than the bar and may stop short of the window edge.
+  for (const x of [vw - 30, vw - 120, vw - 220, vw - 380, vw - 500])
+    for (const y of [vh - 6, vh - 24, vh - 44]) {
+      if (x < 0 || y < 0) continue;
+      for (const hit of document.elementsFromPoint(x, y)) {
+        if (done.has(hit) || host?.contains(hit) || hit === document.body || hit === document.documentElement) continue;
+        done.add(hit);
+        const top = pinnedStripTop(hit, vh, docScrolls);
+        if (top !== null) lift = Math.max(lift, vh - top);
+      }
     }
-  }
   lift = Math.round(Math.min(lift, vh / 3));
   if (lift !== ui.barLift) {
     ui.barLift = lift;
@@ -169,18 +176,22 @@ function liftBar() {
 }
 
 /**
- * Top of the strip `hit` belongs to (its outermost ancestor shorter than a third of the window, touching the bottom),
- * when that strip stays put while the page scrolls; else null.
+ * Top of the strip `hit` belongs to (its outermost ancestor shorter than a third of the window that reaches the
+ * bottom ~60 px), when that strip stays put while the page scrolls: it, or an ancestor, is fixed / sticky, or nothing
+ * between it and the page scrolls (and the page itself doesn't). Else null.
  */
 function pinnedStripTop(hit: Element, vh: number, docScrolls: boolean): number | null {
   let strip: Element | null = null;
-  let pinned = !docScrolls; // no fixed / sticky ancestor: pinned only when the document itself doesn't scroll
-  for (let n: Element | null = hit; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
-    const cs = getComputedStyle(n);
-    if (cs.visibility === 'hidden') return null;
+  let pinned = !docScrolls;
+  // An absolutely positioned element moves with its containing block (offsetParent), not with the elements between:
+  // a footer placed against the page sits inside the reply scroller in the DOM but doesn't scroll with it.
+  const up = (n: Element, cs: CSSStyleDeclaration): Element | null =>
+    cs.position === 'absolute' && n instanceof HTMLElement ? n.offsetParent : n.parentElement;
+  for (let n: Element | null = hit, cs: CSSStyleDeclaration; n && n !== document.body && n !== document.documentElement; n = up(n, cs)) {
+    cs = getComputedStyle(n);
+    if (cs.visibility === 'hidden' || cs.display === 'contents') continue;
     const r = n.getBoundingClientRect();
-    if (r.height > 0 && r.height < vh / 3 && r.bottom >= vh - 24) strip = n;
-    else if (!strip) return null; // the hit is part of something big (page background, a long column), not a strip
+    if (r.height > 0 && r.height < vh / 3 && r.bottom >= vh - 60 && r.top < vh) strip = n;
     if (cs.position === 'fixed' || cs.position === 'sticky') {
       pinned = true;
       break;
