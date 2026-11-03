@@ -15,8 +15,8 @@
   import { cn } from '@/lib/utils';
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
-  import { HUB_GROUPS, HUB_PAGES, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
-  import { INCOGNITO, feedItem, storeLogItem } from '@/lib/settings';
+  import { HUB_GROUPS, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
+  import { INCOGNITO, feedItem, getSettings, settingsItem, storeLogItem } from '@/lib/settings';
   import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
 
@@ -24,7 +24,6 @@
   /** A sidebar entry = one hub page (`#<tab>`). No second-level tab bars: every view people switch between is its own entry.
    *  Settings sits in the header (gear) rather than the nav: 15 page entries + footer already fill an 800px window. */
   type Item = HubPage;
-  const ITEMS = HUB_PAGES;
 
   /** `#tab` or `#tab?key=value` (e.g. `#ccu?to=42` from Store / the RSI page button, `#browse?who=concierge`). */
   function fromHash(): Tab {
@@ -118,6 +117,16 @@
 
   const current = $derived(pageOf(tab));
 
+  /** Settings → Spectrum tools off: Watching and Mutes leave the nav (still reachable by link); Feed and Friends stay. */
+  const SPECTRUM_ONLY = new Set<Item['tab']>(['watching', 'mutes']);
+  let spectrumTools = $state(true);
+  $effect(() => {
+    getSettings().then((s) => (spectrumTools = s.spectrumTools));
+    return settingsItem.watch(async () => (spectrumTools = (await getSettings()).spectrumTools));
+  });
+  const groups = $derived(HUB_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => spectrumTools || !SPECTRUM_ONLY.has(it.tab)) })));
+  const navItems = $derived([...groups.flatMap((g) => g.items), SETTINGS_PAGE]);
+
   function select(it: Item) {
     const hash = `#${it.tab}`;
     tab = it.tab;
@@ -127,13 +136,14 @@
 
   /** Up/Down/Home/End move between the nav entries (and select, like the old tab strip did). */
   function onKey(e: KeyboardEvent) {
-    const i = ITEMS.indexOf(current);
+    const items = navItems;
+    const i = items.indexOf(current);
     let n = -1;
-    if (e.key === 'ArrowDown') n = (i + 1) % ITEMS.length;
-    else if (e.key === 'ArrowUp') n = (i - 1 + ITEMS.length) % ITEMS.length;
+    if (e.key === 'ArrowDown') n = (i + 1) % items.length;
+    else if (e.key === 'ArrowUp') n = (i - 1 + items.length) % items.length;
     else if (e.key === 'Home') n = 0;
-    else if (e.key === 'End') n = ITEMS.length - 1;
-    const next = ITEMS[n];
+    else if (e.key === 'End') n = items.length - 1;
+    const next = items[n];
     if (!next) return;
     e.preventDefault();
     select(next);
@@ -176,7 +186,7 @@
       <Sidebar.Content>
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <nav aria-label="Sections" onkeydown={onKey}>
-          {#each HUB_GROUPS as g (g.label)}
+          {#each groups as g (g.label)}
             <Sidebar.Group class="py-1">
               <Sidebar.GroupLabel>{g.label}</Sidebar.GroupLabel>
               <Sidebar.GroupContent>
