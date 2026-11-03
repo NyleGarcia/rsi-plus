@@ -143,33 +143,51 @@ function refresh() {
 
 /**
  * Spectrum pins its own controls to the bottom right of a thread (reply pager "1 / 6", Reply) — right where the bar
- * sits. Find the fixed / sticky element under the bottom-right corner and lift the bar above it. Only on forum pages
- * (the only pages with a bar); runs with `refresh` (throttled by the DOM observer) and on resize.
+ * sits. Lift the bar above whatever is pinned there. Spectrum is an app layout: the replies scroll inside their own
+ * container and the footer is a plain element under it, so "pinned" isn't `position: fixed`; it is "not inside
+ * anything that scrolls" (or fixed / sticky). Only on forum pages (the only pages with a bar); runs with `refresh`
+ * (throttled by the DOM observer), on resize and on scroll.
  */
 function liftBar() {
   if (!parsePath(location.pathname).channelId) return void (ui.barLift = 0);
   const host = document.querySelector('spectrum-plus');
   const vh = window.innerHeight;
+  const docScrolls = (document.scrollingElement?.scrollHeight ?? 0) > vh + 1;
   let lift = 0;
-  const seen = new Set<Element>();
   for (const x of [window.innerWidth - 30, window.innerWidth - 200, window.innerWidth - 380]) {
     for (const hit of document.elementsFromPoint(x, vh - 8)) {
       if (host?.contains(hit) || hit === document.body || hit === document.documentElement) continue;
-      let n: Element | null = hit;
-      while (n && n !== document.body && !seen.has(n)) {
-        seen.add(n);
-        const pos = getComputedStyle(n).position;
-        if (pos === 'fixed' || pos === 'sticky') {
-          const r = n.getBoundingClientRect();
-          // A footer strip, not a full-height column or the page's scroll container.
-          if (r.height > 0 && r.height < vh / 3 && r.bottom >= vh - 2) lift = Math.max(lift, vh - r.top);
-          break;
-        }
-        n = n.parentElement;
-      }
+      const top = pinnedStripTop(hit, vh, docScrolls);
+      if (top !== null) lift = Math.max(lift, vh - top);
     }
   }
-  if (lift !== ui.barLift) ui.barLift = lift;
+  lift = Math.round(Math.min(lift, vh / 3));
+  if (lift !== ui.barLift) {
+    ui.barLift = lift;
+    console.debug('[RSI+] bar lifted', lift, 'px');
+  }
+}
+
+/**
+ * Top of the strip `hit` belongs to (its outermost ancestor shorter than a third of the window, touching the bottom),
+ * when that strip stays put while the page scrolls; else null.
+ */
+function pinnedStripTop(hit: Element, vh: number, docScrolls: boolean): number | null {
+  let strip: Element | null = null;
+  let pinned = !docScrolls; // no fixed / sticky ancestor: pinned only when the document itself doesn't scroll
+  for (let n: Element | null = hit; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    const cs = getComputedStyle(n);
+    if (cs.visibility === 'hidden') return null;
+    const r = n.getBoundingClientRect();
+    if (r.height > 0 && r.height < vh / 3 && r.bottom >= vh - 24) strip = n;
+    else if (!strip) return null; // the hit is part of something big (page background, a long column), not a strip
+    if (cs.position === 'fixed' || cs.position === 'sticky') {
+      pinned = true;
+      break;
+    }
+    if (/(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return null; // scrolls with the content
+  }
+  return strip && pinned ? strip.getBoundingClientRect().top : null;
 }
 
 function onCaptured(path: string, json: any) {

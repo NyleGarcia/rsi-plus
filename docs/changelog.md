@@ -6,7 +6,7 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
-- **The Spectrum bar stays clear of Spectrum's own buttons.** On a thread, the bar sat on top of Spectrum's pinned reply pager (*1 / 6*) and *Reply* button. It now measures what Spectrum pins to the bottom right and sits just above it, and follows it while you scroll.
+- **The Spectrum bar stays clear of Spectrum's own buttons.** On a thread, the bar sat on top of Spectrum's pinned reply pager (*1 / 6*) and *Reply* button. It now finds what Spectrum keeps on screen at the bottom right (whether or not Spectrum pins it as a fixed element) and sits just above it, and follows it while you scroll.
 - **Watch author is a switch.** The *Watch author* button on a reply now shows *★ Watching author* once you watch someone, and clicking it again stops watching. Before, it looked the same either way and there was no way to undo it from the reply.
 - **The Spectrum bar no longer follows you into chat, and can be turned off.** The bar (*S+*, bottom right) didn't notice Spectrum's in-page navigation: open a forum channel, then go to a chat lobby, and it stayed on top of the chat's emoji and send buttons, and × only shrank it to an *S+* button in the same spot. It now shows only on forum channels and threads and goes away as soon as you leave them. A new switch, Settings → *RSI+ bar on Spectrum*, hides it completely (toasts and the `?` key help still show). The switch *RSI+ bar on store & account pages* only ever covered RSI's store and account pages. The store / account bar also missed in-page navigation and now updates as you move between ship and account pages.
 
