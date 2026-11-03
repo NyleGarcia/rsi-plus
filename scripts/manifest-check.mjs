@@ -1,17 +1,18 @@
 // Guards the built manifests against permission creep and remote code — run after `wxt build` (-b firefox too):
 //   node scripts/manifest-check.mjs .output/chrome-mv3/manifest.json .output/firefox-mv2/manifest.json
-// Every permission must be on the allowlist, required hosts must stay on RSI, the only optional host is StarOrg Tools
-// (asked for when the user presses Connect), no CSP loosening (unsafe-eval / remote script sources), no http:// or
+// Every permission must be on the allowlist, required hosts must stay on RSI, optional hosts are StarOrg Tools and the
+// Issue Council (asked for when the user turns them on), no CSP loosening (unsafe-eval / remote script sources), no http:// or
 // third-party URLs anywhere. Adding a permission is a deliberate change: extend the allowlist here in the same commit
 // (and say why in wxt.config.ts). docs/ci.md.
 import { readFileSync } from 'node:fs';
 
-const PERMISSIONS = new Set(['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', 'offscreen', 'identity']);
+// scripting: the Issue Council content script is registered at runtime, only once its optional host is granted.
+const PERMISSIONS = new Set(['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', 'offscreen', 'identity', 'scripting']);
 const HOSTS = new Set(['https://robertsspaceindustries.com/*']);
 const args = process.argv.slice(2);
 const files = args;
-/** Optional hosts: requested at runtime by Settings → Integrations → StarOrg Tools → Connect, dropped on Disconnect. */
-const OPTIONAL_HOSTS = new Set(['https://starorg.tools/*', 'https://dev.starorg.tools/*']);
+/** Optional hosts: StarOrg Tools (Settings → Integrations → Connect, dropped on Disconnect) and the Issue Council (Settings → Issue Council). */
+const OPTIONAL_HOSTS = new Set(['https://starorg.tools/*', 'https://dev.starorg.tools/*', 'https://issue-council.robertsspaceindustries.com/*']);
 const BAD_CSP = /unsafe-eval|wasm-unsafe-eval|http:|https:\/\/(?!robertsspaceindustries\.com)/;
 const isHost = (p) => p.includes('/') || p === '<all_urls>';
 
@@ -38,10 +39,11 @@ for (const file of files) {
   const optional = m.optional_permissions ?? [];
   const optionalHosts = [...(mv2 ? optional.filter(isHost) : []), ...(m.optional_host_permissions ?? [])];
   for (const p of mv2 ? optional.filter((p) => !isHost(p)) : optional) fail(file, `optional permission set: ${p}`);
-  for (const h of optionalHosts) if (!OPTIONAL_HOSTS.has(h)) fail(file, `optional host outside StarOrg Tools: ${h}`);
+  for (const h of optionalHosts) if (!OPTIONAL_HOSTS.has(h)) fail(file, `optional host not on the allowlist: ${h}`);
   for (const cs of m.content_scripts ?? [])
     for (const pat of [...(cs.matches ?? []), ...(cs.exclude_matches ?? [])])
       if (!pat.startsWith('https://robertsspaceindustries.com/')) fail(file, `content script match outside RSI: ${pat}`);
+  // The Issue Council script must stay runtime-registered: in content_scripts its host would become an install-time grant.
   const csp = m.content_security_policy;
   const csps = typeof csp === 'string' ? [csp] : Object.values(csp ?? {});
   for (const c of csps) if (BAD_CSP.test(c)) fail(file, `content_security_policy loosened: ${c}`);

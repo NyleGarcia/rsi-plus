@@ -6,6 +6,7 @@
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
   import SwitchRow from './SwitchRow.svelte';
+  import IssueCouncilCard from './IssueCouncilCard.svelte';
   import Chip from './Chip.svelte';
   import Empty from './Empty.svelte';
   import { LINK_QUIET } from '@/lib/ui';
@@ -249,4 +250,6 @@
       </form>
     </Card.Content>
   </Card.Root>
+
+  <IssueCouncilCard />
 </div>

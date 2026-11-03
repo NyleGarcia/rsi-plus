@@ -6,6 +6,11 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+- **Issue Council.** Turn it on in Settings → Integrations → *Issue Council* (it asks for access to issue-council.robertsspaceindustries.com). RSI+ then reads the Issue Council pages you open:
+  - **What's new:** issue cards show *+N new* contributions and *was open* when the status changed since you last opened the issue. An issue page says what changed since your visit and highlights the new Activity Feed entries, with *Jump to first new*.
+  - **Follow:** ☆ on a card or *Watch in RSI+* on an issue page. Issues you reported, contributed to or follow on the Issue Council are tracked too. When an Issue Council page shows a tracked issue with a new status or more contributions, it lands in the Feed (kind *Issue Council*) with a desktop notification. RSI+ doesn't check in the background or use your Issue Council login, so nothing arrives while the Issue Council is closed. Watching → *Issue Council* lists what's tracked.
+  - **Spectrum links:** a reply that mentions `STARC-123456` gets a chip linking to the issue, with its status and contributions once RSI+ has seen it. The issue page lists the Spectrum threads where RSI+ saw it mentioned.
+  - **Report helper:** *Report new issue* saves what you type and offers *Restore draft* if you come back, and *Insert template* adds your template (editable in Settings) to the description field.
 
 ## 0.12.0 — 2026-11-01
 - **Group by ship: more in the folded row.** Each ship's row now shows, without opening it, its insurance (LTI in yellow, other terms grey), role, size and stage (e.g. *Corvette · Capital · Flyable*), store MSRP, what the pledges under it saved vs MSRP, and how many copies are giftable.

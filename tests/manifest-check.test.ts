@@ -31,10 +31,18 @@ describe('manifest audit', () => {
     expect(check(mv3({ optional_host_permissions: [STARORG, DEV] }))).toMatchObject({ ok: true });
     expect(check(mv2({ optional_permissions: [STARORG, DEV] }))).toMatchObject({ ok: true });
   });
+  it('accepts the Issue Council as an optional host and scripting, never the Issue Council as a required host', () => {
+    const IC = 'https://issue-council.robertsspaceindustries.com/*';
+    expect(check(mv3({ permissions: ['storage', 'scripting'], optional_host_permissions: [STARORG, IC] }))).toMatchObject({ ok: true });
+    expect(check(mv2({ permissions: ['storage', 'scripting', RSI], optional_permissions: [IC] }))).toMatchObject({ ok: true });
+    expect(check(mv3({ host_permissions: [RSI, IC] })).err).toContain('host permission outside RSI');
+    expect(check(mv2({ permissions: ['storage', RSI, IC] })).err).toContain('host permission outside RSI');
+    expect(check(mv3({ content_scripts: [{ matches: [IC], js: ['x.js'] }] })).err).toContain('content script match outside RSI');
+  });
   it('rejects any other optional host, and an optional API permission', () => {
     const other = check(mv3({ optional_host_permissions: ['https://evil.example/*'] }));
     expect(other.ok).toBe(false);
-    expect(other.err).toContain('optional host outside StarOrg Tools');
+    expect(other.err).toContain('optional host not on the allowlist');
     expect(check(mv2({ optional_permissions: ['https://*.starorg.tools/*'] })).ok).toBe(false);
     expect(check(mv3({ optional_permissions: ['tabs'] })).err).toContain('optional permission set: tabs');
     expect(check(mv2({ optional_permissions: ['history'] })).err).toContain('optional permission set: history');
