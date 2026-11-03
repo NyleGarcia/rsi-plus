@@ -9,8 +9,8 @@ import { browser, storage } from '#imports';
 
 /** Keys whose value is never written out (`auth` but not `author`). */
 const SECRET = /token|secret|password|passwd|cookie|auth(?!or)|session|api[-_]?key|bearer|csrf|jwt|credential/i;
-/** Keys holding who someone is (handles, ship names you gave, notes, muted authors, avatars): masked unless the user opts in. */
-const PERSONAL = /handle|nick|email|moniker|display_?name|custom_?name|reserved_?names|note|author|avatar/i;
+/** Keys holding who someone is (handles, ship names you gave, notes, muted authors, avatars) or what they wrote (Issue Council report draft): masked unless the user opts in. */
+const PERSONAL = /handle|nick|email|moniker|display_?name|custom_?name|reserved_?names|note|author|avatar|draft/i;
 /**
  * Maps keyed by a person (org cache: handle → orgs; presence / friend notes: member id → …). Without names their keys
  * become `#1`, `#2` … — the same person gets the same alias in every map, so presence and notes still line up.

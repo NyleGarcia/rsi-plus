@@ -14,6 +14,8 @@
   import * as Card from '@/components/ui/card';
   import * as ToggleGroup from '@/components/ui/toggle-group';
   import { Input } from '@/components/ui/input';
+  import { Textarea } from '@/components/ui/textarea';
+  import { DEFAULT_TEMPLATE, IC_HOSTS, IC_ORIGIN } from '@/lib/issue-council';
   import { Label } from '@/components/ui/label';
   import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
@@ -40,6 +42,37 @@
     await patchSettings({ [k]: v } as Partial<Settings>);
   }
   const caption = 'text-muted-foreground text-xs font-semibold tracking-wide uppercase';
+
+  /**
+   * Issue Council: on asks this browser for the optional host first (inside the click: browsers only grant during a
+   * user gesture, which an earlier await would end), then saves the setting and has the background register the
+   * content script. Off saves, drops the host and unregisters. Settings sync, grants don't: a device where the setting
+   * came on through sync shows *Grant access* instead.
+   */
+  let icGranted = $state<boolean | null>(null);
+  let icMsg = $state('');
+  $effect(() => {
+    browser.permissions.contains({ origins: IC_HOSTS }).then((v) => (icGranted = v), () => (icGranted = false));
+  });
+  function grantIssueCouncil() {
+    icMsg = '';
+    browser.permissions.request({ origins: IC_HOSTS }).then(
+      async (ok) => {
+        icGranted = ok;
+        if (!ok) return void (icMsg = 'Access not granted, so RSI+ stays off on the Issue Council.');
+        await set('issueCouncil', true);
+        await bg({ type: 'ic:sync' }).catch(() => {});
+      },
+      (e) => (icMsg = `Could not ask for access: ${(e as Error).message}`),
+    );
+  }
+  function setIssueCouncil(v: boolean) {
+    if (v) return grantIssueCouncil();
+    icMsg = '';
+    set('issueCouncil', false)
+      .then(() => browser.permissions.remove({ origins: IC_HOSTS }).catch(() => false))
+      .then(() => ((icGranted = false), bg({ type: 'ic:sync' }).catch(() => {})));
+  }
 
   let debugNames = $state(false);
   let debugStore = $state(false);
@@ -187,6 +220,33 @@
         <SwitchRow id={`set-${STARORG_SWITCH.key}`} label={STARORG_SWITCH.label} hint={STARORG_SWITCH.hint} checked={s.starorg} onchange={(v) => set('starorg', v)} />
         <!-- Off: the background signs out and forgets both contexts' tokens and drops the hosts (`disconnectAll`). -->
         {#if s.starorg}<StarOrgCard />{/if}
+        <SwitchRow
+          id="set-issueCouncil"
+          label="Issue Council"
+          hint="Read tracking, watches and a report helper on the Issue Council. Asks for access to issue-council.robertsspaceindustries.com; RSI+ only reads the pages you open there, never your login, and keeps everything in this browser"
+          checked={s.issueCouncil && !!icGranted}
+          onchange={(v) => setIssueCouncil(v)}
+        />
+        {#if s.issueCouncil && icGranted === false}
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <span class="text-muted-foreground">On in your synced settings, but this browser hasn't granted access to the Issue Council.</span>
+            <Button size="sm" variant="outline" onclick={grantIssueCouncil}>Grant access</Button>
+          </div>
+        {/if}
+        {#if icMsg}<p class="text-destructive text-xs" role="status">{icMsg}</p>{/if}
+        {#if s.issueCouncil && icGranted}
+          <div class="grid gap-1.5 rounded-md border p-3 text-sm">
+            <p class="text-muted-foreground text-xs">
+              Open the <a class={LINK} href={`${IC_ORIGIN}/projects/STAR-CITIZEN/`} target="_blank" rel="noopener">Issue Council</a>: issue cards show <b>+N new</b> and status changes since your last visit, issue pages mark what's new, and ☆ watches an issue. Issues you reported, contributed to or follow there are tracked too. Changes reach the Feed when an Issue Council page shows them: nothing arrives while it's closed.
+            </p>
+            <Label for="set-icTemplate" class="mt-1">Report template</Label>
+            <Textarea id="set-icTemplate" rows={8} class="font-mono text-xs" value={s.icTemplate} onchange={(e) => set('icTemplate', (e.currentTarget as HTMLTextAreaElement).value)} />
+            <div class="flex items-center gap-2">
+              <span class="text-muted-foreground text-xs">Report new issue → <b>Insert template</b> puts this into the field you last clicked.</span>
+              <Button size="sm" variant="ghost" onclick={() => set('icTemplate', DEFAULT_TEMPLATE)}>Reset</Button>
+            </div>
+          </div>
+        {/if}
       {/if}
     </Card.Content>
   </Card.Root>

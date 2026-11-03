@@ -2,7 +2,7 @@
 
 _Last updated: 2026-10-30_
 
-RSI+ is a browser extension that improves the Roberts Space Industries website (Spectrum, hangar, buyback, pledge store). It runs entirely in your browser. There is no RSI+ server, account, or analytics. It talks only to RSI, and to StarOrg Tools if you connect it.
+RSI+ is a browser extension that improves the Roberts Space Industries website (Spectrum, hangar, buyback, pledge store). It runs entirely in your browser. There is no RSI+ server, account, or analytics. It talks only to RSI, and to StarOrg Tools if you connect it. The optional Issue Council integration reads RSI's Issue Council pages you open and sends nothing anywhere.
 
 ## What the extension accesses
 
@@ -38,6 +38,8 @@ RSI+ is a browser extension that improves the Roberts Space Industries website (
   - **Never sent to StarOrg Tools:** pledge dates, store credit, buyback, orders or billing, the rest of a pledge's contents (paints, gear, upgrades — only ship hulls), whether a pledge is giftable or meltable, your labels, wishlist, CCU chains or paint plans, Spectrum or friends, your RSI display name or avatar, other saved logins, your RSI session or RSI cookies.
   - When it is sent: when you press *Send hangar now*, or, with *Auto-sync* on, after each full hangar load, and once a week, when RSI+ re-reads your hangar from RSI and sends it if your ship list changed since the last successful send (not in passive mode). Screenshare mode hides things on screen only; it does not change what is sent.
   - *Disconnect* signs the token out on StarOrg Tools, deletes it from the extension and removes the permission (on Firefox, the data-collection categories too). Chromium only: if an incognito window is also connected (it signs in separately), the shared permission stays until that one disconnects too. The ships already sent stay in your StarOrg Tools hangar until you remove them there, under StarOrg Tools' own privacy policy.
+
+- **Issue Council (optional, off until you turn it on):** Settings → Integrations → Issue Council asks your browser for access to `issue-council.robertsspaceindustries.com` (RSI's own site; turning it off gives the access back). With it, RSI+ reads the Issue Council pages you open in a tab — issue codes, titles, statuses, contribution counts, which issues you reported, contributed to or follow, and the ids of Activity Feed entries — to mark what is new and notify you about issues you track. It also keeps a draft of the *Report new issue* form while you type it, and remembers which Spectrum threads mention an issue code. RSI+ makes no requests of its own to the Issue Council, never reads or uses your Issue Council login, and never sends any of this anywhere: it stays in the extension's local storage on this device.
 
 ## Where data is stored
 

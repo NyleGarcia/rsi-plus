@@ -14,6 +14,7 @@ import type { Profiles } from './accounts';
 import type { ReadState } from './read';
 import type { Funding, FundingRange } from './wallet';
 import { NO_WATCHES, type FeedEvent, type Watches } from './watch';
+import { DEFAULT_TEMPLATE, type IcDraft, type IcIssues, type IcMentions } from './issue-council';
 
 /**
  * True in an incognito context (manifest `incognito: 'split'` → separate background / pages / content scripts).
@@ -57,6 +58,13 @@ export interface Settings {
   partySound: boolean;
   /** RSI+ bar on store ship pages and account pages. */
   siteBar: boolean;
+  /**
+   * Issue Council integration (opt-in): read tracking, watches and the report helper on issue-council.robertsspaceindustries.com.
+   * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
+   */
+  issueCouncil: boolean;
+  /** Report new issue → *Insert template*: the text put into the focused field. */
+  icTemplate: string;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
   accountSwitcher: boolean;
   /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
@@ -91,6 +99,8 @@ export const DEFAULTS: Settings = {
   partyRemindHours: 12,
   partySound: true,
   siteBar: true,
+  issueCouncil: false,
+  icTemplate: DEFAULT_TEMPLATE,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',
@@ -173,6 +183,12 @@ export const gameShipsItem = storage.defineItem<GameShip[]>(acct('sync:gameShips
 export const partyModeItem = storage.defineItem<PartyMode | null>(acct('local:partyMode'), { fallback: null });
 /** What party mode accepted (or failed to), newest first. */
 export const partyLogItem = storage.defineItem<PartyLogEntry[]>(acct('local:partyLog'), { fallback: [] });
+/** Issue Council (lib/issue-council.ts): issues seen on its pages, read state, tracked relations. */
+export const icIssuesItem = storage.defineItem<IcIssues>(acct('local:icIssues'), { fallback: {} });
+/** Spectrum threads that mention an Issue Council code. */
+export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMentions'), { fallback: {} });
+/** Report new issue form draft (autosaved while typing, offered back on the next visit). */
+export const icDraftItem = storage.defineItem<IcDraft | null>(acct('local:icDraft'), { fallback: null });
 export const lastPollItem = storage.defineItem<{ at: number; error: string | null } | null>(acct('local:lastPoll'), { fallback: null });
 /**
  * StarOrg Tools sign-in (`lib/starorg.ts`): the `aud=rsiplus` bearer token, when it expires, and who it belongs to.

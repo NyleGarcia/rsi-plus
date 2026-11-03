@@ -16,7 +16,11 @@ export type BgRequest =
   | { type: 'catalog:get'; fresh?: boolean }
   | { type: 'paints:get'; fresh?: boolean }
   /** Play the party-mode ding now (settings preview). */
-  | { type: 'sound:ding' };
+  | { type: 'sound:ding' }
+  /** Issue Council content script: tracked issues that changed (Feed + notification). */
+  | { type: 'ic:events'; events: import('./watch').FeedEvent[] }
+  /** Settings → Issue Council switched or access granted: (un)register the Issue Council content script now. */
+  | { type: 'ic:sync' };
 
 /** Hub pages (`hub.html#<tab>`). One sidebar entry each; `ships` (→ fleet) and `notifications` (→ feed, store view) are legacy aliases. */
 export type HubTab = 'feed' | 'watching' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships';
@@ -38,6 +42,8 @@ export interface BgResponses {
   'catalog:get': Catalog;
   'paints:get': PaintCatalog;
   'sound:ding': { ok: true };
+  'ic:events': { added: number };
+  'ic:sync': { registered: boolean };
 }
 
 type Envelope<T> = { ok: true; data: T } | { ok: false; error: string };

@@ -28,6 +28,7 @@
   import PartyPopper from '@lucide/svelte/icons/party-popper';
   import Store from '@lucide/svelte/icons/store';
   import Warehouse from '@lucide/svelte/icons/warehouse';
+  import Bug from '@lucide/svelte/icons/bug';
   import Code from '@lucide/svelte/icons/code';
   import AtSign from '@lucide/svelte/icons/at-sign';
   import Hash from '@lucide/svelte/icons/hash';
@@ -85,7 +86,7 @@
   });
 
   const LABEL: Record<EventKind, string> = Object.fromEntries(EVENT_KINDS.map((k) => [k.id, k.label])) as Record<EventKind, string>;
-  const KIND_TONE: Partial<Record<EventKind, string>> = { dev: 'text-accent-2', store: 'text-warning', friend: 'text-success', request: 'text-success', party: 'text-warning', replies: 'text-primary', keyword: 'text-info', hangar: 'text-info' };
+  const KIND_TONE: Partial<Record<EventKind, string>> = { dev: 'text-accent-2', store: 'text-warning', friend: 'text-success', request: 'text-success', party: 'text-warning', replies: 'text-primary', keyword: 'text-info', hangar: 'text-info', issue: 'text-warning' };
   const base = $derived(unseenOnly ? feed.filter((e) => !e.seen) : feed);
   const count = $derived.by(() => {
     const m = new Map<EventKind, number>();
@@ -95,8 +96,8 @@
   const present = $derived(EVENT_KINDS.filter((k) => (count.get(k.id) ?? 0) > 0 || kinds.includes(k.id)));
   const shown = $derived(kinds.length ? base.filter((e) => kinds.includes(e.kind)) : base);
   const unseen = $derived(feed.filter((e) => !e.seen).length);
-  const ICON: Record<EventKind, typeof Rss> = { replies: MessageSquare, thread: Rss, dev: Code, author: AtSign, keyword: Hash, friend: Users, request: UserPlus, party: PartyPopper, store: Store, hangar: Warehouse };
-  const TONE: Partial<Record<EventKind, TimelineEvent['tone']>> = { friend: 'success', request: 'success', party: 'warning', store: 'warning', replies: 'info', keyword: 'info', hangar: 'info', dev: 'warning' };
+  const ICON: Record<EventKind, typeof Rss> = { replies: MessageSquare, thread: Rss, dev: Code, author: AtSign, keyword: Hash, friend: Users, request: UserPlus, party: PartyPopper, store: Store, hangar: Warehouse, issue: Bug };
+  const TONE: Partial<Record<EventKind, TimelineEvent['tone']>> = { friend: 'success', request: 'success', party: 'warning', store: 'warning', replies: 'info', keyword: 'info', hangar: 'info', dev: 'warning', issue: 'warning' };
   const rows = $derived<TimelineEvent[]>(shown.map((e) => ({ id: e.key, at: e.at, title: e.title, meta: e.body, href: e.url.startsWith('hub.html') ? e.url.replace(/^hub\.html/, '') : e.url, icon: ICON[e.kind], tone: TONE[e.kind] ?? 'neutral', muted: e.seen, kind: LABEL[e.kind] ?? e.kind, kindClass: KIND_TONE[e.kind] })));
 
   async function pollNow() {
