@@ -52,11 +52,25 @@ export const MAX_SYNC_ROWS = 500;
 /** How many unknown hull names the card keeps. */
 export const NOT_FOUND_CAP = 20;
 
+/**
+ * How sure StarOrg Tools is that an RSI handle is this member's (StarOrg decides; RSI+ only shows it — spec
+ * `docs/plans/specs/rsi-verification-tiers.md`): `none` = typed on StarOrg, `linked` = known from RSI+ syncs (the
+ * member's word, checked by StarOrg against RSI's public pages, not proof), `verified_plus` = StarOrg's RSI bio code check.
+ */
+export type RsiTier = 'none' | 'linked' | 'verified_plus';
+export const RSI_TIERS: readonly RsiTier[] = ['none', 'linked', 'verified_plus'];
+const isTier = (v: unknown): v is RsiTier => typeof v === 'string' && (RSI_TIERS as readonly string[]).includes(v);
+
 export interface StarOrgUser {
   discord_id: string;
   username: string;
   rsi_handle: string | null;
+  /** Kept by StarOrg for older RSI+ versions: `rsi_tier === 'verified_plus'`. */
   rsi_verified: boolean;
+  /** Missing on a StarOrg Tools without tiers: derived from `rsi_verified` (`tierOf`). */
+  rsi_tier?: RsiTier;
+  /** Another StarOrg member also linked this handle: neither keeps the linked perks until one verifies it. */
+  rsi_conflict?: boolean;
 }
 export interface StarOrgAuth {
   token: string;
@@ -83,6 +97,18 @@ export interface StarOrgSync {
   verifiedHandles?: string[];
   /** The send found no (valid) token: the card shows *Connect*. */
   disconnected?: boolean;
+  /** `rsi_tier` / `rsi_conflict` StarOrg answered an accepted send with, for `handle`. */
+  tier?: RsiTier;
+  conflict?: boolean;
+}
+/** One item of `GET /api/fleet/hangar/sync`: StarOrg's last received send per RSI handle. */
+export interface RemoteSync {
+  rsi_handle: string;
+  last_sync_at: string | null;
+  client: string | null;
+  rows: number;
+  rsi_tier?: RsiTier;
+  rsi_conflict?: boolean;
 }
 export interface SyncPayload {
   format: typeof SYNC_FORMAT;
@@ -434,7 +460,7 @@ export async function push(payload: SyncPayload): Promise<StarOrgSync> {
     }
     return record({ ok: false, message: `StarOrg Tools refused the hangar: ${text}` });
   }
-  const j = ((await res.json().catch(() => null)) ?? {}) as { imported_count?: number; updated?: number; removed?: number; kept_unmatched?: unknown; not_found?: unknown };
+  const j = ((await res.json().catch(() => null)) ?? {}) as { imported_count?: number; updated?: number; removed?: number; kept_unmatched?: unknown; not_found?: unknown; rsi_tier?: unknown; rsi_conflict?: unknown };
   const n = payload.rows.length;
   const allNotFound = Array.isArray(j.not_found) ? j.not_found.filter((h): h is string => typeof h === 'string') : [];
   const kept = typeof j.kept_unmatched === 'number' && Number.isFinite(j.kept_unmatched) ? j.kept_unmatched : 0;
@@ -447,6 +473,8 @@ export async function push(payload: SyncPayload): Promise<StarOrgSync> {
     hash: changeHash(payload.rows),
     message: `Sent ${n} ship${n === 1 ? '' : 's'}${parts.length ? ` (${parts.join(', ')})` : ''}.${unknown}`,
     ...(unmatched ? { notFound: allNotFound.slice(0, NOT_FOUND_CAP), unmatched } : {}),
+    ...(isTier(j.rsi_tier) ? { tier: j.rsi_tier } : {}),
+    ...(typeof j.rsi_conflict === 'boolean' ? { conflict: j.rsi_conflict } : {}),
   });
 }
 
@@ -507,7 +535,7 @@ async function readyPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ pa
 export const previewPayload = (catalog: () => Promise<CatalogShip[]>): Promise<{ payload: SyncPayload } | { error: string }> => readyPayload(catalog);
 
 /** `GET /api/fleet/hangar/sync`: when StarOrg last received each of your RSI handles. null = not connected / failed. */
-export async function status(): Promise<{ rsi_handle: string; last_sync_at: string | null; client: string | null; rows: number }[] | null> {
+export async function status(): Promise<RemoteSync[] | null> {
   const auth = await currentAuth();
   if (!auth) return null;
   try {
@@ -517,8 +545,30 @@ export async function status(): Promise<{ rsi_handle: string; last_sync_at: stri
       return null;
     }
     if (!res.ok) return null;
-    return ((await res.json()) as { syncs?: [] }).syncs ?? [];
+    const syncs = ((await res.json()) as { syncs?: unknown }).syncs;
+    return Array.isArray(syncs) ? (syncs as RemoteSync[]) : [];
   } catch {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Verification tier (shown on the card; StarOrg decides it)
+
+const sameHandle = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * The tier to show for `handle` (the handle StarOrg knows the member as). Freshest first: StarOrg's sync status for
+ * that handle, then RSI+'s last accepted send as that handle, then the sign-in answer. A StarOrg Tools without tiers
+ * sends only `rsi_verified`: `verified_plus` when true, else `none`. Unknown tier strings are ignored.
+ */
+export function tierOf(user: StarOrgUser, sync: StarOrgSync | null | undefined, remote?: RemoteSync[] | null, handle = user.rsi_handle): { tier: RsiTier; conflict: boolean } {
+  const r = remote?.find((x) => sameHandle(x.rsi_handle, handle) && isTier(x.rsi_tier));
+  if (r) return { tier: r.rsi_tier!, conflict: r.rsi_conflict === true };
+  if (sync?.ok && sameHandle(sync.handle, handle) && isTier(sync.tier)) return { tier: sync.tier, conflict: sync.conflict === true };
+  if (isTier(user.rsi_tier)) return { tier: user.rsi_tier, conflict: user.rsi_conflict === true };
+  return { tier: user.rsi_verified ? 'verified_plus' : 'none', conflict: false };
+}
+
+/** StarOrg Tools' own page for the RSI bio code check (Verified+), for `handle`. A link only: RSI+ never touches the bio. */
+export const verifyUrl = (origin: string, handle: string) => `${origin}/verify/rsi?handle=${encodeURIComponent(handle)}`;

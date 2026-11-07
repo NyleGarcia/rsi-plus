@@ -1,9 +1,10 @@
 ---
 title: Now
 tags: [plans]
-updated: 2026-10-20
+updated: 2026-11-07
 ---
 # Now
+- [ ] StarOrg verification tiers ([#33](https://github.com/NyleGarcia/rsi-plus/issues/33)) — [[specs/rsi-verification-tiers]] · [spec](../specs/rsi-verification-tiers.md): RSI+ side done; waiting on StarOrg Tools for `rsi_tier` / `rsi_conflict` and the `/verify/rsi` page, then look at the card against StarOrg dev
 - [ ] Live-verify facets and labels — [[specs/filters-and-labels]]: Pledges / Ships / CCUs / Browse / Catalog bars on a real hangar (gifted guess, sold-today, counts), RSI ribbons on Browse; then planner `from=` param + exclude list for the CCUs page
 - [ ] Live-verify Plan ahead: pick a hull with no CCU on sale, chain shows *Later* steps + *to pay now* / *later* tiles, Verify marks them *waits for a sale*, save it; after a catalog refresh with that CCU on sale the Feed shows the *Store* alert opening `#ccu` and the saved chain says *on sale now*; Ship catalog *Not on sale* segment + last-seen dates after a day of refreshes
 - [ ] Live-verify the Firefox build (`about:debugging` → Load Temporary Add-on → `rsi-plus-<v>-firefox.zip`): popup/hub open, background poll with the `Rsi-Token` cookie, hangar load from the hub page, Spectrum MAIN-world hook, badge count, party ding; then submit to AMO (sources zip) and decide listed vs self-hosted signing

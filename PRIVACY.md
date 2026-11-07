@@ -1,6 +1,6 @@
 # RSI+ Privacy Policy
 
-_Last updated: 2026-10-30_
+_Last updated: 2026-11-07_
 
 RSI+ is a browser extension that improves the Roberts Space Industries website (Spectrum, hangar, buyback, pledge store). It runs entirely in your browser. There is no RSI+ server, account, or analytics. It talks only to RSI, and to StarOrg Tools if you connect it.
 
@@ -14,10 +14,11 @@ RSI+ is a browser extension that improves the Roberts Space Industries website (
   - *Connect* asks your browser for permission to reach the site you chose (`starorg.tools` or `dev.starorg.tools`; on Firefox also for the optional data-collection categories "personally identifying information" and "website content"), then opens StarOrg's own sign-in (Discord). RSI+ never sees your Discord or StarOrg password; it keeps the StarOrg sign-in token in the extension's local storage on this device (never in browser sync), for up to 90 days. If you cancel the sign-in or it fails, the permission is given back.
   - **Every request RSI+ makes to StarOrg Tools.** Your RSI cookies and RSI session never go to StarOrg Tools. The sign-in (1) is an ordinary StarOrg / Discord page in the browser's sign-in window, so StarOrg's and Discord's own cookies work there as when you visit those sites. Requests 2–5 are sent by RSI+ with no cookies at all; after sign-in, the StarOrg sign-in token is what identifies you. Your browser adds its usual headers, such as its user agent.
     1. *Sign-in* — `GET /api/auth/extension/login`, opened in the browser's sign-in window, with three values: a one-time PKCE challenge, the method name `S256` and the extension's redirect address. The page is StarOrg's own; what you enter there goes to StarOrg and Discord, never to RSI+.
-    2. *Sign-in exchange* — `POST /api/auth/extension/exchange` with the one-time code StarOrg handed back and the matching PKCE verifier. No RSI data. StarOrg answers with the token and who it knows you as (Discord id, username, RSI handle and whether it is verified); there is no separate "who am I" request.
+    2. *Sign-in exchange* — `POST /api/auth/extension/exchange` with the one-time code StarOrg handed back and the matching PKCE verifier. No RSI data. StarOrg answers with the token and who it knows you as (Discord id, username, RSI handle and how sure StarOrg is that it is yours: unverified, *RSI+ linked* or *Verified+*); there is no separate "who am I" request.
     3. *Send hangar* — `PUT /api/fleet/hangar/sync` with the token and the ship list below.
-    4. *Sync status* — `GET /api/fleet/hangar/sync` with the token only, no body: only while the StarOrg Tools card is on screen and connected (when it opens, and after each send), to show when StarOrg last received your hangar.
+    4. *Sync status* — `GET /api/fleet/hangar/sync` with the token only, no body: only while the StarOrg Tools card is on screen and connected (when it opens, and after each send), to show when StarOrg last received your hangar and the handle's verification level.
     5. *Sign-out* — `POST /api/auth/logout` with the token only, no body: on *Disconnect*, when you turn the *StarOrg Tools* switch off, and if you turn it off while the sign-in window is open.
+  - **Verification level.** The card shows the level StarOrg Tools gives your RSI handle (it comes back with the sign-in, a send and the sync status; RSI+ sends nothing extra for it): *unverified*, *RSI+ linked* (StarOrg knows the handle from RSI+ sends; this is not proof that the account is yours) or *Verified+* (StarOrg's own check of a code in your RSI profile bio). *Get Verified+* is an ordinary link to StarOrg Tools' verification page. RSI+ never reads or changes your RSI bio.
   - **What a send contains**, field by field (the HangarXPLOR fleet format):
     - `format` — always `hangarxplor/1`.
     - `client` — `rsi-plus/` and the RSI+ version.

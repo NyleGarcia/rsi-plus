@@ -6,6 +6,7 @@ updated: 2026-11-01
 # Changelog
 
 ## Unreleased
+- **StarOrg Tools: verification levels.** The RSI handle on the StarOrg Tools card now shows the level StarOrg Tools gives it: *Verified+* (StarOrg's RSI bio code check), *RSI+ linked* (StarOrg knows the handle from your RSI+ sends — not proof that the account is yours, so never called verified) or *unverified*. Below Verified+ a *Get Verified+* link opens StarOrg Tools' verification page; RSI+ never reads or changes your RSI bio. If another StarOrg member linked the same handle, the card says so. The level updates after each send. Older StarOrg Tools versions keep showing verified / unverified as before. Nothing new is sent.
 
 ## 0.12.0 — 2026-11-01
 - **Group by ship: more in the folded row.** Each ship's row now shows, without opening it, its insurance (LTI in yellow, other terms grey), role, size and stage (e.g. *Corvette · Capital · Flyable*), store MSRP, what the pledges under it saved vs MSRP, and how many copies are giftable.

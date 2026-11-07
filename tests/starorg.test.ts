@@ -26,6 +26,9 @@ import {
   STARORG_HOSTS,
   SYNC_FORMAT,
   type SyncPayload,
+  tierOf,
+  verifyUrl,
+  type StarOrgUser,
 } from '@/lib/starorg';
 import { storage } from '#imports';
 import { DEFAULTS, gameShipsItem, getSettings, hangarItem, patchSettings, starorgItem, starorgSyncItem } from '@/lib/settings';
@@ -203,6 +206,15 @@ describe('push', () => {
     expect(JSON.parse(init.body as string)).toEqual(p);
     expect(r).toMatchObject({ ok: true, rows: 3, hash: changeHash(p.rows), handle: 'zedwil' });
     expect((await starorgSyncItem.getValue())?.hash).toBe(changeHash(p.rows));
+  });
+  it('records the tier StarOrg answers an accepted send with; ignores an unknown tier', async () => {
+    await starorgItem.setValue(AUTH);
+    fetchMock.mockResolvedValue(json(200, { imported_count: 1, rsi_tier: 'linked', rsi_conflict: true }));
+    expect(await push(payload())).toMatchObject({ ok: true, tier: 'linked', conflict: true });
+    fetchMock.mockResolvedValue(json(200, { imported_count: 1, rsi_tier: 'gold', rsi_conflict: 'yes' }));
+    const r = await push(payload());
+    expect(r.tier).toBeUndefined();
+    expect(r.conflict).toBeUndefined();
   });
   it('401 → disconnected: the token is forgotten', async () => {
     await starorgItem.setValue(AUTH);
@@ -531,5 +543,33 @@ describe('StarOrg switched off', () => {
     expect(await storage.getItem('local:incognito.starorgSync')).toBeNull();
     expect(fetchMock.mock.calls.map((c) => c[0]).sort()).toEqual([`${DEV_ORIGIN}/api/auth/logout`, `${STARORG_ORIGIN}/api/auth/logout`]);
     expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS });
+  });
+});
+
+describe('verification tier', () => {
+  const user = (extra: Partial<StarOrgUser> = {}): StarOrgUser => ({ discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: false, ...extra });
+  it('falls back to rsi_verified on a StarOrg Tools without tiers', () => {
+    expect(tierOf(user({ rsi_verified: true }), null)).toEqual({ tier: 'verified_plus', conflict: false });
+    expect(tierOf(user(), null)).toEqual({ tier: 'none', conflict: false });
+  });
+  it('uses the sign-in tier and conflict, ignoring an unknown tier string', () => {
+    expect(tierOf(user({ rsi_tier: 'linked', rsi_conflict: true }), null)).toEqual({ tier: 'linked', conflict: true });
+    expect(tierOf(user({ rsi_tier: 'gold' as never, rsi_verified: true }), null)).toEqual({ tier: 'verified_plus', conflict: false });
+  });
+  it('a later accepted send as the same handle wins over the sign-in answer; a failed or other-handle send does not', () => {
+    const u = user({ rsi_tier: 'none' });
+    expect(tierOf(u, { at: 1, ok: true, message: '', handle: 'ZedWil', tier: 'linked' }).tier).toBe('linked');
+    expect(tierOf(u, { at: 1, ok: false, message: '', handle: 'zedwil', tier: 'linked' }).tier).toBe('none');
+    expect(tierOf(u, { at: 1, ok: true, message: '', handle: 'alt', tier: 'linked' }).tier).toBe('none');
+  });
+  it("StarOrg's sync status for the handle wins over everything", () => {
+    const remote = [
+      { rsi_handle: 'alt', last_sync_at: null, client: null, rows: 0, rsi_tier: 'none' as const },
+      { rsi_handle: 'zedwil', last_sync_at: null, client: null, rows: 3, rsi_tier: 'verified_plus' as const },
+    ];
+    expect(tierOf(user({ rsi_tier: 'linked', rsi_conflict: true }), { at: 1, ok: true, message: '', handle: 'zedwil', tier: 'linked' }, remote)).toEqual({ tier: 'verified_plus', conflict: false });
+  });
+  it('verifyUrl points at StarOrg Tools with the handle encoded', () => {
+    expect(verifyUrl(STARORG_ORIGIN, 'zed wil&x')).toBe('https://starorg.tools/verify/rsi?handle=zed%20wil%26x');
   });
 });
