@@ -1,0 +1,71 @@
+/* RSI+ on the Issue Council: everything under .rp-ic (injected <style>, no shadow root — the bits live inside cards). */
+.rp-ic {
+  --rp-accent: #3cc8ff;
+  --rp-gold: #ffd166;
+  --rp-muted: #8b95a5;
+  font: 12px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #e8edf3;
+}
+/* Above the card's full-size link overlay so the star is clickable. */
+.rp-ic-card {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  pointer-events: none;
+}
+.rp-ic-card > * { pointer-events: auto; }
+.rp-ic-pill {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-weight: 700;
+  font-size: 11px;
+  background: rgb(255 255 255 / 0.08);
+}
+.rp-ic-pill.new { background: rgb(60 200 255 / 0.18); color: var(--rp-accent); }
+.rp-ic-pill.status { background: rgb(255 209 102 / 0.16); color: var(--rp-gold); }
+.rp-ic-pill.read { color: var(--rp-muted); font-weight: 500; }
+.rp-ic-watch {
+  border: 1px solid rgb(255 255 255 / 0.15);
+  background: rgb(14 18 24 / 0.9);
+  color: #e8edf3;
+  border-radius: 6px;
+  padding: 0 7px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.rp-ic-watch.on { color: var(--rp-gold); border-color: rgb(255 209 102 / 0.45); }
+.rp-ic-watch.big { font-size: 12px; font-weight: 600; padding: 3px 10px; }
+.rp-ic-panel, .rp-ic-report {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(60 200 255 / 0.25);
+  border-radius: 10px;
+  background: rgb(14 18 24 / 0.92);
+}
+.rp-ic-report { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px auto; max-width: 1100px; }
+.rp-ic-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rp-ic-logo { font-weight: 800; color: var(--rp-accent); }
+.rp-ic-muted { color: var(--rp-muted); }
+.rp-ic-new-text { color: var(--rp-accent); font-weight: 600; }
+.rp-ic-link { color: var(--rp-accent); text-decoration: underline; }
+.rp-ic-btn {
+  border: 1px solid rgb(255 255 255 / 0.15);
+  background: rgb(255 255 255 / 0.06);
+  color: inherit;
+  border-radius: 7px;
+  padding: 3px 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rp-ic-btn:hover, .rp-ic-watch:hover { background: rgb(255 255 255 / 0.14); }
+.rp-ic-btn.primary { border-color: rgb(60 200 255 / 0.5); color: var(--rp-accent); }
+/* Activity Feed entries added since your last visit. */
+.rp-ic-new { box-shadow: inset 3px 0 0 var(--rp-accent, #3cc8ff); background: rgb(60 200 255 / 0.06); }

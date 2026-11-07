@@ -49,8 +49,8 @@ export const NO_WATCHES: Watches = { threads: [], channels: [], authors: [], fri
 export const keywordsFor = (w: Pick<Watches, 'keywords'>, channelId: string): string[] =>
   (w.keywords ?? []).filter((k) => k.channelId == null || k.channelId === channelId).map((k) => k.pattern);
 
-/** Feed event kinds: Spectrum watches, friends (online / added / removed), friend requests, party mode, store alerts, your hangar. */
-export type EventKind = 'replies' | 'thread' | 'dev' | 'author' | 'keyword' | 'friend' | 'request' | 'party' | 'store' | 'hangar';
+/** Feed event kinds: Spectrum watches, friends (online / added / removed), friend requests, party mode, store alerts, your hangar, Issue Council. */
+export type EventKind = 'replies' | 'thread' | 'dev' | 'author' | 'keyword' | 'friend' | 'request' | 'party' | 'store' | 'hangar' | 'issue';
 export const EVENT_KINDS: { id: EventKind; label: string; hint: string }[] = [
   { id: 'replies', label: 'Replies', hint: 'New replies on threads you watch' },
   { id: 'thread', label: 'New thread', hint: 'New threads in channels you watch' },
@@ -62,6 +62,7 @@ export const EVENT_KINDS: { id: EventKind; label: string; hint: string }[] = [
   { id: 'party', label: 'Party', hint: 'Party mode: auto-accepts and cleanup reminders' },
   { id: 'store', label: 'Store', hint: 'Wishlist and CCU chain alerts (price, warbond, back on sale)' },
   { id: 'hangar', label: 'Hangar', hint: 'Pledges that appeared or left your hangar on a reload' },
+  { id: 'issue', label: 'Issue Council', hint: 'Status changes and new contributions on issues you track, seen when you open the Issue Council' },
 ];
 
 export interface FeedEvent {

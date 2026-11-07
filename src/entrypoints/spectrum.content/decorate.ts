@@ -9,6 +9,7 @@ import { status, type ReadState } from '@/lib/read';
 import type { Settings } from '@/lib/settings';
 import { parsePath, type ThreadSummary } from '@/lib/types';
 import { isDev, keywordsFor, type Watches } from '@/lib/watch';
+import { findCodes, issueUrl, statusLabel, type IcIssues } from '@/lib/issue-council';
 import type { Actions } from './index';
 
 interface DecorState {
@@ -17,6 +18,8 @@ interface DecorState {
   watches: Watches;
   threads: Map<string, ThreadSummary>;
   listed: Set<string>;
+  /** Issue Council issues RSI+ has seen (status / contributions for the STARC chips). */
+  ic: IcIssues;
 }
 let st: DecorState | null = null;
 export function setDecorState(s: DecorState) {
@@ -142,10 +145,42 @@ export function nicknameOf(item: HTMLElement): { nickname: string; displayname: 
   return { nickname, displayname };
 }
 
+/** Issue Council codes in the replies on screen, collected by the last paint (the content script records the mentions). */
+export let pageCodes: string[] = [];
+
+/**
+ * Under a reply that mentions `STARC-123456`: a chip per code linking to the issue, with its status and contributions
+ * when RSI+ has seen it on the Issue Council. Text nodes are left alone (React owns them); the chip row is a sibling.
+ */
+function paintCodes(item: HTMLElement, body: HTMLElement | null, ic: IcIssues, found: Set<string>) {
+  const codes = body ? findCodes(body.textContent ?? '') : [];
+  for (const c of codes) found.add(c);
+  const key = codes.map((c) => `${c}:${ic[c]?.status ?? ''}:${ic[c]?.contributions ?? ''}`).join(',');
+  const old = ownChild<HTMLElement>(item, '.sp-starc');
+  if ((old?.dataset.key ?? '') === key && (!!old || !codes.length)) return;
+  old?.remove();
+  if (!codes.length || !body) return;
+  const row = el('div', 'sp-ui sp-starc');
+  row.dataset.key = key;
+  for (const code of codes) {
+    const i = ic[code];
+    const a = el('a', `sp-starc-chip${i?.status ? ` sp-starc-${i.status}` : ''}`);
+    a.href = issueUrl(code);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = [code, i?.status && statusLabel(i.status), i?.contributions != null && `${i.contributions} contributions`].filter(Boolean).join(' · ') + ' ↗';
+    a.title = i?.title ? `Issue Council: ${i.title}` : 'Open on the Issue Council';
+    row.append(a);
+  }
+  body.after(row);
+}
+
 function paintReplies(actions: Actions) {
   const s = st!;
-  if (!parsePath(location.pathname).slug) return;
+  if (!parsePath(location.pathname).slug) return void (pageCodes = []);
+  const found = new Set<string>();
   for (const item of document.querySelectorAll<HTMLElement>('.forum-thread-item')) {
+    paintCodes(item, ownChild<HTMLElement>(item, '.body-content-blocks') ?? ownChild<HTMLElement>(item, '.content-blocks'), s.ic, found);
     const who = nicknameOf(item);
     if (!who) continue;
     const muted = s.settings.muteReplies && isMutedMember(who, s.settings.mutes);
@@ -193,6 +228,7 @@ function paintReplies(actions: Actions) {
       info.append(box);
     }
   }
+  pageCodes = [...found];
 }
 
 /** The reply's Watch author button is a toggle: label, pressed state and tooltip follow the watch list. */

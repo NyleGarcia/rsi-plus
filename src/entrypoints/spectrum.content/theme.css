@@ -43,6 +43,17 @@
 .sp-mini:hover { background: rgb(255 255 255 / 0.12); color: #fff; }
 .sp-mini.sp-on { color: #ffd166; border-color: rgb(255 209 102 / 0.4); }
 
+/* ---- Issue Council codes in replies (decorate.ts paintCodes) ---- */
+.sp-starc { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.sp-starc-chip {
+  border: 1px solid rgb(60 200 255 / 0.35); border-radius: 999px; padding: 1px 9px;
+  font: 600 11px/1.6 system-ui, sans-serif; color: #3cc8ff !important; text-decoration: none !important; background: rgb(60 200 255 / 0.08);
+}
+.sp-starc-chip:hover { background: rgb(60 200 255 / 0.18); }
+.sp-starc-confirmed { border-color: rgb(255 181 71 / 0.5); color: #ffb547 !important; }
+.sp-starc-fixed { border-color: rgb(61 220 151 / 0.5); color: #3ddc97 !important; }
+.sp-starc-archived { border-color: rgb(255 255 255 / 0.2); color: #9da1b0 !important; }
+
 /* ---- dev highlight ---- */
 .sp-dev .forum-thread-item.is-highlighted-staff { box-shadow: inset 3px 0 0 #ffb547; background: rgb(255 181 71 / 0.06); }
 

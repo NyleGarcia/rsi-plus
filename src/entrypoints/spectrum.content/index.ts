@@ -4,11 +4,12 @@ import { classify } from '@/lib/capture';
 import { HOOK_CONFIG_KEY, HOOK_TAG, type HookConfig } from '@/lib/hook-config';
 import { trackPath } from '@/lib/page-path.svelte';
 import { firstNewReply, markRead, markUnread, type ReadState } from '@/lib/read';
-import { getSettings, getWatches, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { getSettings, getWatches, icIssuesItem, icMentionsItem, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { addMentions, type IcIssues } from '@/lib/issue-council';
 import { toast, ui } from '@/lib/state.svelte';
 import { parsePath, threadUrl, type ThreadSummary } from '@/lib/types';
 import { NO_WATCHES, type Watches } from '@/lib/watch';
-import { decorate, setDecorState, undecorate } from './decorate';
+import { decorate, pageCodes, setDecorState, undecorate } from './decorate';
 import { startKeys } from './keys';
 import themeCss from './theme.css?inline';
 
@@ -18,6 +19,7 @@ export const threads = new Map<string, ThreadSummary>();
 export const listed = new Set<string>();
 let read: ReadState = {};
 let watches: Watches = NO_WATCHES;
+let ic: IcIssues = {};
 
 // Thread opens save the read marks debounced: the state is up to MAX_MARKS entries (~300 KB a write) and one open
 // marks twice (route + payload). Explicit actions flush at once; so does leaving the page.
@@ -54,6 +56,11 @@ export default defineContentScript({
     const flushPending = () => void (saveTimer && flushRead());
     ctx.addEventListener(window, 'pagehide', flushPending);
     ctx.onInvalidated(flushPending);
+    ic = await icIssuesItem.getValue();
+    icIssuesItem.watch((v) => {
+      ic = v ?? {};
+      refresh();
+    });
     watches = await getWatches();
     watchesItem.watch(async () => {
       watches = await getWatches();
@@ -140,8 +147,26 @@ function refresh() {
   if (!document.body) return;
   if (!ui.settings.spectrumTools) return void undecorate();
   liftBar();
-  setDecorState({ settings: ui.settings, read, watches, threads, listed });
+  setDecorState({ settings: ui.settings, read, watches, threads, listed, ic });
   decorate(actions);
+  recordMentions();
+}
+
+/** Issue Council codes in this thread's replies → `icMentions` (the issue page lists the threads). Once per thread + code set. */
+let mentionKey = '';
+function recordMentions() {
+  const { slug, channelId } = parsePath(location.pathname);
+  if (!slug || !channelId || !pageCodes.length) return;
+  // The subject arrives with the thread payload, possibly after the replies render: record again once it is known.
+  const subject = threads.get(slug)?.subject ?? ui.view?.thread.subject ?? slug;
+  const key = `${slug}|${subject}|${pageCodes.join(',')}`;
+  if (key === mentionKey) return;
+  mentionKey = key;
+  const codes = pageCodes;
+  icMentionsItem
+    .getValue()
+    .then((m) => icMentionsItem.setValue(addMentions(m, codes, { slug, channelId, subject }, Date.now())))
+    .catch(() => {});
 }
 
 /**
