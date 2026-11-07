@@ -12,8 +12,8 @@
  * - **Send** builds the StarOrg Tools preset rows (`starOrgRows`: pledged hulls + in-game ships) and `PUT`s them to
  *   `/api/fleet/hangar/sync` with the logged-in RSI handle. Requests carry `Authorization: Bearer` and
  *   `credentials: 'omit'`, so a starorg.tools session cookie in the same browser never stands in for the token.
- *   Pledge values go only when *Send pledge values* is on (and, on Firefox, its financial data-collection category is
- *   granted); otherwise `pledge_cost` is sent empty. Only a hangar read as the handle logged in now is sent
+ *   Pledge values are never sent: `pledge_cost` is always empty (kept for the HangarXPLOR shape StarOrg reads). Only a
+ *   hangar read as the handle logged in now is sent
  *   (`hangarItem.handle`), and at most `MAX_SYNC_ROWS` rows. Hulls StarOrg doesn't know come back in `not_found` and
  *   are shown on the card. *Preview* (`previewPayload`) runs the same checks and builds the same body locally, with no token and no StarOrg request;
  *   `STARORG_FIELDS` describes every field of it.
@@ -127,14 +127,14 @@ export function clientId(): string {
   }
 }
 
-/** The `PUT /api/fleet/hangar/sync` body. Pure: `pledge_cost` is blanked on every row unless `sendCost`. */
+/** The `PUT /api/fleet/hangar/sync` body. Pure: `pledge_cost` is blanked on every row — StarOrg Tools gets no pledge values. */
 export function buildPayload(
   pledges: Pledge[],
   gameShips: GameShip[],
   catalog: CatalogShip[],
-  opts: { sendCost: boolean; rsiHandle: string; client?: string; now?: Date },
+  opts: { rsiHandle: string; client?: string; now?: Date },
 ): SyncPayload {
-  const rows = starOrgRows(pledges, gameShips, catalog).map((r) => (opts.sendCost ? r : { ...r, pledge_cost: '' }));
+  const rows = starOrgRows(pledges, gameShips, catalog).map((r) => ({ ...r, pledge_cost: '' }));
   return {
     format: SYNC_FORMAT,
     client: opts.client ?? clientId(),
@@ -168,7 +168,7 @@ export const STARORG_FIELDS = {
     entity_type: 'Always "ship"',
     pledge_id: 'The RSI pledge number the ship is in (empty for in-game ships)',
     pledge_name: 'The pledge’s title, or "In-game (bought)" / "In-game (earned)"',
-    pledge_cost: 'The pledge’s value, e.g. "$45.00 USD" ("$0.00 USD" for in-game ships); empty unless Send pledge values is on',
+    pledge_cost: 'Always empty: pledge values are never sent',
     insurance: 'The insurance term the pledge lists, e.g. "LTI" or "120 mo"; left out when it lists none, and for in-game ships',
     acquired: '"pledge" for a hangar ship, "game" for one you added on My ships (bought or earned in the game)',
   } satisfies Record<keyof StarOrgRow, string>,
@@ -254,8 +254,6 @@ function validationLine(list: unknown[]): string | null {
 
 /** Firefox 140+ data-collection categories asked for at Connect (wxt.config.ts `data_collection_permissions.optional`). */
 export const DATA_COLLECTION = ['personallyIdentifyingInfo', 'websiteContent'];
-/** Asked for by the *Send pledge values* switch on Firefox: pledge values are financial information. */
-export const FINANCIAL = 'financialAndPaymentInfo';
 /** Builds define `import.meta.env.FIREFOX` as a boolean; Vitest exposes it as the string `'false'` / `'true'`. */
 const isFirefox = () => String(import.meta.env.FIREFOX) === 'true';
 
@@ -278,29 +276,6 @@ function requestAccess(origin: string): Promise<boolean> {
 }
 
 /**
- * *Send pledge values* turned on (Firefox): ask for the financial data-collection category, inside the switch's
- * gesture. true elsewhere and on a Firefox without data-collection permissions (nothing to ask for).
- */
-export function requestCostAccess(): Promise<boolean> {
-  if (!isFirefox()) return Promise.resolve(true);
-  try {
-    return browser.permissions.request({ data_collection: [FINANCIAL] } as never).catch(() => false);
-  } catch {
-    return Promise.resolve(true); // pre-140 Firefox: no categories exist
-  }
-}
-
-/** Whether pledge values may go out: the setting, and on Firefox the granted financial category. */
-async function costAllowed(setting: boolean): Promise<boolean> {
-  if (!setting || !isFirefox()) return setting;
-  try {
-    return await browser.permissions.contains({ data_collection: [FINANCIAL] } as never);
-  } catch {
-    return true; // pre-140 Firefox: no categories exist
-  }
-}
-
-/**
  * The other context's token key. Under Chromium `incognito: split` the two contexts keep separate tokens (`acct()`),
  * but host permissions are extension-wide, so one context must not drop the host while the other still uses it.
  */
@@ -318,7 +293,7 @@ async function releaseAccess(force = false): Promise<void> {
   if (!force && (await otherContextConnected())) return;
   if (isFirefox()) {
     try {
-      await browser.permissions.remove({ origins: STARORG_HOSTS, data_collection: [...DATA_COLLECTION, FINANCIAL] } as never);
+      await browser.permissions.remove({ origins: STARORG_HOSTS, data_collection: DATA_COLLECTION } as never);
       return;
     } catch {
       /* pre-140 Firefox: the host alone */
@@ -520,8 +495,8 @@ async function readyPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ pa
   const me = await whoAmI();
   if (!me) return { error: 'Not logged in on robertsspaceindustries.com — log in there, then send again.' };
   if (hangar.handle !== me.handle) return { error: `Saved hangar belongs to ${hangar.handle || 'another RSI login'}; load your hangar again (Hangar → Pledges).` };
-  const [{ starorgSendCost }, game, ships] = await Promise.all([getSettings(), gameShipsItem.getValue(), catalog()]);
-  const payload = buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: me.handle });
+  const [game, ships] = await Promise.all([gameShipsItem.getValue(), catalog()]);
+  const payload = buildPayload(hangar.pledges, game, ships, { rsiHandle: me.handle });
   if (payload.rows.length > MAX_SYNC_ROWS)
     return { error: `Your hangar has ${payload.rows.length} ships; StarOrg Tools takes at most ${MAX_SYNC_ROWS} per send. Nothing was sent.` };
   return { payload };

@@ -91,9 +91,8 @@ export default defineConfig({
                 // AMO requires a data-collection declaration for new submissions. Nothing is required (RSI+ works with
                 // no data leaving the browser); the optional StarOrg Tools sync sends the RSI handle (personally
                 // identifying) and the ship list read from RSI's hangar pages (website content), asked for on Connect
-                // together with the host (PRIVACY.md). Pledge values (financial) go only with *Send pledge values*,
-                // which asks for `financialAndPaymentInfo` when switched on (lib/starorg.ts `requestCostAccess`).
-                data_collection_permissions: { required: ['none'], optional: ['personallyIdentifyingInfo', 'websiteContent', 'financialAndPaymentInfo'] },
+                // together with the host (PRIVACY.md). Pledge values are never sent, so no financial category.
+                data_collection_permissions: { required: ['none'], optional: ['personallyIdentifyingInfo', 'websiteContent'] },
               },
             },
           }

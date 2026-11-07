@@ -1,13 +1,13 @@
 <script lang="ts">
   /**
    * Settings → Integrations → StarOrg Tools: connect / disconnect, who StarOrg knows you as, the last send, *Send
-   * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync / Send pledge values switches.
+   * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync switch.
    * Shown only while the *StarOrg Tools* switch above it is on. Every network call is in `lib/starorg.ts` and runs only
    * while connected. *What is sent* lists every field from `STARORG_FIELDS` before connecting; *Preview* builds the exact
    * body locally (`previewPayload`: a send's own checks and messages, no token, no StarOrg request) and shows it — in screenshare mode with the handle, ship names
    * and values masked on screen (*Copy JSON* still copies the real body).
    */
-  import { connect, currentAuth, disconnect, originOf, usableAuth, previewPayload, requestCostAccess, sendHangar, status, STARORG_FIELDS, STARORG_TARGETS, tierOf, verifyUrl, type RemoteSync, type RsiTier, type StarOrgAuth, type StarOrgSync, type StarOrgTarget, type SyncPayload } from '@/lib/starorg';
+  import { connect, currentAuth, disconnect, originOf, usableAuth, previewPayload, sendHangar, status, STARORG_FIELDS, STARORG_TARGETS, tierOf, verifyUrl, type RemoteSync, type RsiTier, type StarOrgAuth, type StarOrgSync, type StarOrgTarget, type SyncPayload } from '@/lib/starorg';
   import { catalogItem, getSettings, patchSettings, settingsItem, starorgItem, starorgSyncItem, type Settings } from '@/lib/settings';
   import { STARORG_TOGGLES } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
@@ -66,18 +66,7 @@
     s = { ...s, [k]: v };
     await patchSettings({ [k]: v } as Partial<Settings>);
   }
-  /** Switch handler. *Send pledge values* on asks Firefox for the financial data category first, inside this click. */
-  function toggle<K extends keyof Settings>(k: K, v: Settings[K]) {
-    if (k !== 'starorgSendCost' || !v) return void set(k, v);
-    error = null;
-    requestCostAccess().then((ok) => {
-      if (ok) set(k, v);
-      else {
-        error = 'The browser did not allow sending pledge values, so that stays off.';
-        if (s) s = { ...s }; // re-render the switch as off
-      }
-    });
-  }
+  const toggle = <K extends keyof Settings>(k: K, v: Settings[K]) => void set(k, v);
   const unknownHulls = $derived(sync?.ok && sync.notFound?.length ? sync.notFound : null);
 
   async function run(kind: NonNullable<typeof busy>, task: () => Promise<unknown>) {
@@ -122,7 +111,7 @@
       ? ''
       : JSON.stringify(
           privacy.on
-            ? { ...preview, rsi_handle: MASK, rows: preview.rows.map((r) => ({ ...r, ship_name: MASK, pledge_cost: r.pledge_cost && `$${MASK}` })) }
+            ? { ...preview, rsi_handle: MASK, rows: preview.rows.map((r) => ({ ...r, ship_name: MASK })) }
             : preview,
           null,
           2,
@@ -163,7 +152,7 @@
   </div>
 
   <p class="text-muted-foreground text-xs">
-    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge number and title; pledge values only if you turn that on) with your RSI handle. Nothing is sent until you press Connect, and nothing else from RSI is ever sent.
+    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge number and title; never pledge values) with your RSI handle. Nothing is sent until you press Connect, and nothing else from RSI is ever sent.
   </p>
 
   <Collapsible.Root>

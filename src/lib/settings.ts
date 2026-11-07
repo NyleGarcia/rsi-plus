@@ -81,8 +81,6 @@ export interface Settings {
   starorgTarget: 'prod' | 'dev';
   /** StarOrg Tools (when connected): send the hangar after every full load, and weekly when it changed (`lib/starorg.ts`). */
   starorgAutoSync: boolean;
-  /** StarOrg Tools: include each pledge's value (`pledge_cost`); off = sent empty. */
-  starorgSendCost: boolean;
   /** Currency amounts are shown in (`lib/currency.ts` `CURRENCIES`); RSI's own numbers are USD. */
   currency: string;
   /** Units of `currency` per 1 USD, typed by the user (nothing is fetched). Ignored for USD. */
@@ -115,7 +113,6 @@ export const DEFAULTS: Settings = {
   starorg: false,
   starorgTarget: 'prod',
   starorgAutoSync: false,
-  starorgSendCost: false,
   currency: 'USD',
   usdRate: 1,
 };
@@ -219,7 +216,9 @@ export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 
 export async function getSettings(): Promise<Settings> {
   const s = await settingsItem.getValue();
-  return { ...DEFAULTS, ...s, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
+  // `starorgSendCost` (Send pledge values) was removed: drop it, so the next save stops storing it.
+  const { starorgSendCost: _gone, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown };
+  return { ...DEFAULTS, ...kept, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
 }
 
 export async function patchSettings(patch: Partial<Settings>) {

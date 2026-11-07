@@ -34,9 +34,9 @@ RSI+ is a browser extension that improves the Roberts Space Industries website (
       - `entity_type` — always `ship`.
       - `pledge_id` — the RSI pledge number the ship is in (empty for in-game ships).
       - `pledge_name` — the pledge's title, or `In-game (bought)` / `In-game (earned)`.
-      - `pledge_cost` — **empty unless *Send pledge values* is on**; then the pledge's value, e.g. `$45.00 USD` (`$0.00 USD` for in-game ships). On Firefox, turning it on also asks for the "financial and payment information" category; refused, it stays off.
+      - `pledge_cost` — **always empty.** Pledge values are never sent.
       - `acquired` — `pledge` for a hangar ship, `game` for one from *My ships*.
-  - **Never sent to StarOrg Tools:** pledge dates, store credit, buyback, orders or billing, the rest of a pledge's contents (paints, gear, upgrades — only ship hulls), whether a pledge is giftable or meltable, your labels, wishlist, CCU chains or paint plans, Spectrum or friends, your RSI display name or avatar, other saved logins, your RSI session or RSI cookies.
+  - **Never sent to StarOrg Tools:** pledge values, pledge dates, store credit, buyback, orders or billing, the rest of a pledge's contents (paints, gear, upgrades — only ship hulls), whether a pledge is giftable or meltable, your labels, wishlist, CCU chains or paint plans, Spectrum or friends, your RSI display name or avatar, other saved logins, your RSI session or RSI cookies.
   - When it is sent: when you press *Send hangar now*, or, with *Auto-sync* on, after each full hangar load, and once a week, when RSI+ re-reads your hangar from RSI and sends it if your ship list changed since the last successful send (not in passive mode). Screenshare mode hides things on screen only; it does not change what is sent.
   - *Disconnect* signs the token out on StarOrg Tools, deletes it from the extension and removes the permission (on Firefox, the data-collection categories too). Chromium only: if an incognito window is also connected (it signs in separately), the shared permission stays until that one disconnects too. The ships already sent stay in your StarOrg Tools hangar until you remove them there, under StarOrg Tools' own privacy policy.
 

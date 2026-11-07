@@ -36,7 +36,6 @@ export const STARORG_SWITCH: SettingToggle = { key: 'starorg', label: 'StarOrg T
 /** The StarOrg Tools card's switches (Settings → Integrations) — kept out of `SETTING_TOGGLES`, which is the Spectrum / site card. */
 export const STARORG_TOGGLES: SettingToggle[] = [
   { key: 'starorgAutoSync', label: 'Auto-sync', hint: 'Send after every full hangar load; once a week, re-read your hangar from RSI and send it if your ships changed (not in passive mode)' },
-  { key: 'starorgSendCost', label: 'Send pledge values', hint: 'Off: the value of each pledge is sent empty' },
 ];
 /** `muteMode` options — Mutes page and Settings use the same words. */
 export const MUTE_MODES: { id: Settings['muteMode']; label: string; hint: string }[] = [
