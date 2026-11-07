@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-01
+updated: 2026-11-07
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.13.0 — 2026-11-07
 - **StarOrg Tools never gets pledge values.** The *Send pledge values* switch is gone: StarOrg Tools doesn't use them, so every send carries the value field empty, whatever the switch was set to before. On Firefox, RSI+ no longer asks for the "financial and payment information" data category. *JSON for StarOrg Tools* (the file you download yourself) is unchanged.
 - **StarOrg Tools: verification levels.** The RSI handle on the StarOrg Tools card now shows the level StarOrg Tools gives it: *Verified+* (StarOrg's RSI bio code check), *RSI+ linked* (StarOrg knows the handle from your RSI+ sends — not proof that the account is yours, so never called verified) or *unverified*. Below Verified+ a *Get Verified+* link opens StarOrg Tools' verification page; RSI+ never reads or changes your RSI bio. If another StarOrg member linked the same handle, the card says so. The level updates after each send. Older StarOrg Tools versions keep showing verified / unverified as before. Nothing new is sent.
 - **Turn RSI+ off on Spectrum, keep Friends.** New switch Settings → *Spectrum tools* (also in the popup). Off: RSI+ leaves Spectrum pages as Spectrum draws them (no read tracking, badges, mute buttons, theme, shortcuts or bar), stops checking watched threads and channels, and hides *Watching* and *Mutes* from the hub. Friends (list, requests, online alerts, party mode), the Feed and everything else keep working. Turning it back on restores everything without a reload.
