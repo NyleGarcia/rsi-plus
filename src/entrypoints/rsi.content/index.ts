@@ -7,6 +7,7 @@ import SiteBar from '@/components/SiteBar.svelte';
 import { pageCount } from '@/lib/account';
 import { parseCredits } from '@/lib/hangar';
 import { hangarItem } from '@/lib/settings';
+import { trackPath } from '@/lib/page-path.svelte';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 
 export default defineContentScript({
@@ -15,10 +16,11 @@ export default defineContentScript({
   runAt: 'document_idle',
   cssInjectionMode: 'ui',
   async main(ctx) {
+    trackPath(ctx);
     const ui = await createShadowRootUi(ctx, {
       name: 'rsi-plus',
       position: 'overlay',
-      zIndex: 2147483000,
+      zIndex: 2147483000, // no effect: WXT resets the host with `:host { all: initial !important }`; see site-bar.css
       anchor: 'html',
       onMount: (root) => mount(SiteBar, { target: root }),
       onRemove: (app) => app && unmount(app),
@@ -26,7 +28,8 @@ export default defineContentScript({
     ui.mount();
     highlightPledge();
     captureCredits(ctx);
-    ctx.addEventListener(window, 'wxt:locationchange', highlightPledge);
+    // After the URL commits: WXT can fire this before `location` updates (see `page-path`).
+    ctx.addEventListener(window, 'wxt:locationchange', () => setTimeout(highlightPledge));
   },
 });
 

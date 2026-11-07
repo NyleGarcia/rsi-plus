@@ -8,6 +8,12 @@ export interface SettingToggle {
   quick?: boolean;
 }
 export const SETTING_TOGGLES: SettingToggle[] = [
+  {
+    key: 'spectrumTools',
+    label: 'Spectrum tools',
+    hint: 'Read tracking, watches, mutes, theme, shortcuts and the bar on Spectrum. Off: RSI+ leaves Spectrum alone and stops checking watched threads; Friends keep working',
+    quick: true,
+  },
   { key: 'readTracking', label: 'Read tracking', hint: '"+N new" badges, read threads dimmed', quick: true },
   { key: 'hideRead', label: 'Hide read threads', hint: 'Unless they have new replies, are pinned or watched', quick: true },
   { key: 'devHighlight', label: 'Highlight dev posts' },
@@ -21,6 +27,7 @@ export const SETTING_TOGGLES: SettingToggle[] = [
   { key: 'notifyAllFriends', label: 'Notify for every friend coming online', hint: 'Otherwise only friends marked with the bell' },
   { key: 'partySound', label: 'Ding on party auto-accept', hint: 'Short sound when party mode accepts a request' },
   { key: 'siteBar', label: 'RSI+ bar on store & account pages' },
+  { key: 'spectrumBar', label: 'RSI+ bar on Spectrum', hint: 'Watch / mark-unread bar, bottom right of forum channels and threads' },
   { key: 'accountSwitcher', label: 'Account switcher', hint: 'Save RSI logins and swap between them from the hub header and the popup' },
 ];
 export const QUICK_TOGGLES = SETTING_TOGGLES.filter((t) => t.quick);

@@ -201,7 +201,9 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
   const replies = new Map<string, { replies: number; subject: string }>();
   const lastIds = new Map<string, string | null>();
 
-  for (const t of w.threads) {
+  // Settings → Spectrum tools off: no thread / channel checks (friends below still run).
+  const spectrum = s.spectrumTools !== false;
+  for (const t of spectrum ? w.threads : []) {
     try {
       const fresh = normThread(await api.thread(t.slug));
       if (fresh) {
@@ -213,7 +215,7 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     }
     await sleep(400);
   }
-  for (const c of w.channels) {
+  for (const c of spectrum ? w.channels : []) {
     try {
       const list = await api.channelThreads(c.id);
       const threads = list.threads.map(normThread).filter((t) => !!t);

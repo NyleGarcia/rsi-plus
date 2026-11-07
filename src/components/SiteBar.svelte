@@ -2,9 +2,10 @@
   import { bg, type HubTab } from '@/lib/messages';
   import { catalogItem, getSettings, settingsItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { isWarbondSku, lowestOffer, usd, type Catalog, type CatalogShip } from '@/lib/store';
+  import { page as here } from '@/lib/page-path.svelte';
   import './site-bar.css';
 
-  let path = $state(location.pathname);
+  const path = $derived(here.path);
   let enabled = $state(true);
   let cat = $state<Catalog | null>(null);
   let wish = $state<WishShip[]>([]);
@@ -19,11 +20,9 @@
       catalogItem.watch((c) => (cat = c)),
       wishlistItem.watch((w) => (wish = w ?? [])),
     ];
-    const on = () => (path = location.pathname);
-    window.addEventListener('wxt:locationchange', on);
     // Refresh the public catalog in the background if stale (no-op when fresh).
     bg({ type: 'catalog:get' }).catch(() => {});
-    return () => (offs.forEach((o) => o()), window.removeEventListener('wxt:locationchange', on));
+    return () => offs.forEach((o) => o());
   });
 
   /** Ship page path without the locale prefix: /en/pledge/ships/x/y → /pledge/ships/x/y (case-insensitive). */

@@ -51,6 +51,18 @@ export function rowFor(a: HTMLAnchorElement, slug: string, maxDepth = 8): HTMLEl
   return null;
 }
 
+/** Settings → Spectrum tools off: take back everything `decorate` added (badges, buttons, row classes, muted bodies). */
+export function undecorate() {
+  for (const n of document.querySelectorAll('.sp-ui')) n.remove();
+  for (const n of document.querySelectorAll<HTMLElement>('[data-sp]')) {
+    delete n.dataset.sp;
+    delete n.dataset.spSlug;
+    if (n.title.startsWith('RSI+')) n.removeAttribute('title');
+    n.classList.remove('sp-row', 'sp-read', 'sp-new', 'sp-unseen', 'sp-pinned', 'sp-muted', 'sp-dev-row', 'sp-watched', 'sp-keyword');
+  }
+  for (const n of document.querySelectorAll('.sp-muted-body, .sp-focus')) n.classList.remove('sp-muted-body', 'sp-focus');
+}
+
 export function decorate(actions: Actions) {
   if (!st) return;
   paintRows(actions);
@@ -137,7 +149,8 @@ function paintReplies(actions: Actions) {
     const who = nicknameOf(item);
     if (!who) continue;
     const muted = s.settings.muteReplies && isMutedMember(who, s.settings.mutes);
-    const key = `${who.nickname}|${muted}`;
+    const watched = s.watches.authors.some((a) => a.nickname.toLowerCase() === who.nickname.toLowerCase());
+    const key = `${who.nickname}|${muted}|${watched}`;
     if (item.dataset.sp === key) continue;
     item.dataset.sp = key;
 
@@ -154,7 +167,14 @@ function paintReplies(actions: Actions) {
     }
 
     const info = ownChild(item, '.forum-thread-member-info');
-    if (info && !info.querySelector(':scope > .sp-reply-actions')) {
+    // A repainted item keeps its buttons (same author); only the Watch toggle's state changes.
+    const old = info?.querySelector<HTMLButtonElement>(':scope > .sp-reply-actions > .sp-watch-author');
+    if (old && old.dataset.nick === who.nickname) {
+      setWatchLabel(old, who.nickname, watched);
+      continue;
+    }
+    info?.querySelector(':scope > .sp-reply-actions')?.remove();
+    if (info) {
       const box = el('span', 'sp-ui sp-reply-actions');
       const mute = el('button', 'sp-mini', 'Mute');
       mute.title = `Hide threads and replies by @${who.nickname}`;
@@ -162,16 +182,25 @@ function paintReplies(actions: Actions) {
         e.stopPropagation();
         actions.mute(who.nickname);
       });
-      const watch = el('button', 'sp-mini', 'Watch author');
-      watch.title = `Notify when @${who.nickname} posts in your watched channels`;
+      const watch = el('button', 'sp-mini sp-watch-author');
+      watch.dataset.nick = who.nickname;
+      setWatchLabel(watch, who.nickname, watched);
       watch.addEventListener('click', (e) => {
         e.stopPropagation();
-        actions.watchAuthor(who.nickname, who.displayname);
+        actions.toggleAuthor(who.nickname, who.displayname);
       });
       box.append(mute, watch);
       info.append(box);
     }
   }
+}
+
+/** The reply's Watch author button is a toggle: label, pressed state and tooltip follow the watch list. */
+function setWatchLabel(b: HTMLButtonElement, nickname: string, watched: boolean) {
+  b.textContent = watched ? '★ Watching author' : 'Watch author';
+  b.classList.toggle('sp-on', watched);
+  b.setAttribute('aria-pressed', String(watched));
+  b.title = watched ? `Stop watching @${nickname}` : `Notify when @${nickname} posts in your watched channels`;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {
