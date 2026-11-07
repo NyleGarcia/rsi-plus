@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.12.0...v0.13.0) (2026-11-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **starorg:** remove Send pledge values; pledge_cost is always empty
+
+### Features
+
+* **issue-council:** read tracking, follow + notify on visit, STARC links, report helper ([047e059](https://github.com/NyleGarcia/rsi-plus/commit/047e059ab8ccd9882323a14e1ae20f6eb0dce7b4))
+* **spectrum:** Spectrum tools switch, off leaves Spectrum alone but keeps Friends ([45c307e](https://github.com/NyleGarcia/rsi-plus/commit/45c307ebb87a45f4f8b727bec5a959f3a24a9ce9))
+* **starorg:** remove Send pledge values; pledge_cost is always empty ([d0f59a4](https://github.com/NyleGarcia/rsi-plus/commit/d0f59a46876a84f35d127b2cf61d6b0c82f18e55))
+* **starorg:** show RSI handle verification tiers on the StarOrg Tools card ([9702715](https://github.com/NyleGarcia/rsi-plus/commit/970271555bfdbc6fe72076a4bb0b2fa8f2a87be6)), closes [#33](https://github.com/NyleGarcia/rsi-plus/issues/33)
+
+
+### Bug Fixes
+
+* **spectrum:** bar clears Spectrum's reply footer; Watch author toggles ([b389d02](https://github.com/NyleGarcia/rsi-plus/commit/b389d02caa2c6529fb883ddea5527fcb7c10e73a))
+* **spectrum:** bar leaves chat lobbies, and Settings can turn it off ([e62b1de](https://github.com/NyleGarcia/rsi-plus/commit/e62b1deb114b4ef37413b08bd282bee257c587c9))
+* **spectrum:** bar paints above the page and is opaque ([1b25b61](https://github.com/NyleGarcia/rsi-plus/commit/1b25b61783e5445acfc8640cf79fdfdfd680e892))
+* **spectrum:** find Spectrum's footer by layout, not by position: fixed ([cb43d9c](https://github.com/NyleGarcia/rsi-plus/commit/cb43d9c1b6cabf65eae48dcd6615059d167ec8ed))
+* **spectrum:** sample the whole bar area when looking for Spectrum's footer ([ae8cbdf](https://github.com/NyleGarcia/rsi-plus/commit/ae8cbdffd3b679fb86e47258ebe3e52ca3a0e80d))
+
 ## [0.12.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.11.1...v0.12.0) (2026-11-01)
 
 
