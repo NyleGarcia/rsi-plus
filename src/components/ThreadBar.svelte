@@ -1,6 +1,7 @@
 <script lang="ts">
   // Floating bar (shadow root): thread actions on thread pages, channel actions on channel pages, toasts, key help.
   import { ui } from '@/lib/state.svelte';
+  import { page } from '@/lib/page-path.svelte';
   import { parsePath } from '@/lib/types';
   import type { Actions } from '@/entrypoints/spectrum.content/index';
   import * as api from '@/lib/api';
@@ -8,13 +9,9 @@
 
   let { actions }: { actions: Actions } = $props();
 
-  let path = $state(location.pathname);
-  $effect(() => {
-    const on = () => (path = location.pathname);
-    window.addEventListener('wxt:locationchange', on);
-    return () => window.removeEventListener('wxt:locationchange', on);
-  });
-  const route = $derived(parsePath(path));
+  const route = $derived(parsePath(page.path));
+  /** Settings → "RSI+ bar on Spectrum" (and "Spectrum tools"). Off hides the bar and its S+ pip; toasts and the key help still show. */
+  const barOn = $derived(ui.settings.spectrumTools && ui.settings.spectrumBar);
   const channelPage = $derived(!!route.channelId && !route.slug);
 
   let channelNames = $state<Record<string, string>>({});
@@ -42,8 +39,10 @@
   ];
 </script>
 
-<div class="sp rp">
-  {#if ui.view && !collapsed}
+<div class="sp rp" style:--lift="{ui.barLift}px">
+  {#if !barOn}
+    <!-- bar turned off in Settings -->
+  {:else if ui.view && !collapsed}
     {@const v = ui.view}
     <div class="bar rp-surface" role="toolbar" aria-label="RSI+ thread actions">
       <span class="logo">S+</span>
@@ -79,7 +78,7 @@
       <button class="x" aria-label="Collapse" onclick={() => (collapsed = true)}>×</button>
     </div>
   {:else if collapsed && (ui.view || channelPage)}
-    <button class="pip rp-surface" onclick={() => (collapsed = false)} aria-label="Show RSI+ bar">S+</button>
+    <button class="pip rp-surface" onclick={() => (collapsed = false)} aria-label="Show RSI+ bar" title="Show the RSI+ bar (turn it off for good in RSI+ Settings)">S+</button>
   {/if}
 
   {#if ui.toast}
@@ -112,7 +111,7 @@
   }
   .bar {
     right: 18px;
-    bottom: 18px;
+    bottom: calc(18px + var(--lift, 0px));
     display: flex;
     align-items: center;
     gap: 8px;
@@ -133,7 +132,7 @@
   }
   .pip {
     right: 18px;
-    bottom: 18px;
+    bottom: calc(18px + var(--lift, 0px));
     padding: 6px 9px;
     color: var(--rp-accent);
     font-weight: 800;
@@ -141,7 +140,7 @@
   }
   .toast {
     left: 50%;
-    bottom: 70px;
+    bottom: calc(70px + var(--lift, 0px));
     transform: translateX(-50%);
     padding: 9px 14px;
     display: flex;

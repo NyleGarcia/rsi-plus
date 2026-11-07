@@ -28,6 +28,16 @@ const versionName = localVersionName();
 
 export default defineConfig({
   srcDir: 'src',
+  hooks: {
+    // WXT adds a runtime-registered content script's matches to the *required* hosts. The Issue Council host must stay
+    // optional (asked for in Settings): in host_permissions (MV3) / permissions (MV2) it would be an install-time grant
+    // and an update would ask existing users for it. scripts/manifest-check.mjs fails the build if it comes back.
+    'build:manifestGenerated': (_wxt, manifest) => {
+      const ic = 'https://issue-council.robertsspaceindustries.com/*';
+      if (manifest.host_permissions) manifest.host_permissions = manifest.host_permissions.filter((h: string) => h !== ic);
+      if (manifest.permissions) manifest.permissions = manifest.permissions.filter((p: string) => p !== ic);
+    },
+  },
   modules: ['@wxt-dev/module-svelte'],
   // Tailwind v4 (shadcn-svelte) — imported only by the hub / popup pages; content scripts stay vanilla so nothing
   // bleeds into RSI's own pages.
@@ -44,6 +54,10 @@ export default defineConfig({
     // allowlist). No key is in the repo; generate one (docs/architecture.md → StarOrg Tools) and add `key` here for
     // `mode === 'development'` only — the store assigns the production id.
     const starorgHosts = ['https://starorg.tools/*', 'https://dev.starorg.tools/*'];
+    // Issue Council (Settings → Issue Council, opt-in): a subdomain the required RSI host doesn't cover. Asked for when
+    // the user turns it on; the content script for it is registered at runtime (`scripting`) only while granted, so
+    // nothing about it is in `content_scripts` and an update asks for nothing new.
+    const optionalHosts = [...starorgHosts, 'https://issue-council.robertsspaceindustries.com/*'];
     return {
       name: 'RSI+',
       ...(versionName ? { version_name: versionName } : {}),
@@ -54,9 +68,10 @@ export default defineConfig({
       // Firefox has no such permission — its MV2 background is a page and plays the ding itself (lib/sound.ts).
       // identity: `launchWebAuthFlow` for the optional StarOrg Tools sign-in (Discord through StarOrg, PKCE); it grants
       // no data access by itself and does nothing until the user presses Connect.
-      permissions: ['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', 'identity', ...(firefox ? [] : ['offscreen'])],
+      // scripting: register the Issue Council content script at runtime once its optional host is granted (no install warning).
+      permissions: ['storage', 'unlimitedStorage', 'alarms', 'notifications', 'cookies', 'identity', 'scripting', ...(firefox ? [] : ['offscreen'])],
       host_permissions: ['https://robertsspaceindustries.com/*'],
-      ...(firefox ? { optional_permissions: starorgHosts } : { optional_host_permissions: starorgHosts }),
+      ...(firefox ? { optional_permissions: optionalHosts } : { optional_host_permissions: optionalHosts }),
       // split (Chromium): incognito gets its own background (own cookie jar → its own RSI login, polling, party mode)
       // and its hub/popup open in incognito. Account data is namespaced per context in lib/settings.ts (storage is
       // shared). Spanning would be simpler, but Chrome refuses to show extension pages inside incognito windows in that
@@ -76,9 +91,8 @@ export default defineConfig({
                 // AMO requires a data-collection declaration for new submissions. Nothing is required (RSI+ works with
                 // no data leaving the browser); the optional StarOrg Tools sync sends the RSI handle (personally
                 // identifying) and the ship list read from RSI's hangar pages (website content), asked for on Connect
-                // together with the host (PRIVACY.md). Pledge values (financial) go only with *Send pledge values*,
-                // which asks for `financialAndPaymentInfo` when switched on (lib/starorg.ts `requestCostAccess`).
-                data_collection_permissions: { required: ['none'], optional: ['personallyIdentifyingInfo', 'websiteContent', 'financialAndPaymentInfo'] },
+                // together with the host (PRIVACY.md). Pledge values are never sent, so no financial category.
+                data_collection_permissions: { required: ['none'], optional: ['personallyIdentifyingInfo', 'websiteContent'] },
               },
             },
           }

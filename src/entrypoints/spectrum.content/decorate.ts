@@ -9,6 +9,7 @@ import { status, type ReadState } from '@/lib/read';
 import type { Settings } from '@/lib/settings';
 import { parsePath, type ThreadSummary } from '@/lib/types';
 import { isDev, keywordsFor, type Watches } from '@/lib/watch';
+import { findCodes, issueUrl, statusLabel, type IcIssues } from '@/lib/issue-council';
 import type { Actions } from './index';
 
 interface DecorState {
@@ -17,6 +18,8 @@ interface DecorState {
   watches: Watches;
   threads: Map<string, ThreadSummary>;
   listed: Set<string>;
+  /** Issue Council issues RSI+ has seen (status / contributions for the STARC chips). */
+  ic: IcIssues;
 }
 let st: DecorState | null = null;
 export function setDecorState(s: DecorState) {
@@ -49,6 +52,18 @@ export function rowFor(a: HTMLAnchorElement, slug: string, maxDepth = 8): HTMLEl
     el = p;
   }
   return null;
+}
+
+/** Settings → Spectrum tools off: take back everything `decorate` added (badges, buttons, row classes, muted bodies). */
+export function undecorate() {
+  for (const n of document.querySelectorAll('.sp-ui')) n.remove();
+  for (const n of document.querySelectorAll<HTMLElement>('[data-sp]')) {
+    delete n.dataset.sp;
+    delete n.dataset.spSlug;
+    if (n.title.startsWith('RSI+')) n.removeAttribute('title');
+    n.classList.remove('sp-row', 'sp-read', 'sp-new', 'sp-unseen', 'sp-pinned', 'sp-muted', 'sp-dev-row', 'sp-watched', 'sp-keyword');
+  }
+  for (const n of document.querySelectorAll('.sp-muted-body, .sp-focus')) n.classList.remove('sp-muted-body', 'sp-focus');
 }
 
 export function decorate(actions: Actions) {
@@ -130,14 +145,47 @@ export function nicknameOf(item: HTMLElement): { nickname: string; displayname: 
   return { nickname, displayname };
 }
 
+/** Issue Council codes in the replies on screen, collected by the last paint (the content script records the mentions). */
+export let pageCodes: string[] = [];
+
+/**
+ * Under a reply that mentions `STARC-123456`: a chip per code linking to the issue, with its status and contributions
+ * when RSI+ has seen it on the Issue Council. Text nodes are left alone (React owns them); the chip row is a sibling.
+ */
+function paintCodes(item: HTMLElement, body: HTMLElement | null, ic: IcIssues, found: Set<string>) {
+  const codes = body ? findCodes(body.textContent ?? '') : [];
+  for (const c of codes) found.add(c);
+  const key = codes.map((c) => `${c}:${ic[c]?.status ?? ''}:${ic[c]?.contributions ?? ''}`).join(',');
+  const old = ownChild<HTMLElement>(item, '.sp-starc');
+  if ((old?.dataset.key ?? '') === key && (!!old || !codes.length)) return;
+  old?.remove();
+  if (!codes.length || !body) return;
+  const row = el('div', 'sp-ui sp-starc');
+  row.dataset.key = key;
+  for (const code of codes) {
+    const i = ic[code];
+    const a = el('a', `sp-starc-chip${i?.status ? ` sp-starc-${i.status}` : ''}`);
+    a.href = issueUrl(code);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = [code, i?.status && statusLabel(i.status), i?.contributions != null && `${i.contributions} contributions`].filter(Boolean).join(' · ') + ' ↗';
+    a.title = i?.title ? `Issue Council: ${i.title}` : 'Open on the Issue Council';
+    row.append(a);
+  }
+  body.after(row);
+}
+
 function paintReplies(actions: Actions) {
   const s = st!;
-  if (!parsePath(location.pathname).slug) return;
+  if (!parsePath(location.pathname).slug) return void (pageCodes = []);
+  const found = new Set<string>();
   for (const item of document.querySelectorAll<HTMLElement>('.forum-thread-item')) {
+    paintCodes(item, ownChild<HTMLElement>(item, '.body-content-blocks') ?? ownChild<HTMLElement>(item, '.content-blocks'), s.ic, found);
     const who = nicknameOf(item);
     if (!who) continue;
     const muted = s.settings.muteReplies && isMutedMember(who, s.settings.mutes);
-    const key = `${who.nickname}|${muted}`;
+    const watched = s.watches.authors.some((a) => a.nickname.toLowerCase() === who.nickname.toLowerCase());
+    const key = `${who.nickname}|${muted}|${watched}`;
     if (item.dataset.sp === key) continue;
     item.dataset.sp = key;
 
@@ -154,7 +202,14 @@ function paintReplies(actions: Actions) {
     }
 
     const info = ownChild(item, '.forum-thread-member-info');
-    if (info && !info.querySelector(':scope > .sp-reply-actions')) {
+    // A repainted item keeps its buttons (same author); only the Watch toggle's state changes.
+    const old = info?.querySelector<HTMLButtonElement>(':scope > .sp-reply-actions > .sp-watch-author');
+    if (old && old.dataset.nick === who.nickname) {
+      setWatchLabel(old, who.nickname, watched);
+      continue;
+    }
+    info?.querySelector(':scope > .sp-reply-actions')?.remove();
+    if (info) {
       const box = el('span', 'sp-ui sp-reply-actions');
       const mute = el('button', 'sp-mini', 'Mute');
       mute.title = `Hide threads and replies by @${who.nickname}`;
@@ -162,16 +217,26 @@ function paintReplies(actions: Actions) {
         e.stopPropagation();
         actions.mute(who.nickname);
       });
-      const watch = el('button', 'sp-mini', 'Watch author');
-      watch.title = `Notify when @${who.nickname} posts in your watched channels`;
+      const watch = el('button', 'sp-mini sp-watch-author');
+      watch.dataset.nick = who.nickname;
+      setWatchLabel(watch, who.nickname, watched);
       watch.addEventListener('click', (e) => {
         e.stopPropagation();
-        actions.watchAuthor(who.nickname, who.displayname);
+        actions.toggleAuthor(who.nickname, who.displayname);
       });
       box.append(mute, watch);
       info.append(box);
     }
   }
+  pageCodes = [...found];
+}
+
+/** The reply's Watch author button is a toggle: label, pressed state and tooltip follow the watch list. */
+function setWatchLabel(b: HTMLButtonElement, nickname: string, watched: boolean) {
+  b.textContent = watched ? '★ Watching author' : 'Watch author';
+  b.classList.toggle('sp-on', watched);
+  b.setAttribute('aria-pressed', String(watched));
+  b.title = watched ? `Stop watching @${nickname}` : `Notify when @${nickname} posts in your watched channels`;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {

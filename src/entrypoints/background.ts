@@ -38,8 +38,11 @@ import { catalogEntries, listingEntries } from '@/lib/storelog';
 import { saveStoreCopy } from '@/lib/storelog-save';
 import { threadUrl } from '@/lib/types';
 import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
+import { IC_HOSTS } from '@/lib/issue-council';
 
 const ALARM = 'spectrumplus:poll';
+/** Runtime-registered Issue Council content script (entrypoints/issue-council.content, `registration: 'runtime'`). */
+const IC_SCRIPT = 'rsiplus-issue-council';
 const PARTY_ALARM = 'spectrumplus:party';
 
 export default defineBackground(() => {
@@ -63,8 +66,13 @@ export default defineBackground(() => {
     if (reason === 'update') keepAccountSwitcher().catch((e) => console.warn('[RSI+] account switcher', e));
   });
   browser.runtime.onStartup.addListener(() => schedule());
+  syncIssueCouncil().catch((e) => console.warn('[RSI+] issue council', e));
+  // Access granted or taken back (Settings, or the browser's extension page): register / unregister to match.
+  browser.permissions.onAdded?.addListener(() => syncIssueCouncil().catch(() => {}));
+  browser.permissions.onRemoved?.addListener(() => syncIssueCouncil().catch(() => {}));
   settingsItem.watch((next, prev) => {
     schedule();
+    if (!!next?.issueCouncil !== !!prev?.issueCouncil) syncIssueCouncil().catch((e) => console.warn('[RSI+] issue council', e));
     // StarOrg Tools switched off (here, in the other context or on another synced device): disconnect everywhere.
     if (prev?.starorg && !next?.starorg) disconnectAll().catch((e) => console.warn('[RSI+] starorg disconnect', e));
   });
@@ -128,6 +136,10 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
       return orgs(msg.nicknames, !!msg.force);
     case 'catalog:get':
       return catalog(!!msg.fresh);
+    case 'ic:events':
+      return { added: await pushEvents(msg.events) };
+    case 'ic:sync':
+      return { registered: await syncIssueCouncil() };
     case 'paints:get':
       return paints(!!msg.fresh);
     case 'sound:ding':
@@ -201,7 +213,9 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
   const replies = new Map<string, { replies: number; subject: string }>();
   const lastIds = new Map<string, string | null>();
 
-  for (const t of w.threads) {
+  // Settings → Spectrum tools off: no thread / channel checks (friends below still run).
+  const spectrum = s.spectrumTools !== false;
+  for (const t of spectrum ? w.threads : []) {
     try {
       const fresh = normThread(await api.thread(t.slug));
       if (fresh) {
@@ -213,7 +227,7 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
     }
     await sleep(400);
   }
-  for (const c of w.channels) {
+  for (const c of spectrum ? w.channels : []) {
     try {
       const list = await api.channelThreads(c.id);
       const threads = list.threads.map(normThread).filter((t) => !!t);
@@ -453,3 +467,38 @@ async function doPartyTick() {
     if (s.partySound) ding().catch((e) => console.warn('[RSI+] ding', e));
   }
 }
+
+/** Merge events into the Feed; notify (Settings → Desktop notifications) for the new ones, at most 5. */
+async function pushEvents(events: FeedEvent[]): Promise<number> {
+  if (!events.length) return 0;
+  const before = await feedItem.getValue();
+  const merged = mergeEvents(before, events);
+  const added = merged.filter((e) => !before.some((b) => b.key === e.key));
+  if (!added.length) return 0;
+  await feedItem.setValue(merged);
+  if ((await getSettings()).notify)
+    for (const e of added.slice(0, 5))
+      browser.notifications.create(e.key, { type: 'basic', iconUrl: browser.runtime.getURL('/icon/128.png'), title: e.title, message: e.body });
+  return added.length;
+}
+
+/**
+ * Issue Council content script registered only while Settings → Issue Council is on *and* this browser granted the
+ * optional host. Settings sync across devices but grants don't, so a device without the grant just doesn't register
+ * (Settings offers *Grant access* there) — the setting is never flipped from here. true when registered.
+ */
+async function syncIssueCouncil(): Promise<boolean> {
+  const on = (await getSettings()).issueCouncil;
+  const granted = await browser.permissions.contains({ origins: IC_HOSTS }).catch(() => false);
+  const want = on && granted;
+  const have = ((await browser.scripting.getRegisteredContentScripts({ ids: [IC_SCRIPT] }).catch(() => [])) ?? []).length > 0;
+  try {
+    if (want && !have) await browser.scripting.registerContentScripts([{ id: IC_SCRIPT, matches: IC_HOSTS, js: ['content-scripts/issue-council.js'], runAt: 'document_idle' }]);
+    if (!want && have) await browser.scripting.unregisterContentScripts({ ids: [IC_SCRIPT] });
+  } catch (e) {
+    // Split incognito: the other background registered it first (registration is extension-wide).
+    if (!/Duplicate script ID|Nonexistent script ID/i.test(String(e))) throw e;
+  }
+  return want;
+}
+

@@ -12,8 +12,8 @@
  * - **Send** builds the StarOrg Tools preset rows (`starOrgRows`: pledged hulls + in-game ships) and `PUT`s them to
  *   `/api/fleet/hangar/sync` with the logged-in RSI handle. Requests carry `Authorization: Bearer` and
  *   `credentials: 'omit'`, so a starorg.tools session cookie in the same browser never stands in for the token.
- *   Pledge values go only when *Send pledge values* is on (and, on Firefox, its financial data-collection category is
- *   granted); otherwise `pledge_cost` is sent empty. Only a hangar read as the handle logged in now is sent
+ *   Pledge values are never sent: `pledge_cost` is always empty (kept for the HangarXPLOR shape StarOrg reads). Only a
+ *   hangar read as the handle logged in now is sent
  *   (`hangarItem.handle`), and at most `MAX_SYNC_ROWS` rows. Hulls StarOrg doesn't know come back in `not_found` and
  *   are shown on the card. *Preview* (`previewPayload`) runs the same checks and builds the same body locally, with no token and no StarOrg request;
  *   `STARORG_FIELDS` describes every field of it.
@@ -52,11 +52,25 @@ export const MAX_SYNC_ROWS = 500;
 /** How many unknown hull names the card keeps. */
 export const NOT_FOUND_CAP = 20;
 
+/**
+ * How sure StarOrg Tools is that an RSI handle is this member's (StarOrg decides; RSI+ only shows it — spec
+ * `docs/plans/specs/rsi-verification-tiers.md`): `none` = typed on StarOrg, `linked` = known from RSI+ syncs (the
+ * member's word, checked by StarOrg against RSI's public pages, not proof), `verified_plus` = StarOrg's RSI bio code check.
+ */
+export type RsiTier = 'none' | 'linked' | 'verified_plus';
+export const RSI_TIERS: readonly RsiTier[] = ['none', 'linked', 'verified_plus'];
+const isTier = (v: unknown): v is RsiTier => typeof v === 'string' && (RSI_TIERS as readonly string[]).includes(v);
+
 export interface StarOrgUser {
   discord_id: string;
   username: string;
   rsi_handle: string | null;
+  /** Kept by StarOrg for older RSI+ versions: `rsi_tier === 'verified_plus'`. */
   rsi_verified: boolean;
+  /** Missing on a StarOrg Tools without tiers: derived from `rsi_verified` (`tierOf`). */
+  rsi_tier?: RsiTier;
+  /** Another StarOrg member also linked this handle: neither keeps the linked perks until one verifies it. */
+  rsi_conflict?: boolean;
 }
 export interface StarOrgAuth {
   token: string;
@@ -83,6 +97,18 @@ export interface StarOrgSync {
   verifiedHandles?: string[];
   /** The send found no (valid) token: the card shows *Connect*. */
   disconnected?: boolean;
+  /** `rsi_tier` / `rsi_conflict` StarOrg answered an accepted send with, for `handle`. */
+  tier?: RsiTier;
+  conflict?: boolean;
+}
+/** One item of `GET /api/fleet/hangar/sync`: StarOrg's last received send per RSI handle. */
+export interface RemoteSync {
+  rsi_handle: string;
+  last_sync_at: string | null;
+  client: string | null;
+  rows: number;
+  rsi_tier?: RsiTier;
+  rsi_conflict?: boolean;
 }
 export interface SyncPayload {
   format: typeof SYNC_FORMAT;
@@ -101,14 +127,14 @@ export function clientId(): string {
   }
 }
 
-/** The `PUT /api/fleet/hangar/sync` body. Pure: `pledge_cost` is blanked on every row unless `sendCost`. */
+/** The `PUT /api/fleet/hangar/sync` body. Pure: `pledge_cost` is blanked on every row — StarOrg Tools gets no pledge values. */
 export function buildPayload(
   pledges: Pledge[],
   gameShips: GameShip[],
   catalog: CatalogShip[],
-  opts: { sendCost: boolean; rsiHandle: string; client?: string; now?: Date },
+  opts: { rsiHandle: string; client?: string; now?: Date },
 ): SyncPayload {
-  const rows = starOrgRows(pledges, gameShips, catalog).map((r) => (opts.sendCost ? r : { ...r, pledge_cost: '' }));
+  const rows = starOrgRows(pledges, gameShips, catalog).map((r) => ({ ...r, pledge_cost: '' }));
   return {
     format: SYNC_FORMAT,
     client: opts.client ?? clientId(),
@@ -142,7 +168,7 @@ export const STARORG_FIELDS = {
     entity_type: 'Always "ship"',
     pledge_id: 'The RSI pledge number the ship is in (empty for in-game ships)',
     pledge_name: 'The pledge’s title, or "In-game (bought)" / "In-game (earned)"',
-    pledge_cost: 'The pledge’s value, e.g. "$45.00 USD" ("$0.00 USD" for in-game ships); empty unless Send pledge values is on',
+    pledge_cost: 'Always empty: pledge values are never sent',
     insurance: 'The insurance term the pledge lists, e.g. "LTI" or "120 mo"; left out when it lists none, and for in-game ships',
     acquired: '"pledge" for a hangar ship, "game" for one you added on My ships (bought or earned in the game)',
   } satisfies Record<keyof StarOrgRow, string>,
@@ -228,8 +254,6 @@ function validationLine(list: unknown[]): string | null {
 
 /** Firefox 140+ data-collection categories asked for at Connect (wxt.config.ts `data_collection_permissions.optional`). */
 export const DATA_COLLECTION = ['personallyIdentifyingInfo', 'websiteContent'];
-/** Asked for by the *Send pledge values* switch on Firefox: pledge values are financial information. */
-export const FINANCIAL = 'financialAndPaymentInfo';
 /** Builds define `import.meta.env.FIREFOX` as a boolean; Vitest exposes it as the string `'false'` / `'true'`. */
 const isFirefox = () => String(import.meta.env.FIREFOX) === 'true';
 
@@ -252,29 +276,6 @@ function requestAccess(origin: string): Promise<boolean> {
 }
 
 /**
- * *Send pledge values* turned on (Firefox): ask for the financial data-collection category, inside the switch's
- * gesture. true elsewhere and on a Firefox without data-collection permissions (nothing to ask for).
- */
-export function requestCostAccess(): Promise<boolean> {
-  if (!isFirefox()) return Promise.resolve(true);
-  try {
-    return browser.permissions.request({ data_collection: [FINANCIAL] } as never).catch(() => false);
-  } catch {
-    return Promise.resolve(true); // pre-140 Firefox: no categories exist
-  }
-}
-
-/** Whether pledge values may go out: the setting, and on Firefox the granted financial category. */
-async function costAllowed(setting: boolean): Promise<boolean> {
-  if (!setting || !isFirefox()) return setting;
-  try {
-    return await browser.permissions.contains({ data_collection: [FINANCIAL] } as never);
-  } catch {
-    return true; // pre-140 Firefox: no categories exist
-  }
-}
-
-/**
  * The other context's token key. Under Chromium `incognito: split` the two contexts keep separate tokens (`acct()`),
  * but host permissions are extension-wide, so one context must not drop the host while the other still uses it.
  */
@@ -292,7 +293,7 @@ async function releaseAccess(force = false): Promise<void> {
   if (!force && (await otherContextConnected())) return;
   if (isFirefox()) {
     try {
-      await browser.permissions.remove({ origins: STARORG_HOSTS, data_collection: [...DATA_COLLECTION, FINANCIAL] } as never);
+      await browser.permissions.remove({ origins: STARORG_HOSTS, data_collection: DATA_COLLECTION } as never);
       return;
     } catch {
       /* pre-140 Firefox: the host alone */
@@ -434,7 +435,7 @@ export async function push(payload: SyncPayload): Promise<StarOrgSync> {
     }
     return record({ ok: false, message: `StarOrg Tools refused the hangar: ${text}` });
   }
-  const j = ((await res.json().catch(() => null)) ?? {}) as { imported_count?: number; updated?: number; removed?: number; kept_unmatched?: unknown; not_found?: unknown };
+  const j = ((await res.json().catch(() => null)) ?? {}) as { imported_count?: number; updated?: number; removed?: number; kept_unmatched?: unknown; not_found?: unknown; rsi_tier?: unknown; rsi_conflict?: unknown };
   const n = payload.rows.length;
   const allNotFound = Array.isArray(j.not_found) ? j.not_found.filter((h): h is string => typeof h === 'string') : [];
   const kept = typeof j.kept_unmatched === 'number' && Number.isFinite(j.kept_unmatched) ? j.kept_unmatched : 0;
@@ -447,6 +448,8 @@ export async function push(payload: SyncPayload): Promise<StarOrgSync> {
     hash: changeHash(payload.rows),
     message: `Sent ${n} ship${n === 1 ? '' : 's'}${parts.length ? ` (${parts.join(', ')})` : ''}.${unknown}`,
     ...(unmatched ? { notFound: allNotFound.slice(0, NOT_FOUND_CAP), unmatched } : {}),
+    ...(isTier(j.rsi_tier) ? { tier: j.rsi_tier } : {}),
+    ...(typeof j.rsi_conflict === 'boolean' ? { conflict: j.rsi_conflict } : {}),
   });
 }
 
@@ -492,8 +495,8 @@ async function readyPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ pa
   const me = await whoAmI();
   if (!me) return { error: 'Not logged in on robertsspaceindustries.com — log in there, then send again.' };
   if (hangar.handle !== me.handle) return { error: `Saved hangar belongs to ${hangar.handle || 'another RSI login'}; load your hangar again (Hangar → Pledges).` };
-  const [{ starorgSendCost }, game, ships] = await Promise.all([getSettings(), gameShipsItem.getValue(), catalog()]);
-  const payload = buildPayload(hangar.pledges, game, ships, { sendCost: await costAllowed(starorgSendCost), rsiHandle: me.handle });
+  const [game, ships] = await Promise.all([gameShipsItem.getValue(), catalog()]);
+  const payload = buildPayload(hangar.pledges, game, ships, { rsiHandle: me.handle });
   if (payload.rows.length > MAX_SYNC_ROWS)
     return { error: `Your hangar has ${payload.rows.length} ships; StarOrg Tools takes at most ${MAX_SYNC_ROWS} per send. Nothing was sent.` };
   return { payload };
@@ -507,7 +510,7 @@ async function readyPayload(catalog: () => Promise<CatalogShip[]>): Promise<{ pa
 export const previewPayload = (catalog: () => Promise<CatalogShip[]>): Promise<{ payload: SyncPayload } | { error: string }> => readyPayload(catalog);
 
 /** `GET /api/fleet/hangar/sync`: when StarOrg last received each of your RSI handles. null = not connected / failed. */
-export async function status(): Promise<{ rsi_handle: string; last_sync_at: string | null; client: string | null; rows: number }[] | null> {
+export async function status(): Promise<RemoteSync[] | null> {
   const auth = await currentAuth();
   if (!auth) return null;
   try {
@@ -517,8 +520,30 @@ export async function status(): Promise<{ rsi_handle: string; last_sync_at: stri
       return null;
     }
     if (!res.ok) return null;
-    return ((await res.json()) as { syncs?: [] }).syncs ?? [];
+    const syncs = ((await res.json()) as { syncs?: unknown }).syncs;
+    return Array.isArray(syncs) ? (syncs as RemoteSync[]) : [];
   } catch {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Verification tier (shown on the card; StarOrg decides it)
+
+const sameHandle = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * The tier to show for `handle` (the handle StarOrg knows the member as). Freshest first: StarOrg's sync status for
+ * that handle, then RSI+'s last accepted send as that handle, then the sign-in answer. A StarOrg Tools without tiers
+ * sends only `rsi_verified`: `verified_plus` when true, else `none`. Unknown tier strings are ignored.
+ */
+export function tierOf(user: StarOrgUser, sync: StarOrgSync | null | undefined, remote?: RemoteSync[] | null, handle = user.rsi_handle): { tier: RsiTier; conflict: boolean } {
+  const r = remote?.find((x) => sameHandle(x.rsi_handle, handle) && isTier(x.rsi_tier));
+  if (r) return { tier: r.rsi_tier!, conflict: r.rsi_conflict === true };
+  if (sync?.ok && sameHandle(sync.handle, handle) && isTier(sync.tier)) return { tier: sync.tier, conflict: sync.conflict === true };
+  if (isTier(user.rsi_tier)) return { tier: user.rsi_tier, conflict: user.rsi_conflict === true };
+  return { tier: user.rsi_verified ? 'verified_plus' : 'none', conflict: false };
+}
+
+/** StarOrg Tools' own page for the RSI bio code check (Verified+), for `handle`. A link only: RSI+ never touches the bio. */
+export const verifyUrl = (origin: string, handle: string) => `${origin}/verify/rsi?handle=${encodeURIComponent(handle)}`;

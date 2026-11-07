@@ -2,12 +2,14 @@ import { mount, unmount } from 'svelte';
 import ThreadBar from '@/components/ThreadBar.svelte';
 import { classify } from '@/lib/capture';
 import { HOOK_CONFIG_KEY, HOOK_TAG, type HookConfig } from '@/lib/hook-config';
+import { trackPath } from '@/lib/page-path.svelte';
 import { firstNewReply, markRead, markUnread, type ReadState } from '@/lib/read';
-import { getSettings, getWatches, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { getSettings, getWatches, icIssuesItem, icMentionsItem, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { addMentions, type IcIssues } from '@/lib/issue-council';
 import { toast, ui } from '@/lib/state.svelte';
 import { parsePath, threadUrl, type ThreadSummary } from '@/lib/types';
 import { NO_WATCHES, type Watches } from '@/lib/watch';
-import { decorate, setDecorState } from './decorate';
+import { decorate, pageCodes, setDecorState, undecorate } from './decorate';
 import { startKeys } from './keys';
 import themeCss from './theme.css?inline';
 
@@ -17,6 +19,7 @@ export const threads = new Map<string, ThreadSummary>();
 export const listed = new Set<string>();
 let read: ReadState = {};
 let watches: Watches = NO_WATCHES;
+let ic: IcIssues = {};
 
 // Thread opens save the read marks debounced: the state is up to MAX_MARKS entries (~300 KB a write) and one open
 // marks twice (route + payload). Explicit actions flush at once; so does leaving the page.
@@ -53,6 +56,11 @@ export default defineContentScript({
     const flushPending = () => void (saveTimer && flushRead());
     ctx.addEventListener(window, 'pagehide', flushPending);
     ctx.onInvalidated(flushPending);
+    ic = await icIssuesItem.getValue();
+    icIssuesItem.watch((v) => {
+      ic = v ?? {};
+      refresh();
+    });
     watches = await getWatches();
     watchesItem.watch(async () => {
       watches = await getWatches();
@@ -65,7 +73,8 @@ export default defineContentScript({
       onCaptured(e.data.payload.path, e.data.payload.json);
     });
 
-    ctx.addEventListener(window, 'wxt:locationchange', () => onRoute());
+    trackPath(ctx);
+    ctx.addEventListener(window, 'wxt:locationchange', (e) => onRoute(e.newUrl.pathname));
     await domReady();
     onRoute();
     let pending = 0;
@@ -79,13 +88,22 @@ export default defineContentScript({
       }, 120);
     });
     observer.observe(document.body, { childList: true, subtree: true });
+    // Sticky footers can move as the thread scrolls (they unstick at the end): re-measure once a frame at most.
+    let liftQueued = false;
+    const liftSoon = () => {
+      if (liftQueued) return;
+      liftQueued = true;
+      requestAnimationFrame(() => ((liftQueued = false), liftBar()));
+    };
+    ctx.addEventListener(window, 'resize', liftSoon);
+    ctx.addEventListener(document, 'scroll', liftSoon, { capture: true, passive: true });
     ctx.onInvalidated(() => observer.disconnect());
     startKeys(ctx, actions);
 
     const bar = await createShadowRootUi(ctx, {
       name: 'spectrum-plus',
       position: 'overlay',
-      zIndex: 2147483000,
+      zIndex: 2147483000, // no effect: WXT resets the host with `:host { all: initial !important }`; see site-bar.css
       anchor: 'html',
       onMount: (root) => mount(ThreadBar, { target: root, props: { actions } }),
       onRemove: (app) => app && unmount(app),
@@ -108,14 +126,16 @@ function injectStyle() {
 
 function applySettings(s: Settings) {
   ui.settings = s;
+  /** Settings → Spectrum tools: off leaves the page as Spectrum draws it (no classes, no hook filtering, no paint). */
+  const on = s.spectrumTools;
   const root = document.documentElement.classList;
-  root.toggle('sp-theme', s.theme);
-  root.toggle('sp-wide', s.wide);
-  root.toggle('sp-compact', s.compact);
-  root.toggle('sp-dev', s.devHighlight);
-  root.toggle('sp-hide-read', s.readTracking && s.hideRead);
-  root.toggle('sp-mute-hide', s.muteMode === 'hide');
-  const cfg: HookConfig = { dropMuted: s.muteMode === 'hide', mutes: s.mutes };
+  root.toggle('sp-theme', on && s.theme);
+  root.toggle('sp-wide', on && s.wide);
+  root.toggle('sp-compact', on && s.compact);
+  root.toggle('sp-dev', on && s.devHighlight);
+  root.toggle('sp-hide-read', on && s.readTracking && s.hideRead);
+  root.toggle('sp-mute-hide', on && s.muteMode === 'hide');
+  const cfg: HookConfig = { dropMuted: on && s.muteMode === 'hide', mutes: s.mutes };
   try {
     localStorage.setItem(HOOK_CONFIG_KEY, JSON.stringify(cfg));
   } catch {}
@@ -125,8 +145,88 @@ function applySettings(s: Settings) {
 
 function refresh() {
   if (!document.body) return;
-  setDecorState({ settings: ui.settings, read, watches, threads, listed });
+  if (!ui.settings.spectrumTools) return void undecorate();
+  liftBar();
+  setDecorState({ settings: ui.settings, read, watches, threads, listed, ic });
   decorate(actions);
+  recordMentions();
+}
+
+/** Issue Council codes in this thread's replies → `icMentions` (the issue page lists the threads). Once per thread + code set. */
+let mentionKey = '';
+function recordMentions() {
+  const { slug, channelId } = parsePath(location.pathname);
+  if (!slug || !channelId || !pageCodes.length) return;
+  // The subject arrives with the thread payload, possibly after the replies render: record again once it is known.
+  const subject = threads.get(slug)?.subject ?? ui.view?.thread.subject ?? slug;
+  const key = `${slug}|${subject}|${pageCodes.join(',')}`;
+  if (key === mentionKey) return;
+  mentionKey = key;
+  const codes = pageCodes;
+  icMentionsItem
+    .getValue()
+    .then((m) => icMentionsItem.setValue(addMentions(m, codes, { slug, channelId, subject }, Date.now())))
+    .catch(() => {});
+}
+
+/**
+ * Spectrum pins its own controls to the bottom right of a thread (reply pager "1 / 6", Reply) — right where the bar
+ * sits. Lift the bar above whatever is pinned there. Spectrum is an app layout: the replies scroll inside their own
+ * container and the footer is a plain element under it, so "pinned" isn't `position: fixed`; it is "not inside
+ * anything that scrolls" (or fixed / sticky). Only on forum pages (the only pages with a bar); runs with `refresh`
+ * (throttled by the DOM observer), on resize and on scroll.
+ */
+function liftBar() {
+  if (!parsePath(location.pathname).channelId) return void (ui.barLift = 0);
+  const host = document.querySelector('spectrum-plus');
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const docScrolls = (document.scrollingElement?.scrollHeight ?? 0) > vh + 1;
+  let lift = 0;
+  const done = new Set<Element>();
+  // Sample the strip the bar occupies (right ~500 px, bottom ~60 px): Spectrum's footer (`.list-navigator`: pager,
+  // Reply) is narrower than the bar and may stop short of the window edge.
+  for (const x of [vw - 30, vw - 120, vw - 220, vw - 380, vw - 500])
+    for (const y of [vh - 6, vh - 24, vh - 44]) {
+      if (x < 0 || y < 0) continue;
+      for (const hit of document.elementsFromPoint(x, y)) {
+        if (done.has(hit) || host?.contains(hit) || hit === document.body || hit === document.documentElement) continue;
+        done.add(hit);
+        const top = pinnedStripTop(hit, vh, docScrolls);
+        if (top !== null) lift = Math.max(lift, vh - top);
+      }
+    }
+  lift = Math.round(Math.min(lift, vh / 3));
+  if (lift !== ui.barLift) {
+    ui.barLift = lift;
+    console.debug('[RSI+] bar lifted', lift, 'px');
+  }
+}
+
+/**
+ * Top of the strip `hit` belongs to (its outermost ancestor shorter than a third of the window that reaches the
+ * bottom ~60 px), when that strip stays put while the page scrolls: it, or an ancestor, is fixed / sticky, or nothing
+ * between it and the page scrolls (and the page itself doesn't). Else null.
+ */
+function pinnedStripTop(hit: Element, vh: number, docScrolls: boolean): number | null {
+  let strip: Element | null = null;
+  let pinned = !docScrolls;
+  // An absolutely positioned element moves with its containing block (offsetParent), not with the elements between:
+  // a footer placed against the page sits inside the reply scroller in the DOM but doesn't scroll with it.
+  const up = (n: Element, cs: CSSStyleDeclaration): Element | null =>
+    cs.position === 'absolute' && n instanceof HTMLElement ? n.offsetParent : n.parentElement;
+  for (let n: Element | null = hit, cs: CSSStyleDeclaration; n && n !== document.body && n !== document.documentElement; n = up(n, cs)) {
+    cs = getComputedStyle(n);
+    if (cs.visibility === 'hidden' || cs.display === 'contents') continue;
+    const r = n.getBoundingClientRect();
+    if (r.height > 0 && r.height < vh / 3 && r.bottom >= vh - 60 && r.top < vh) strip = n;
+    if (cs.position === 'fixed' || cs.position === 'sticky') {
+      pinned = true;
+      break;
+    }
+    if (/(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return null; // scrolls with the content
+  }
+  return strip && pinned ? strip.getBoundingClientRect().top : null;
 }
 
 function onCaptured(path: string, json: any) {
@@ -144,8 +244,9 @@ function onCaptured(path: string, json: any) {
   }
 }
 
-function onRoute() {
-  const { slug } = parsePath(location.pathname);
+/** `pathname`: the page being entered (on a route change `location` may still hold the old one — see `page-path`). */
+function onRoute(pathname = location.pathname) {
+  const { slug } = parsePath(pathname);
   if (!slug) ui.view = null;
   else if (ui.view?.thread.slug !== slug) {
     ui.view = null;
@@ -169,6 +270,7 @@ function openThread(t: ThreadSummary, replies: import('@/lib/types').Reply[] | u
         firstNewUrl: first ? threadUrl(t.channel_id, t.slug, first.id) : null,
       };
   syncWatched();
+  if (!ui.settings.spectrumTools) return;
   if (ui.settings.readTracking) {
     read = markRead(read, t);
     saveReadSoon(t.id);
@@ -238,9 +340,14 @@ export const actions = {
       await patchSettings({ mutes: { ...cur.mutes, authors: cur.mutes.authors.filter((a) => a !== nick) } });
     });
   },
-  async watchAuthor(nickname: string, displayname: string) {
+  /** Reply's Watch author button: watch, or stop watching when already watched. */
+  async toggleAuthor(nickname: string, displayname: string) {
     const w = await getWatches();
-    if (w.authors.some((a) => a.nickname.toLowerCase() === nickname.toLowerCase())) return toast(`Already watching @${nickname}`);
+    const nick = nickname.toLowerCase();
+    if (w.authors.some((a) => a.nickname.toLowerCase() === nick)) {
+      await watchesItem.setValue({ ...w, authors: w.authors.filter((a) => a.nickname.toLowerCase() !== nick) });
+      return toast(`Stopped watching @${nickname}`);
+    }
     await watchesItem.setValue({ ...w, authors: [...w.authors, { nickname, displayname }] });
     toast(
       w.channels.length

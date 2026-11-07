@@ -1,13 +1,13 @@
 <script lang="ts">
   /**
    * Settings → Integrations → StarOrg Tools: connect / disconnect, who StarOrg knows you as, the last send, *Send
-   * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync / Send pledge values switches.
+   * hangar now*, the site (production / dev, fixed while connected), and the Auto-sync switch.
    * Shown only while the *StarOrg Tools* switch above it is on. Every network call is in `lib/starorg.ts` and runs only
    * while connected. *What is sent* lists every field from `STARORG_FIELDS` before connecting; *Preview* builds the exact
    * body locally (`previewPayload`: a send's own checks and messages, no token, no StarOrg request) and shows it — in screenshare mode with the handle, ship names
    * and values masked on screen (*Copy JSON* still copies the real body).
    */
-  import { connect, currentAuth, disconnect, originOf, usableAuth, previewPayload, requestCostAccess, sendHangar, status, STARORG_FIELDS, STARORG_TARGETS, type StarOrgAuth, type StarOrgSync, type StarOrgTarget, type SyncPayload } from '@/lib/starorg';
+  import { connect, currentAuth, disconnect, originOf, usableAuth, previewPayload, sendHangar, status, STARORG_FIELDS, STARORG_TARGETS, tierOf, verifyUrl, type RemoteSync, type RsiTier, type StarOrgAuth, type StarOrgSync, type StarOrgTarget, type SyncPayload } from '@/lib/starorg';
   import { catalogItem, getSettings, patchSettings, settingsItem, starorgItem, starorgSyncItem, type Settings } from '@/lib/settings';
   import { STARORG_TOGGLES } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
@@ -32,7 +32,7 @@
   let busy = $state<'connect' | 'send' | 'disconnect' | 'preview' | null>(null);
   let error = $state<string | null>(null);
   /** StarOrg's own record of the last push per RSI handle (GET /sync), newest first. */
-  let remote = $state<{ rsi_handle: string; last_sync_at: string | null }[] | null>(null);
+  let remote = $state<RemoteSync[] | null>(null);
 
   $effect(() => {
     // currentAuth: an expired token reads as (and is forgotten as) not connected, so the card never shows a dead one.
@@ -66,18 +66,7 @@
     s = { ...s, [k]: v };
     await patchSettings({ [k]: v } as Partial<Settings>);
   }
-  /** Switch handler. *Send pledge values* on asks Firefox for the financial data category first, inside this click. */
-  function toggle<K extends keyof Settings>(k: K, v: Settings[K]) {
-    if (k !== 'starorgSendCost' || !v) return void set(k, v);
-    error = null;
-    requestCostAccess().then((ok) => {
-      if (ok) set(k, v);
-      else {
-        error = 'The browser did not allow sending pledge values, so that stays off.';
-        if (s) s = { ...s }; // re-render the switch as off
-      }
-    });
-  }
+  const toggle = <K extends keyof Settings>(k: K, v: Settings[K]) => void set(k, v);
   const unknownHulls = $derived(sync?.ok && sync.notFound?.length ? sync.notFound : null);
 
   async function run(kind: NonNullable<typeof busy>, task: () => Promise<unknown>) {
@@ -122,7 +111,7 @@
       ? ''
       : JSON.stringify(
           privacy.on
-            ? { ...preview, rsi_handle: MASK, rows: preview.rows.map((r) => ({ ...r, ship_name: MASK, pledge_cost: r.pledge_cost && `$${MASK}` })) }
+            ? { ...preview, rsi_handle: MASK, rows: preview.rows.map((r) => ({ ...r, ship_name: MASK })) }
             : preview,
           null,
           2,
@@ -139,6 +128,13 @@
   }
 
   const lastRemote = $derived(remote?.[0] ?? null);
+  /** The handle's tier on StarOrg (`tierOf`: sync status, last send, sign-in answer). RSI+ linked is never shown as verified. */
+  const tier = $derived(auth?.user.rsi_handle ? tierOf(auth.user, sync, remote) : null);
+  const TIER_BADGE: Record<RsiTier, { label: string; variant: 'success' | 'secondary' | 'warning'; hint: string }> = {
+    verified_plus: { label: 'Verified+', variant: 'success', hint: 'Verified on StarOrg Tools with your RSI bio code: only this handle (or another verified one) can send' },
+    linked: { label: 'RSI+ linked', variant: 'secondary', hint: 'StarOrg Tools knows this handle from RSI+ sends. Verify it with a bio code on StarOrg Tools for Verified+' },
+    none: { label: 'unverified', variant: 'warning', hint: 'Not verified on StarOrg Tools: any handle you send is accepted until you verify one' },
+  };
 </script>
 
 <div class="grid gap-3 rounded-lg border p-3">
@@ -156,7 +152,7 @@
   </div>
 
   <p class="text-muted-foreground text-xs">
-    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge number and title; pledge values only if you turn that on) with your RSI handle. Nothing is sent until you press Connect, and nothing else from RSI is ever sent.
+    Optional: connect <a class={LINK} href={origin} target="_blank" rel="noopener noreferrer">StarOrg Tools</a> to send your ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge number and title; never pledge values) with your RSI handle. Nothing is sent until you press Connect, and nothing else from RSI is ever sent.
   </p>
 
   <Collapsible.Root>
@@ -223,7 +219,11 @@
       <dd class="flex flex-wrap items-center gap-2">
         {#if auth.user.rsi_handle}
           {own(auth.user.rsi_handle)}
-          {#if auth.user.rsi_verified}<HintBadge variant="success" size="xs" hint="Verified on StarOrg Tools: only this handle (or another verified one) can send">verified</HintBadge>{:else}<HintBadge variant="warning" size="xs" hint="Not verified on StarOrg Tools: any handle you send is accepted until you verify one">unverified</HintBadge>{/if}
+          {#if tier}
+            {@const b = TIER_BADGE[tier.tier]}
+            <HintBadge variant={b.variant} size="xs" hint={b.hint}>{b.label}</HintBadge>
+            {#if tier.tier !== 'verified_plus'}<a class="{LINK} text-xs" href={verifyUrl(origin, auth.user.rsi_handle)} target="_blank" rel="noopener noreferrer">Get Verified+</a>{/if}
+          {/if}
         {:else}
           <span class="text-muted-foreground">none set on StarOrg Tools</span>
         {/if}
@@ -247,6 +247,9 @@
           {sync?.unmatched ?? unknownHulls.length} hull{(sync?.unmatched ?? unknownHulls.length) === 1 ? '' : 's'} StarOrg Tools doesn't know yet (not imported): {unknownHulls.join(', ')}{(sync?.unmatched ?? 0) > unknownHulls.length ? ', …' : ''}
         </Alert.Description>
       </Alert.Root>
+    {/if}
+    {#if tier?.conflict}
+      <Alert.Root variant="warning"><Alert.Description>Another StarOrg Tools member also linked this RSI handle. Verify it with a bio code on StarOrg Tools (Get Verified+) to keep it.</Alert.Description></Alert.Root>
     {/if}
     {#if sync?.verifiedHandles}
       <Alert.Root variant="warning"><Alert.Description>{sync.message}</Alert.Description></Alert.Root>

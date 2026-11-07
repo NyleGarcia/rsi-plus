@@ -16,6 +16,8 @@ export const ui = $state({
   view: null as ThreadView | null,
   watched: false,
   help: false,
+  /** Px the floating bar sits above the viewport bottom to clear Spectrum's own pinned footer (reply pager). */
+  barLift: 0,
   toast: null as { text: string; undo?: () => void; id: number } | null,
 });
 

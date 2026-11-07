@@ -12,7 +12,6 @@ import {
   DATA_COLLECTION,
   disconnect,
   disconnectAll,
-  FINANCIAL,
   MAX_SYNC_ROWS,
   MISMATCH,
   mismatchMessage,
@@ -26,9 +25,12 @@ import {
   STARORG_HOSTS,
   SYNC_FORMAT,
   type SyncPayload,
+  tierOf,
+  verifyUrl,
+  type StarOrgUser,
 } from '@/lib/starorg';
 import { storage } from '#imports';
-import { DEFAULTS, gameShipsItem, getSettings, hangarItem, patchSettings, starorgItem, starorgSyncItem } from '@/lib/settings';
+import { DEFAULTS, gameShipsItem, getSettings, hangarItem, patchSettings, settingsItem, starorgItem, starorgSyncItem } from '@/lib/settings';
 import { SETTING_TOGGLES, STARORG_TOGGLES, toggleOf } from '@/lib/settings-ui';
 import type { Pledge } from '@/lib/hangar';
 import type { GameShip } from '@/lib/items';
@@ -43,7 +45,7 @@ const pledge = (id: number, shipsIn: string[], extra: Partial<Pledge> = {}): Ple
 const game: GameShip[] = [{ id: 3, name: 'Cutlass Black', how: 'bought', count: 1 }];
 const pledges = [pledge(7, ['Aegis Avenger Titan'], { lti: true, insurance: 'LTI', nickname: 'Bessie' }), pledge(8, ['Cutlass Black'], { value: 110 })];
 const NOW = new Date('2026-10-29T18:04:00.123Z');
-const payload = (sendCost = false): SyncPayload => buildPayload(pledges, game, ships, { sendCost, rsiHandle: 'zedwil', client: 'rsi-plus/0.6.0', now: NOW });
+const payload = (): SyncPayload => buildPayload(pledges, game, ships, { rsiHandle: 'zedwil', client: 'rsi-plus/0.6.0', now: NOW });
 const STARORG_ORIGIN = 'https://starorg.tools';
 const DEV_ORIGIN = 'https://dev.starorg.tools';
 const AUTH = { token: 'tok-123', origin: STARORG_ORIGIN, expiresAt: Date.now() + 86_400_000, user: { discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: true } };
@@ -72,12 +74,11 @@ describe('payload builder', () => {
     expect(p.rows.find((r) => r.pledge_id === '7')).toMatchObject({ ship_name: 'Bessie', lti: true, insurance: 'LTI' });
     expect(p.rows.every((r) => !('pledge_date' in r))).toBe(true);
   });
-  it('blanks pledge_cost on every row unless Send pledge values is on', () => {
-    expect(payload(false).rows.map((r) => r.pledge_cost)).toEqual(['', '', '']);
-    expect(payload(true).rows.map((r) => r.pledge_cost)).toEqual(['$45.00 USD', '$0.00 USD', '$110.00 USD']);
+  it('never sends pledge values: pledge_cost is empty on every row', () => {
+    expect(payload().rows.map((r) => r.pledge_cost)).toEqual(['', '', '']);
   });
   it('STARORG_FIELDS describes exactly the fields a payload carries (the card’s What is sent list cannot drift)', () => {
-    const p = payload(true);
+    const p = payload();
     expect(Object.keys(p).sort()).toEqual(Object.keys(STARORG_FIELDS.top).sort());
     // Union over a pledged hull with insurance, one without, and an in-game ship: every key any row can carry.
     const rowKeys = new Set(p.rows.flatMap((r) => Object.keys(r)));
@@ -95,14 +96,14 @@ describe('previewPayload', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     if (!('payload' in r)) throw new Error(r.error);
     const { exported_at: _a, client: _c, ...rest } = r.payload;
-    const { exported_at: _b, client: _d, ...want } = buildPayload(pledges, game, ships, { sendCost: false, rsiHandle: 'zedwil' });
+    const { exported_at: _b, client: _d, ...want } = buildPayload(pledges, game, ships, { rsiHandle: 'zedwil' });
     expect(rest).toEqual(want);
   });
-  it('follows Send pledge values', async () => {
+  it('ignores a Send pledge values setting stored by an older version', async () => {
     await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
-    await patchSettings({ starorgSendCost: true });
+    await settingsItem.setValue({ ...(await getSettings()), starorgSendCost: true } as never);
     const r = await previewPayload(catalog);
-    expect('payload' in r && r.payload.rows.map((x) => x.pledge_cost)).toEqual(['$45.00 USD', '$110.00 USD']);
+    expect('payload' in r && r.payload.rows.map((x) => x.pledge_cost)).toEqual(['', '']);
   });
   it('says so when the hangar is not fully loaded', async () => {
     await hangarItem.setValue({ at: 1, pledges, complete: false, handle: 'zedwil' });
@@ -155,13 +156,12 @@ describe('changeHash', () => {
     expect(changeHash(rows)).toBe(changeHash(payload().rows));
     expect(changeHash(rows)).toMatch(/^[0-9a-f]{14}$/);
   });
-  it('changes with a nickname, a flag, a removed row or sending values', () => {
+  it('changes with a nickname, a flag or a removed row', () => {
     const rows = payload().rows;
     const base = changeHash(rows);
     expect(changeHash(rows.map((r, i) => (i ? r : { ...r, ship_name: 'Old Faithful' })))).not.toBe(base);
     expect(changeHash(rows.map((r, i) => (i ? r : { ...r, warbond: true })))).not.toBe(base);
     expect(changeHash(rows.slice(1))).not.toBe(base);
-    expect(changeHash(payload(true).rows)).not.toBe(base);
   });
 });
 
@@ -203,6 +203,15 @@ describe('push', () => {
     expect(JSON.parse(init.body as string)).toEqual(p);
     expect(r).toMatchObject({ ok: true, rows: 3, hash: changeHash(p.rows), handle: 'zedwil' });
     expect((await starorgSyncItem.getValue())?.hash).toBe(changeHash(p.rows));
+  });
+  it('records the tier StarOrg answers an accepted send with; ignores an unknown tier', async () => {
+    await starorgItem.setValue(AUTH);
+    fetchMock.mockResolvedValue(json(200, { imported_count: 1, rsi_tier: 'linked', rsi_conflict: true }));
+    expect(await push(payload())).toMatchObject({ ok: true, tier: 'linked', conflict: true });
+    fetchMock.mockResolvedValue(json(200, { imported_count: 1, rsi_tier: 'gold', rsi_conflict: 'yes' }));
+    const r = await push(payload());
+    expect(r.tier).toBeUndefined();
+    expect(r.conflict).toBeUndefined();
   });
   it('401 → disconnected: the token is forgotten', async () => {
     await starorgItem.setValue(AUTH);
@@ -277,17 +286,13 @@ describe('sendHangar', () => {
     expect(await sendHangar(catalog)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
-  it('sends the logged-in handle and honours Send pledge values', async () => {
+  it('sends the logged-in handle and no pledge values', async () => {
     await starorgItem.setValue(AUTH);
     fetchMock.mockImplementation(async () => json(200, {}));
     await sendHangar(catalog);
-    let body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as SyncPayload;
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as SyncPayload;
     expect(body.rsi_handle).toBe('zedwil');
     expect(body.rows.every((r) => r.pledge_cost === '')).toBe(true);
-    await patchSettings({ starorgSendCost: true });
-    await sendHangar(catalog);
-    body = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string) as SyncPayload;
-    expect(body.rows.some((r) => r.pledge_cost === '$110.00 USD')).toBe(true);
   });
   it('weekly (onlyIfChanged) skips an unchanged hangar and sends a changed one', async () => {
     await starorgItem.setValue(AUTH);
@@ -421,40 +426,27 @@ describe('connect / disconnect', () => {
     await connect('prod');
     expect(request).toHaveBeenCalledWith({ origins: hostsOf(STARORG_ORIGIN), data_collection: DATA_COLLECTION });
     await disconnect();
-    expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS, data_collection: [...DATA_COLLECTION, FINANCIAL] });
-  });
-  it('Firefox: pledge values go only while the financial category is granted', async () => {
-    vi.stubEnv('FIREFOX', 'true' as never);
-    const contains = vi.fn(async () => false);
-    Object.assign(fakeBrowser.permissions, { contains });
-    await starorgItem.setValue(AUTH);
-    await hangarItem.setValue({ at: 1, pledges, complete: true, handle: 'zedwil' });
-    await patchSettings({ starorgSendCost: true });
-    fetchMock.mockImplementation(async () => json(200, {}));
-    await sendHangar(async () => ships);
-    let body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string) as SyncPayload;
-    expect(body.rows.every((r) => r.pledge_cost === '')).toBe(true);
-    expect(contains).toHaveBeenCalledWith({ data_collection: [FINANCIAL] });
-    contains.mockResolvedValue(true);
-    await sendHangar(async () => ships);
-    body = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string) as SyncPayload;
-    expect(body.rows.some((r) => r.pledge_cost === '$110.00 USD')).toBe(true);
+    expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS, data_collection: DATA_COLLECTION });
   });
 });
 
 describe('StarOrg settings', () => {
-  it('the integration is opt-in, on production, and Auto-sync and Send pledge values default off', async () => {
+  it('the integration is opt-in, on production, and Auto-sync defaults off', async () => {
     expect(DEFAULTS.starorg).toBe(false);
     expect(DEFAULTS.starorgTarget).toBe('prod');
     expect(DEFAULTS.starorgAutoSync).toBe(false);
-    expect(DEFAULTS.starorgSendCost).toBe(false);
-    expect(await getSettings()).toMatchObject({ starorgAutoSync: false, starorgSendCost: false });
+    expect(await getSettings()).toMatchObject({ starorgAutoSync: false });
+  });
+  it('drops the removed Send pledge values setting', async () => {
+    await settingsItem.setValue({ ...(await getSettings()), starorgSendCost: true } as never);
+    expect('starorgSendCost' in (await getSettings())).toBe(false);
+    await patchSettings({ starorgAutoSync: true });
+    expect('starorgSendCost' in ((await settingsItem.getValue()) ?? {})).toBe(false);
   });
   it('their switches live on the StarOrg card, not in the Spectrum / site list', () => {
-    expect(STARORG_TOGGLES.map((t) => t.key)).toEqual(['starorgAutoSync', 'starorgSendCost']);
+    expect(STARORG_TOGGLES.map((t) => t.key)).toEqual(['starorgAutoSync']);
     expect(SETTING_TOGGLES.some((t) => t.key.startsWith('starorg'))).toBe(false);
     expect(toggleOf('starorg').label).toBe('StarOrg Tools');
-    expect(toggleOf('starorgSendCost').label).toBe('Send pledge values');
   });
 });
 
@@ -531,5 +523,33 @@ describe('StarOrg switched off', () => {
     expect(await storage.getItem('local:incognito.starorgSync')).toBeNull();
     expect(fetchMock.mock.calls.map((c) => c[0]).sort()).toEqual([`${DEV_ORIGIN}/api/auth/logout`, `${STARORG_ORIGIN}/api/auth/logout`]);
     expect(remove).toHaveBeenCalledWith({ origins: STARORG_HOSTS });
+  });
+});
+
+describe('verification tier', () => {
+  const user = (extra: Partial<StarOrgUser> = {}): StarOrgUser => ({ discord_id: '1', username: 'zed', rsi_handle: 'zedwil', rsi_verified: false, ...extra });
+  it('falls back to rsi_verified on a StarOrg Tools without tiers', () => {
+    expect(tierOf(user({ rsi_verified: true }), null)).toEqual({ tier: 'verified_plus', conflict: false });
+    expect(tierOf(user(), null)).toEqual({ tier: 'none', conflict: false });
+  });
+  it('uses the sign-in tier and conflict, ignoring an unknown tier string', () => {
+    expect(tierOf(user({ rsi_tier: 'linked', rsi_conflict: true }), null)).toEqual({ tier: 'linked', conflict: true });
+    expect(tierOf(user({ rsi_tier: 'gold' as never, rsi_verified: true }), null)).toEqual({ tier: 'verified_plus', conflict: false });
+  });
+  it('a later accepted send as the same handle wins over the sign-in answer; a failed or other-handle send does not', () => {
+    const u = user({ rsi_tier: 'none' });
+    expect(tierOf(u, { at: 1, ok: true, message: '', handle: 'ZedWil', tier: 'linked' }).tier).toBe('linked');
+    expect(tierOf(u, { at: 1, ok: false, message: '', handle: 'zedwil', tier: 'linked' }).tier).toBe('none');
+    expect(tierOf(u, { at: 1, ok: true, message: '', handle: 'alt', tier: 'linked' }).tier).toBe('none');
+  });
+  it("StarOrg's sync status for the handle wins over everything", () => {
+    const remote = [
+      { rsi_handle: 'alt', last_sync_at: null, client: null, rows: 0, rsi_tier: 'none' as const },
+      { rsi_handle: 'zedwil', last_sync_at: null, client: null, rows: 3, rsi_tier: 'verified_plus' as const },
+    ];
+    expect(tierOf(user({ rsi_tier: 'linked', rsi_conflict: true }), { at: 1, ok: true, message: '', handle: 'zedwil', tier: 'linked' }, remote)).toEqual({ tier: 'verified_plus', conflict: false });
+  });
+  it('verifyUrl points at StarOrg Tools with the handle encoded', () => {
+    expect(verifyUrl(STARORG_ORIGIN, 'zed wil&x')).toBe('https://starorg.tools/verify/rsi?handle=zed%20wil%26x');
   });
 });
