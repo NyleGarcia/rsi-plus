@@ -33,7 +33,7 @@ export default defineConfig({
     // optional (asked for in Settings): in host_permissions (MV3) / permissions (MV2) it would be an install-time grant
     // and an update would ask existing users for it. scripts/manifest-check.mjs fails the build if it comes back.
     'build:manifestGenerated': (_wxt, manifest) => {
-      const runtime = ['https://issue-council.robertsspaceindustries.com/*', 'https://theimpound.com/*'];
+      const runtime = ['https://issue-council.robertsspaceindustries.com/*', 'https://theimpound.com/*', 'https://star-hangar.com/*'];
       if (manifest.host_permissions) manifest.host_permissions = manifest.host_permissions.filter((h: string) => !runtime.includes(h));
       if (manifest.permissions) manifest.permissions = manifest.permissions.filter((p: string) => !runtime.includes(p));
     },
@@ -57,8 +57,8 @@ export default defineConfig({
     // Issue Council (Settings → Issue Council, opt-in): a subdomain the required RSI host doesn't cover. Asked for when
     // the user turns it on; the content script for it is registered at runtime (`scripting`) only while granted, so
     // nothing about it is in `content_scripts` and an update asks for nothing new.
-    // The Impound (Settings → Integrations, opt-in): same pattern, for RSI prices and owned marks there.
-    const optionalHosts = [...starorgHosts, 'https://issue-council.robertsspaceindustries.com/*', 'https://theimpound.com/*'];
+    // The Impound and Star Hangar (Settings → Integrations, opt-in): same pattern, for RSI prices and owned marks there.
+    const optionalHosts = [...starorgHosts, 'https://issue-council.robertsspaceindustries.com/*', 'https://theimpound.com/*', 'https://star-hangar.com/*'];
     return {
       name: 'RSI+',
       ...(versionName ? { version_name: versionName } : {}),

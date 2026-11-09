@@ -17,6 +17,7 @@
   import { Input } from '@/components/ui/input';
   import { IC_HOSTS, IC_ORIGIN } from '@/lib/issue-council';
   import { IMPOUND_HOSTS, IMPOUND_ORIGIN } from '@/lib/impound';
+  import { SH_HOSTS, SH_ORIGIN } from '@/lib/starhangar';
   import { Label } from '@/components/ui/label';
   import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
@@ -99,6 +100,32 @@
     set('impound', false)
       .then(() => browser.permissions.remove({ origins: IMPOUND_HOSTS }).catch(() => false))
       .then(() => ((impGranted = false), bg({ type: 'imp:sync' }).catch(() => {})));
+  }
+
+  /** Star Hangar: same pattern again. */
+  let shGranted = $state<boolean | null>(null);
+  let shMsg = $state('');
+  $effect(() => {
+    browser.permissions.contains({ origins: SH_HOSTS }).then((v) => (shGranted = v), () => (shGranted = false));
+  });
+  function grantStarHangar() {
+    shMsg = '';
+    browser.permissions.request({ origins: SH_HOSTS }).then(
+      async (ok) => {
+        shGranted = ok;
+        if (!ok) return void (shMsg = 'Access not granted, so RSI+ stays off on Star Hangar.');
+        await set('starhangar', true);
+        await bg({ type: 'sh:sync' }).catch(() => {});
+      },
+      (e) => (shMsg = `Could not ask for access: ${(e as Error).message}`),
+    );
+  }
+  function setStarHangar(v: boolean) {
+    if (v) return grantStarHangar();
+    shMsg = '';
+    set('starhangar', false)
+      .then(() => browser.permissions.remove({ origins: SH_HOSTS }).catch(() => false))
+      .then(() => ((shGranted = false), bg({ type: 'sh:sync' }).catch(() => {})));
   }
 
   let debugNames = $state(false);
@@ -293,6 +320,25 @@
         {#if s.impound && impGranted}
           <p class="text-muted-foreground rounded-md border p-3 text-xs">
             Open <a class={LINK} href={IMPOUND_ORIGIN} target="_blank" rel="noopener">The Impound</a>: listings show the RSI price (the store price, the upgrade price, or MSRP when RSI doesn't sell it) and the markup, and mark ships, upgrades and items you own. A toolbar above each grid filters and sorts; <b>Whole collection</b> lists every page of a collection in one table. Owned marks use your hangar as last loaded in Pledges.
+          </p>
+        {/if}
+        <SwitchRow
+          id="set-starhangar"
+          label="Star Hangar"
+          hint="On star-hangar.com: the RSI price and markup on every listing, what you already own, and extra filters and sorting. Asks for access to star-hangar.com; RSI+ only reads the pages you open there, never your cart or account, and sends nothing anywhere"
+          checked={s.starhangar && !!shGranted}
+          onchange={(v) => setStarHangar(v)}
+        />
+        {#if s.starhangar && shGranted === false}
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <span class="text-muted-foreground">On in your synced settings, but this browser hasn't granted access to Star Hangar.</span>
+            <Button size="sm" variant="outline" onclick={grantStarHangar}>Grant access</Button>
+          </div>
+        {/if}
+        {#if shMsg}<p class="text-destructive text-xs" role="status">{shMsg}</p>{/if}
+        {#if s.starhangar && shGranted}
+          <p class="text-muted-foreground rounded-md border p-3 text-xs">
+            Open <a class={LINK} href={SH_ORIGIN} target="_blank" rel="noopener">Star Hangar</a>: listings show the RSI price and the markup, and mark ships, upgrades and items you own. Star Hangar gives no RSI ids, so RSI+ matches ships, upgrades and paints by name (strictly: a plushie is not the ship). Search covers seller names too.
           </p>
         {/if}
       {/if}
