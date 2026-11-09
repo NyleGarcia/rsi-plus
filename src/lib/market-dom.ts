@@ -1,5 +1,5 @@
 /**
- * Shared page UI for the grey-market store integrations (The Impound, Star Hangar): the RSI price / markup / owned
+ * Shared page UI for the grey-market store integrations (The Impound): the RSI price / markup / owned
  * badge, the filter + sort toolbar over a listing grid, and hiding / reordering cards. Each content script is its own
  * bundle, so the module state below is per site: `configureMarket` sets it once.
  */

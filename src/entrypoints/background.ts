@@ -42,13 +42,11 @@ import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, ty
 import { IC_HOSTS } from '@/lib/issue-council';
 import { IMPOUND_HOSTS } from '@/lib/impound';
 import { MEMBERS_PAGE, RSI as RSI_ORIGIN, isFresh, parseCitizen, parseMembers, parseOrg, touchRecent, type OrgLookup, type PlayerLookup } from '@/lib/intel';
-import { SH_HOSTS } from '@/lib/starhangar';
 
 const ALARM = 'spectrumplus:poll';
 /** Runtime-registered Issue Council content script (entrypoints/issue-council.content, `registration: 'runtime'`). */
 const IC_SCRIPT = 'rsiplus-issue-council';
 const IMP_SCRIPT = 'rsiplus-impound';
-const SH_SCRIPT = 'rsiplus-starhangar';
 const PARTY_ALARM = 'spectrumplus:party';
 
 export default defineBackground(() => {
@@ -74,16 +72,14 @@ export default defineBackground(() => {
   browser.runtime.onStartup.addListener(() => schedule());
   syncIssueCouncil().catch((e) => console.warn('[RSI+] issue council', e));
   syncImpound().catch((e) => console.warn('[RSI+] impound', e));
-  syncStarHangar().catch((e) => console.warn('[RSI+] star hangar', e));
   // Access granted or taken back (Settings, or the browser's extension page): register / unregister to match.
-  const syncAll = () => (syncIssueCouncil().catch(() => {}), syncImpound().catch(() => {}), syncStarHangar().catch(() => {}));
+  const syncAll = () => (syncIssueCouncil().catch(() => {}), syncImpound().catch(() => {}));
   browser.permissions.onAdded?.addListener(syncAll);
   browser.permissions.onRemoved?.addListener(syncAll);
   settingsItem.watch((next, prev) => {
     schedule();
     if (!!next?.issueCouncil !== !!prev?.issueCouncil) syncIssueCouncil().catch((e) => console.warn('[RSI+] issue council', e));
     if (!!next?.impound !== !!prev?.impound) syncImpound().catch((e) => console.warn('[RSI+] impound', e));
-    if (!!next?.starhangar !== !!prev?.starhangar) syncStarHangar().catch((e) => console.warn('[RSI+] star hangar', e));
     // StarOrg Tools switched off (here, in the other context or on another synced device): disconnect everywhere.
     if (prev?.starorg && !next?.starorg) disconnectAll().catch((e) => console.warn('[RSI+] starorg disconnect', e));
   });
@@ -159,8 +155,6 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
       return { registered: await syncIssueCouncil() };
     case 'imp:sync':
       return { registered: await syncImpound() };
-    case 'sh:sync':
-      return { registered: await syncStarHangar() };
     case 'paints:get':
       return paints(!!msg.fresh);
     case 'sound:ding':
@@ -577,9 +571,6 @@ async function syncIssueCouncil(): Promise<boolean> {
 /** The Impound content script: same rules as the Issue Council one (setting on *and* host granted here). */
 async function syncImpound(): Promise<boolean> {
   return syncRuntimeScript(IMP_SCRIPT, (await getSettings()).impound, IMPOUND_HOSTS, 'content-scripts/impound.js');
-}
-async function syncStarHangar(): Promise<boolean> {
-  return syncRuntimeScript(SH_SCRIPT, (await getSettings()).starhangar, SH_HOSTS, 'content-scripts/starhangar.js');
 }
 async function syncRuntimeScript(id: string, on: boolean, hosts: string[], js: string): Promise<boolean> {
   const granted = await browser.permissions.contains({ origins: hosts }).catch(() => false);

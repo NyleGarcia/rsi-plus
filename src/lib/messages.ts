@@ -24,8 +24,7 @@ export type BgRequest =
   | { type: 'ic:events'; events: import('./watch').FeedEvent[] }
   /** Settings → Issue Council switched or access granted: (un)register the Issue Council content script now. */
   | { type: 'ic:sync' }
-  | { type: 'imp:sync' }
-  | { type: 'sh:sync' };
+  | { type: 'imp:sync' };
 
 /** Hub pages (`hub.html#<tab>`). One sidebar entry each; `ships` (→ fleet) and `notifications` (→ feed, store view) are legacy aliases. */
 export type HubTab = 'feed' | 'watching' | 'issues' | 'intel' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships';
@@ -53,7 +52,6 @@ export interface BgResponses {
   'ic:events': { added: number };
   'ic:sync': { registered: boolean };
   'imp:sync': { registered: boolean };
-  'sh:sync': { registered: boolean };
 }
 
 type Envelope<T> = { ok: true; data: T } | { ok: false; error: string };

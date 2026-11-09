@@ -87,8 +87,6 @@ export interface Settings {
    * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
    */
   impound: boolean;
-  /** Star Hangar integration (opt-in): the same on star-hangar.com. Asks for that host; off drops it. */
-  starhangar: boolean;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
   accountSwitcher: boolean;
   /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
@@ -129,7 +127,6 @@ export const DEFAULTS: Settings = {
   icEnv: 'LIVE',
   icPatchNotify: false,
   impound: false,
-  starhangar: false,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',
@@ -218,8 +215,6 @@ export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMenti
 /** Report new issue form draft (autosaved while typing, offered back on the next visit). */
 /** Newest Star Citizen build per environment, from Spectrum patch-notes subjects (public, shared). */
 export const scBuildsItem = storage.defineItem<ScBuilds>('local:scBuilds', { fallback: {} });
-/** Star Hangar toolbar: filters, sort, dim owned (this browser). */
-export const starhangarViewItem = storage.defineItem<{ f: ImpFilter; sort: ImpSort; dimOwned: boolean } | null>('local:starhangarView', { fallback: null });
 /** Org lookup: your tags on players and orgs (with notes). This browser; share them with Export / Import. */
 export const intelItem = storage.defineItem<Intel>('local:intel', { fallback: {} });
 /** Org lookup: cached citizen / org / member lookups (public RSI data) and the recent list. */
