@@ -9,10 +9,9 @@
  *   Watch, what changed, and the Spectrum threads RSI+ saw mention the code.
  * - Tracked issues (watched, or on My reports / My contributions / Followed issues) that changed since RSI+ last saw
  *   them → Feed + desktop notification, through the background.
- * - Report new issue: autosaves the form, offers the draft back, inserts your template.
+ * - Report new issue: autosaves the form, offers the draft back, flags issues that look the same.
  */
-import { getSettings, icDraftItem, icIssuesItem, icLinksItem, icMentionsItem, patchSettings, scBuildsItem, settingsItem, type Settings } from '@/lib/settings';
-import { SC_ENVS, buildLabel, fillTemplate, type ScBuilds, type ScEnv } from '@/lib/sc-builds';
+import { getSettings, icDraftItem, icIssuesItem, icLinksItem, icMentionsItem, settingsItem, type Settings } from '@/lib/settings';
 import {
   issueEvents,
   markSeen,
@@ -287,7 +286,6 @@ function categoryOf(form: Element): string {
   const sel = f instanceof HTMLSelectElement ? f.selectedOptions[0]?.textContent : f?.value;
   return (sel ?? form.querySelector('[class*="category" i] [aria-selected="true"], [class*="category" i] .is-selected')?.textContent ?? '').trim().toLowerCase();
 }
-let builds: ScBuilds = {};
 
 /* ---- duplicate finder: issues RSI+ has seen with a title like the one being typed ---- */
 let dupTimer = 0;
@@ -334,13 +332,9 @@ function paintDuplicates(input: HTMLInputElement, form: Element) {
 }
 
 function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
-  scBuildsItem.getValue().then((b) => (builds = b));
-  scBuildsItem.watch((b) => (builds = b ?? {}));
   let saveTimer = 0;
   /** Restore requested: fields of later steps get filled as they render. */
   let restoring: Record<string, string> | null = null;
-  /** The text box last clicked: the template goes there (multi-line fields only — the title holds 60 characters). */
-  let lastField: HTMLTextAreaElement | null = null;
 
   const save = () => {
     clearTimeout(saveTimer);
@@ -361,15 +355,10 @@ function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
     if (pageOf(path) !== 'create' || !t?.closest?.(FORM) || !(t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)) return;
     save(); // merges into the stored draft, so restored fields of steps not on screen stay
   };
-  const onFocus = (e: Event) => {
-    const t = e.target;
-    if (t instanceof HTMLTextAreaElement && t.closest(FORM)) lastField = t;
-  };
   document.addEventListener('input', onInput, true);
   document.addEventListener('input', onTitle, true);
   ctx.onInvalidated(() => document.removeEventListener('input', onTitle, true));
-  document.addEventListener('focusin', onFocus, true);
-  ctx.onInvalidated(() => (document.removeEventListener('input', onInput, true), document.removeEventListener('focusin', onFocus, true)));
+  ctx.onInvalidated(() => document.removeEventListener('input', onInput, true));
 
   const fill = () => {
     const form = document.querySelector(FORM);
@@ -388,7 +377,7 @@ function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
       fill();
       const draft = await icDraftItem.getValue();
       const empty = fieldsOf(form).every((f) => !f.value.trim());
-      const key = [draft?.at, empty, !!restoring, settings.icTemplates.map((t) => t.id + t.name).join(','), settings.icEnv, !!settings.icSetup.trim(), categoryOf(form), JSON.stringify(builds)].join('|');
+      const key = [draft?.at, empty, !!restoring].join('|');
       if (bar?.dataset.key === key) return;
       bar?.remove();
       const box = el('div', 'rp-ic rp-ic-report');
@@ -406,51 +395,6 @@ function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
         drop.addEventListener('click', () => icDraftItem.setValue(null).then(paint));
         box.append(restore, drop);
       } else box.append(el('span', 'rp-ic-muted', draft ? `Draft saved ${when(draft.at)}` : 'Your answers are saved as you type'));
-      const hint = el('span', 'rp-ic-muted');
-      const insert = (text: string) => {
-        const target = lastField?.isConnected ? lastField : (form.querySelector<HTMLTextAreaElement>('textarea[name]') ?? null);
-        if (!target) return void (hint.textContent = 'No text box on this step: it goes into a description field (after Next).');
-        hint.textContent = '';
-        const start = target.selectionStart ?? target.value.length;
-        const end = target.selectionEnd ?? start;
-        setValue(target, target.value.slice(0, start) + text + target.value.slice(end));
-        target.focus();
-      };
-      const filled = (body: string) => fillTemplate(body, { builds, env: settings.icEnv, setup: settings.icSetup, now: new Date() });
-      // Templates for the category picked on the form come first.
-      const cat = categoryOf(form);
-      const list = [...settings.icTemplates].sort((a, b) => Number(!!cat && b.category?.toLowerCase() === cat) - Number(!!cat && a.category?.toLowerCase() === cat));
-      if (list.length <= 1) {
-        const tpl = el('button', 'rp-ic-btn', 'Insert template');
-        tpl.title = 'Put your template (Settings → Integrations → Issue Council) into the text box you last clicked';
-        tpl.addEventListener('click', () => insert(filled(list[0]?.body ?? '')));
-        box.append(tpl);
-      } else {
-        const pick = el('select', 'rp-ic-select');
-        pick.setAttribute('aria-label', 'Insert template');
-        pick.append(Object.assign(document.createElement('option'), { value: '', textContent: 'Insert template…' }));
-        for (const t of list) pick.append(Object.assign(document.createElement('option'), { value: t.id, textContent: `${t.name}${t.category ? ` (${t.category})` : ''}` }));
-        pick.addEventListener('change', () => {
-          const t = list.find((x) => x.id === pick.value);
-          pick.value = '';
-          if (t) insert(filled(t.body));
-        });
-        box.append(pick);
-      }
-      const envSel = el('select', 'rp-ic-select');
-      envSel.setAttribute('aria-label', 'Game environment for {build}');
-      envSel.title = 'Which build {build} fills in (newest seen in Spectrum patch notes)';
-      for (const e of SC_ENVS) envSel.append(Object.assign(document.createElement('option'), { value: e, textContent: builds[e] ? buildLabel(builds[e]!) : `${e} (not seen)` }));
-      envSel.value = settings.icEnv;
-      envSel.addEventListener('change', () => patchSettings({ icEnv: envSel.value as ScEnv }));
-      box.append(envSel);
-      if (settings.icSetup.trim()) {
-        const su = el('button', 'rp-ic-btn', 'Insert my setup');
-        su.title = settings.icSetup;
-        su.addEventListener('click', () => insert(settings.icSetup.trim()));
-        box.append(su);
-      }
-      box.append(hint);
       form.before(box);
     } finally {
       painting = false;

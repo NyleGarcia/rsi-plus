@@ -4,12 +4,11 @@ import { classify } from '@/lib/capture';
 import { HOOK_CONFIG_KEY, HOOK_TAG, type HookConfig } from '@/lib/hook-config';
 import { trackPath } from '@/lib/page-path.svelte';
 import { firstNewReply, markRead, markUnread, type ReadState } from '@/lib/read';
-import { getSettings, getWatches, icIssuesItem, icLinksItem, icMentionsItem, intelItem, orgCacheItem, patchSettings, scBuildsItem, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { getSettings, getWatches, icIssuesItem, icLinksItem, icMentionsItem, intelItem, orgCacheItem, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
 import { addLink, addMentions, linksOfThread, normalizeCode, pickIssues, removeLink, toggleWatch as toggleIcWatch, type IcIssues, type IcLinks, type IcMentions } from '@/lib/issue-council';
 import { toast, ui } from '@/lib/state.svelte';
 import { parsePath, threadUrl, type ThreadSummary } from '@/lib/types';
 import { NO_WATCHES, type Watches } from '@/lib/watch';
-import { mergeBuilds } from '@/lib/sc-builds';
 import { threatOf, type Intel } from '@/lib/intel';
 import { mainOrgFromBadges, type OrgCache } from '@/lib/orgs';
 import type { Member } from '@/lib/types';
@@ -188,18 +187,6 @@ function refresh() {
   recordMentions();
 }
 
-/** Patch-notes subjects in a thread list → newest build per environment (the Issue Council report helper's `{build}`). */
-function recordBuilds(list: ThreadSummary[]) {
-  if (!list.some((t) => /patch\s*notes/i.test(t.subject))) return;
-  scBuildsItem
-    .getValue()
-    .then((cur) => {
-      const next = mergeBuilds(cur, list, Date.now());
-      if (next !== cur) return scBuildsItem.setValue(next);
-    })
-    .catch(() => {});
-}
-
 /** Issue Council codes in this thread's replies → `icMentions` (the issue page lists the threads). Once per thread + code set. */
 let mentionKey = '';
 function recordMentions() {
@@ -286,7 +273,6 @@ function onCaptured(path: string, json: any) {
       listed.add(t.slug);
       noteMember(t.member);
     }
-    recordBuilds(c.threads);
     refresh();
   } else if (c.kind === 'thread') {
     threads.set(c.thread.slug, c.thread);

@@ -108,16 +108,12 @@ describe('thread links', () => {
 });
 
 import { getSettings, settingsItem } from '@/lib/settings';
-import { DEFAULT_TEMPLATE, LEGACY_DEFAULT_TEMPLATE } from '@/lib/issue-council';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 
-describe('template migration', () => {
-  it('a customised single template becomes Default; the old stock one gives the new default', async () => {
+describe('removed report template', () => {
+  it('a stored icTemplate is dropped from settings', async () => {
     fakeBrowser.reset();
     await settingsItem.setValue({ icTemplate: 'Mine: {x}' } as never);
-    expect((await getSettings()).icTemplates).toEqual([{ id: 'default', name: 'Default', body: 'Mine: {x}' }]);
-    await settingsItem.setValue({ icTemplate: LEGACY_DEFAULT_TEMPLATE } as never);
-    expect((await getSettings()).icTemplates[0]!.body).toBe(DEFAULT_TEMPLATE);
     expect('icTemplate' in (await getSettings())).toBe(false);
   });
 });

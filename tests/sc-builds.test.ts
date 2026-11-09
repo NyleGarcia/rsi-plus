@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLabel, compareBuilds, fillTemplate, mergeBuilds, parseBuild } from '@/lib/sc-builds';
+import { buildLabel, compareBuilds, mergeBuilds, parseBuild } from '@/lib/sc-builds';
 
 describe('parseBuild (real Patch Notes subjects, 2026-11)', () => {
   it.each([
@@ -24,10 +24,5 @@ describe('builds', () => {
     expect(b.PTU!.build).toBe(13132336);
     expect(buildLabel(b.LIVE!)).toBe('4.10.2 LIVE');
     expect(mergeBuilds(b, [t('[Wave 1] Star Citizen Alpha 4.10.3 PTU Patch Notes 12999338')], 2)).toBe(b);
-  });
-  it('fills templates, leaves unknown placeholders', () => {
-    const builds = mergeBuilds({}, [{ subject: 'Star Citizen Alpha 4.10.3 PTU Patch Notes 13132336', slug: 'x', channel_id: '1' }], 1);
-    const out = fillTemplate('Build: {build}\nLIVE: {live}\nSetup: {setup}\nOn {date} {other}', { builds, env: 'PTU', setup: ' EU, RTX ', now: new Date('2026-11-08T12:00:00Z') });
-    expect(out).toBe('Build: 4.10.3 PTU.13132336\nLIVE: {live}\nSetup: EU, RTX\nOn 2026-11-08 {other}');
   });
 });

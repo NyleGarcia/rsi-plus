@@ -8,7 +8,6 @@
   import Segmented from './Segmented.svelte';
   import SwitchRow from './SwitchRow.svelte';
   import StarOrgCard from './StarOrgCard.svelte';
-  import IcReportSettings from './IcReportSettings.svelte';
   import TipButton from './TipButton.svelte';
   import LazyTip from './LazyTip.svelte';
   import { LINK } from '@/lib/ui';
@@ -273,7 +272,6 @@
               checked={s.icPatchNotify}
               onchange={(v) => set('icPatchNotify', v)}
             />
-            <IcReportSettings />
           </div>
         {/if}
         <SwitchRow

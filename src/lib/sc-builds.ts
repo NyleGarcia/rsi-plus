@@ -69,31 +69,3 @@ export function mergeBuilds(cur: ScBuilds, threads: { subject: string; slug: str
 
 /** "4.3.2 PTU.10123456" / "4.3.2 LIVE". */
 export const buildLabel = (b: ScBuild) => `${b.version} ${b.env}${b.build ? `.${b.build}` : ''}`;
-
-/* ---------------------------------------------------------------- report templates ---------------------------------------------------------------- */
-
-export interface IcTemplate {
-  id: string;
-  name: string;
-  /** Issue Council category it fits ("Ships", "Gameplay", …): offered first once that category is picked. */
-  category?: string;
-  body: string;
-}
-
-/**
- * Fill a template: `{build}` (the environment picked in the report bar), `{live}` / `{ptu}` / `{eptu}` / `{tech}`,
- * `{setup}` (Settings → My setup) and `{date}`. A placeholder with no value stays as written, so it shows it's missing.
- */
-export function fillTemplate(body: string, v: { builds: ScBuilds; env: ScEnv; setup: string; now: Date }): string {
-  const b = (e: ScEnv) => (v.builds[e] ? buildLabel(v.builds[e]!) : null);
-  const map: Record<string, string | null> = {
-    build: b(v.env),
-    live: b('LIVE'),
-    ptu: b('PTU'),
-    eptu: b('EPTU'),
-    tech: b('TECH-PREVIEW'),
-    setup: v.setup.trim() || null,
-    date: v.now.toISOString().slice(0, 10),
-  };
-  return body.replace(/\{(\w+)\}/g, (m, k: string) => map[k.toLowerCase()] ?? m);
-}

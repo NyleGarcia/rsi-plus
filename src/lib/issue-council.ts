@@ -119,31 +119,6 @@ export const MAX_HISTORY = 30;
 export const MAX_MENTIONS = 8;
 export const MAX_MENTION_CODES = 1500;
 
-export const DEFAULT_TEMPLATE = `Game version / build: {build}
-Server region / shard:
-Location (system, place):
-Ship / vehicle (if any):
-My setup: {setup}
-
-Steps:
-1.
-2.
-3.
-
-Frequency (always / sometimes / once):`;
-/** The single template before 0.14 (stored by everyone who saved settings): migrates to the new default, not a copy. */
-export const LEGACY_DEFAULT_TEMPLATE = `Game version / build:
-Server region / shard:
-Location (system, place):
-Ship / vehicle (if any):
-
-Steps:
-1.
-2.
-3.
-
-Frequency (always / sometimes / once):`;
-
 /** Unique codes in a text, in order (`STARC-123`). */
 export function findCodes(text: string): string[] {
   return [...new Set([...text.matchAll(CODE)].map((m) => `STARC-${m[1]}`))];
