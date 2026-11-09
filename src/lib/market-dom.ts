@@ -84,8 +84,17 @@ export function applyView(rows: Map<HTMLElement, ImpRow | null>) {
   const want = sorted.map((r) => byHandle.get(r.product.handle)!).filter(Boolean);
   const cur = [...parent.children].filter((c) => want.includes(c as HTMLElement));
   if (cur.every((c, i) => c === want[i])) return;
-  const anchor = cur[0] ?? null;
-  for (const c of want) parent.insertBefore(c, anchor);
+  placeInOrder(parent, cur[0], want);
+}
+/**
+ * Move `cards` (in order) to where `first` is now. Anchored on a marker, not on `first`: `first` is one of the cards,
+ * and inserting it before itself leaves it in place, so it would end up last.
+ */
+function placeInOrder(parent: Element, first: Element | undefined, cards: HTMLElement[]) {
+  const mark = document.createComment('rp-imp');
+  parent.insertBefore(mark, first ?? null);
+  for (const c of cards) parent.insertBefore(c, mark);
+  mark.remove();
 }
 /** The store's own order, so *Store order* can put the cards back. */
 function rememberOrder(cards: HTMLElement[]) {
@@ -99,8 +108,7 @@ function restoreOrder(cards: HTMLElement[]) {
   const sorted = [...withOrder].sort((a, b) => Number(a.dataset.rpOrder) - Number(b.dataset.rpOrder));
   const cur = [...parent.children].filter((c) => withOrder.includes(c as HTMLElement));
   if (cur.every((c, i) => c === sorted[i])) return;
-  const anchor = cur[0] ?? null;
-  for (const c of sorted) parent.insertBefore(c, anchor);
+  placeInOrder(parent, cur[0], sorted);
 }
 
 const KINDS: SkuKind[] = ['ship', 'ccu', 'pack', 'paint', 'gear', 'other'];
