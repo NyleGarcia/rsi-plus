@@ -15,13 +15,13 @@ const PERSONAL = /handle|nick|email|moniker|display_?name|custom_?name|reserved_
  * Maps keyed by a person (org cache: handle → orgs; presence / friend notes: member id → …). Without names their keys
  * become `#1`, `#2` … — the same person gets the same alias in every map, so presence and notes still line up.
  */
-const KEYED = /^(incognito\.)?(orgs|presence|friendNotes)$/;
+const KEYED = /^(incognito\.)?(orgs|presence|friendNotes|intel)$/;
 /** Saved logins: `active` and each `id` are the handle plus a suffix. */
 const PROFILES = /^(incognito\.)?profiles$/;
 /** Parked account data per saved login (`profileData.<id>`): the key carries the handle. */
 const PROFILE_DATA = /^((?:incognito\.)?profileData\.).+$/;
 /** Public store data (catalog, paints, listings, store log): most of the file and nothing of yours — summarized unless asked for. */
-const STORE = /^(incognito\.)?(catalog|paints|storeItems|storeSnapshot|storeLog|saleHistory|funding)$/;
+const STORE = /^(incognito\.)?(catalog|paints|storeItems|storeSnapshot|storeLog|saleHistory|funding|impoundCache|intelCache)$/;
 /** A JWT-looking value is a token whatever its key. */
 const JWT = /^eyJ[\w-]+\.[\w-]+\./;
 

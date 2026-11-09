@@ -14,7 +14,10 @@ import type { Profiles } from './accounts';
 import type { ReadState } from './read';
 import type { Funding, FundingRange } from './wallet';
 import { NO_WATCHES, type FeedEvent, type Watches } from './watch';
-import { DEFAULT_TEMPLATE, type IcDraft, type IcIssues, type IcMentions } from './issue-council';
+import { DEFAULT_TEMPLATE, LEGACY_DEFAULT_TEMPLATE, type IcDraft, type IcIssues, type IcLinks, type IcMentions } from './issue-council';
+import type { ImpCache, ImpFilter, ImpSort } from './impound';
+import type { IcTemplate, ScBuilds, ScEnv } from './sc-builds';
+import { NO_INTEL_CACHE, type Intel, type IntelCache } from './intel';
 
 /**
  * True in an incognito context (manifest `incognito: 'split'` → separate background / pages / content scripts).
@@ -71,8 +74,21 @@ export interface Settings {
    * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
    */
   issueCouncil: boolean;
-  /** Report new issue → *Insert template*: the text put into the focused field. */
-  icTemplate: string;
+  /** Report new issue → *Insert template* menu (lib/sc-builds.ts `fillTemplate` fills `{build}`, `{setup}`, `{date}`). */
+  icTemplates: IcTemplate[];
+  /** Your setup (region, hardware, OS…), typed by you: `{setup}` in templates and *Insert my setup*. */
+  icSetup: string;
+  /** Which game environment `{build}` means (the report bar's picker, remembered). */
+  icEnv: ScEnv;
+  /** Feed + notification when Spectrum patch notes you open list a tracked issue's code under Bug Fixes. Off by default. */
+  icPatchNotify: boolean;
+  /**
+   * The Impound integration (opt-in): RSI price, markup and owned marks plus filters on theimpound.com.
+   * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
+   */
+  impound: boolean;
+  /** Star Hangar integration (opt-in): the same on star-hangar.com. Asks for that host; off drops it. */
+  starhangar: boolean;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
   accountSwitcher: boolean;
   /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
@@ -108,7 +124,12 @@ export const DEFAULTS: Settings = {
   spectrumBar: true,
   spectrumTools: true,
   issueCouncil: false,
-  icTemplate: DEFAULT_TEMPLATE,
+  icTemplates: [{ id: 'default', name: 'Default', body: DEFAULT_TEMPLATE }],
+  icSetup: '',
+  icEnv: 'LIVE',
+  icPatchNotify: false,
+  impound: false,
+  starhangar: false,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',
@@ -195,6 +216,20 @@ export const icIssuesItem = storage.defineItem<IcIssues>(acct('local:icIssues'),
 /** Spectrum threads that mention an Issue Council code. */
 export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMentions'), { fallback: {} });
 /** Report new issue form draft (autosaved while typing, offered back on the next visit). */
+/** Newest Star Citizen build per environment, from Spectrum patch-notes subjects (public, shared). */
+export const scBuildsItem = storage.defineItem<ScBuilds>('local:scBuilds', { fallback: {} });
+/** Star Hangar toolbar: filters, sort, dim owned (this browser). */
+export const starhangarViewItem = storage.defineItem<{ f: ImpFilter; sort: ImpSort; dimOwned: boolean } | null>('local:starhangarView', { fallback: null });
+/** Org lookup: your tags on players and orgs (with notes). This browser; share them with Export / Import. */
+export const intelItem = storage.defineItem<Intel>('local:intel', { fallback: {} });
+/** Org lookup: cached citizen / org / member lookups (public RSI data) and the recent list. */
+export const intelCacheItem = storage.defineItem<IntelCache>('local:intelCache', { fallback: NO_INTEL_CACHE });
+/** Spectrum threads you linked to Issue Council issues yourself. */
+export const icLinksItem = storage.defineItem<IcLinks>(acct('local:icLinks'), { fallback: {} });
+/** The Impound products read (public Shopify data, shared across accounts), by handle: lib/impound.ts. */
+export const impoundCacheItem = storage.defineItem<ImpCache>('local:impoundCache', { fallback: {} });
+/** The Impound toolbar: filters, sort, dim owned (this browser). */
+export const impoundViewItem = storage.defineItem<{ f: ImpFilter; sort: ImpSort; dimOwned: boolean } | null>('local:impoundView', { fallback: null });
 export const icDraftItem = storage.defineItem<IcDraft | null>(acct('local:icDraft'), { fallback: null });
 export const lastPollItem = storage.defineItem<{ at: number; error: string | null } | null>(acct('local:lastPoll'), { fallback: null });
 /**
@@ -217,8 +252,10 @@ export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 export async function getSettings(): Promise<Settings> {
   const s = await settingsItem.getValue();
   // `starorgSendCost` (Send pledge values) was removed: drop it, so the next save stops storing it.
-  const { starorgSendCost: _gone, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown };
-  return { ...DEFAULTS, ...kept, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
+  // `icTemplate` (one report template) became `icTemplates`: a saved one becomes the *Default* template.
+  const { starorgSendCost: _gone, icTemplate, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown; icTemplate?: unknown };
+  const migrated = !kept.icTemplates?.length && typeof icTemplate === 'string' && icTemplate.trim() && icTemplate !== LEGACY_DEFAULT_TEMPLATE ? { icTemplates: [{ id: 'default', name: 'Default', body: icTemplate }] } : {};
+  return { ...DEFAULTS, ...kept, ...migrated, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
 }
 
 export async function patchSettings(patch: Partial<Settings>) {

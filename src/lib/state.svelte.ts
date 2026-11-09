@@ -15,6 +15,8 @@ export const ui = $state({
   settings: DEFAULTS as Settings,
   view: null as ThreadView | null,
   watched: false,
+  /** Issue Council codes you linked to the open thread. */
+  linked: [] as string[],
   help: false,
   /** Px the floating bar sits above the viewport bottom to clear Spectrum's own pinned footer (reply pager). */
   barLift: 0,

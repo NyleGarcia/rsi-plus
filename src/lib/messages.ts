@@ -13,6 +13,9 @@ export type BgRequest =
   | { type: 'friends:remove'; ids: string[] }
   | { type: 'friends:request'; action: 'accept' | 'decline' | 'cancel'; ids: string[] }
   | { type: 'orgs:get'; nicknames: string[]; force?: boolean }
+  | { type: 'intel:player'; handle: string; force?: boolean }
+  | { type: 'intel:org'; sid: string; force?: boolean }
+  | { type: 'intel:members'; sid: string; page: number; force?: boolean }
   | { type: 'catalog:get'; fresh?: boolean }
   | { type: 'paints:get'; fresh?: boolean }
   /** Play the party-mode ding now (settings preview). */
@@ -20,10 +23,12 @@ export type BgRequest =
   /** Issue Council content script: tracked issues that changed (Feed + notification). */
   | { type: 'ic:events'; events: import('./watch').FeedEvent[] }
   /** Settings → Issue Council switched or access granted: (un)register the Issue Council content script now. */
-  | { type: 'ic:sync' };
+  | { type: 'ic:sync' }
+  | { type: 'imp:sync' }
+  | { type: 'sh:sync' };
 
 /** Hub pages (`hub.html#<tab>`). One sidebar entry each; `ships` (→ fleet) and `notifications` (→ feed, store view) are legacy aliases. */
-export type HubTab = 'feed' | 'watching' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships';
+export type HubTab = 'feed' | 'watching' | 'issues' | 'intel' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships';
 
 export interface BulkResult {
   done: string[];
@@ -39,11 +44,16 @@ export interface BgResponses {
   'friends:remove': BulkResult;
   'friends:request': BulkResult;
   'orgs:get': OrgCache;
+  'intel:player': import('./intel').PlayerLookup;
+  'intel:org': import('./intel').OrgLookup;
+  'intel:members': import('./intel').IntelCache['members'][string];
   'catalog:get': Catalog;
   'paints:get': PaintCatalog;
   'sound:ding': { ok: true };
   'ic:events': { added: number };
   'ic:sync': { registered: boolean };
+  'imp:sync': { registered: boolean };
+  'sh:sync': { registered: boolean };
 }
 
 type Envelope<T> = { ok: true; data: T } | { ok: false; error: string };

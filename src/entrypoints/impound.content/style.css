@@ -1,0 +1,106 @@
+/* RSI+ on The Impound: everything under .rp-imp (injected <style>, no shadow root — the bits live inside cards). */
+.rp-imp {
+  --rp-accent: #3cc8ff;
+  --rp-good: #4ade80;
+  --rp-mid: #ffd166;
+  --rp-high: #ff7a7a;
+  --rp-muted: #9aa4b2;
+  font: 12px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #e8edf3;
+  text-align: left;
+}
+.rp-imp-card { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.rp-imp-price { font-weight: 700; }
+.rp-imp-price.big { font-size: 14px; }
+.rp-imp-price.good, td.good { color: var(--rp-good); }
+.rp-imp-price.mid, td.mid { color: var(--rp-mid); }
+.rp-imp-price.high, td.high { color: var(--rp-high); }
+.rp-imp-muted { color: var(--rp-muted); }
+.rp-imp-own { color: var(--rp-good); font-weight: 600; }
+.rp-imp-own.part { color: var(--rp-accent); }
+.grid-product.rp-imp-owned .grid-product__image-mask { opacity: 0.45; }
+.grid-product.rp-imp-hidden { display: none !important; }
+.rp-imp-logo { font-weight: 800; color: var(--rp-accent); letter-spacing: -0.02em; }
+.rp-imp-bar {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 10px;
+  background: rgb(10 14 20 / 0.92);
+}
+.rp-imp-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rp-imp-sep { width: 1px; height: 18px; background: rgb(255 255 255 / 0.15); margin: 0 4px; }
+.rp-imp-input, .rp-imp-select {
+  font: inherit;
+  color: #e8edf3;
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.15);
+  border-radius: 6px;
+  padding: 4px 8px;
+  height: 28px;
+}
+.rp-imp-input { min-width: 240px; flex: 1 1 240px; }
+.rp-imp-select option { color: #111; }
+.rp-imp-chip, .rp-imp-btn {
+  font: inherit;
+  color: #e8edf3;
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.rp-imp-btn { border-radius: 6px; padding: 4px 10px; }
+.rp-imp-btn.primary { border-color: rgb(60 200 255 / 0.5); color: var(--rp-accent); }
+.rp-imp-chip.on { background: rgb(60 200 255 / 0.18); border-color: rgb(60 200 255 / 0.6); color: var(--rp-accent); }
+.rp-imp-chip:focus-visible, .rp-imp-btn:focus-visible, .rp-imp-input:focus-visible, .rp-imp-select:focus-visible { outline: 2px solid var(--rp-accent); outline-offset: 1px; }
+.rp-imp-count { margin-left: auto; }
+.rp-imp-product {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 10px;
+  background: rgb(10 14 20 / 0.92);
+}
+.rp-imp-variants summary { cursor: pointer; color: var(--rp-accent); }
+.rp-imp-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.rp-imp-table th, .rp-imp-table td { padding: 4px 6px; border-bottom: 1px solid rgb(255 255 255 / 0.08); text-align: left; vertical-align: top; }
+.rp-imp-table th { color: var(--rp-muted); font-weight: 600; white-space: nowrap; }
+.rp-imp-table th.sortable { cursor: pointer; text-decoration: underline dotted; }
+.rp-imp-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-imp-table td.own { color: var(--rp-good); }
+.rp-imp-table tr.sel td { background: rgb(60 200 255 / 0.1); }
+.rp-imp-table tr.out td { opacity: 0.55; }
+.rp-imp-table tr.owned td:first-child a { color: var(--rp-good); }
+.rp-imp-table a, .rp-imp-link { color: var(--rp-accent); text-decoration: none; }
+.rp-imp-table a:hover, .rp-imp-link:hover { text-decoration: underline; }
+.rp-imp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  background: rgb(0 0 0 / 0.6);
+  display: grid;
+  place-items: center;
+}
+.rp-imp-panel {
+  width: min(1200px, 96vw);
+  max-height: 90vh;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #0d1218;
+  border: 1px solid rgb(255 255 255 / 0.14);
+}
+.rp-imp-panel > .rp-imp-row > .rp-imp-btn { margin-left: auto; }
+.rp-imp-tablewrap { overflow: auto; }
+.rp-imp-price.paid { color: var(--rp-accent); }
+.rp-imp-mini { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 3px; font-size: 11px; line-height: 1.35; }
+.rp-imp-contents { margin: 0; padding: 0 0 0 4px; list-style: none; columns: 2 220px; }
+.rp-imp-contents li { color: var(--rp-muted); }
+.rp-imp-contents li.have { color: var(--rp-good); }

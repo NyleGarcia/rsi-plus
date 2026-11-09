@@ -4,11 +4,15 @@ import { classify } from '@/lib/capture';
 import { HOOK_CONFIG_KEY, HOOK_TAG, type HookConfig } from '@/lib/hook-config';
 import { trackPath } from '@/lib/page-path.svelte';
 import { firstNewReply, markRead, markUnread, type ReadState } from '@/lib/read';
-import { getSettings, getWatches, icIssuesItem, icMentionsItem, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
-import { addMentions, type IcIssues } from '@/lib/issue-council';
+import { getSettings, getWatches, icIssuesItem, icLinksItem, icMentionsItem, intelItem, orgCacheItem, patchSettings, scBuildsItem, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { addLink, addMentions, linksOfThread, normalizeCode, pickIssues, removeLink, toggleWatch as toggleIcWatch, type IcIssues, type IcLinks, type IcMentions } from '@/lib/issue-council';
 import { toast, ui } from '@/lib/state.svelte';
 import { parsePath, threadUrl, type ThreadSummary } from '@/lib/types';
 import { NO_WATCHES, type Watches } from '@/lib/watch';
+import { mergeBuilds } from '@/lib/sc-builds';
+import { threatOf, type Intel } from '@/lib/intel';
+import { mainOrgFromBadges, type OrgCache } from '@/lib/orgs';
+import type { Member } from '@/lib/types';
 import { decorate, pageCodes, setDecorState, undecorate } from './decorate';
 import { startKeys } from './keys';
 import themeCss from './theme.css?inline';
@@ -20,6 +24,25 @@ export const listed = new Set<string>();
 let read: ReadState = {};
 let watches: Watches = NO_WATCHES;
 let ic: IcIssues = {};
+let icMentions: IcMentions = {};
+let icLinks: IcLinks = {};
+let intel: Intel = {};
+let orgCache: OrgCache = {};
+/** Main org per author (lower-case nickname), from the member badges in Spectrum's own payloads. */
+const mainOrgs = new Map<string, { sid: string; name: string }>();
+function noteMember(m: Member | null | undefined) {
+  const o = m?.nickname ? mainOrgFromBadges(m) : null;
+  if (o) mainOrgs.set(m!.nickname.toLowerCase(), o);
+}
+/** Org lookup tags for an author: their full org list when cached (Friends / lookups), else their main org. */
+function intelOf(nickname: string) {
+  if (!Object.keys(intel).length) return null;
+  const key = nickname.toLowerCase();
+  const main = mainOrgs.get(key);
+  const orgs = orgCache[key]?.orgs ?? (main ? [{ ...main, main: true, redacted: false }] : []);
+  const t = threatOf(nickname, orgs, intel);
+  return t.tag ? t : null;
+}
 
 // Thread opens save the read marks debounced: the state is up to MAX_MARKS entries (~300 KB a write) and one open
 // marks twice (route + payload). Explicit actions flush at once; so does leaving the page.
@@ -59,6 +82,19 @@ export default defineContentScript({
     ic = await icIssuesItem.getValue();
     icIssuesItem.watch((v) => {
       ic = v ?? {};
+      refresh();
+    });
+    icMentions = await icMentionsItem.getValue();
+    icMentionsItem.watch((v) => (icMentions = v ?? {}));
+    intel = await intelItem.getValue();
+    orgCache = await orgCacheItem.getValue();
+    intelItem.watch((v) => ((intel = v ?? {}), refresh()));
+    orgCacheItem.watch((v) => ((orgCache = v ?? {}), refresh()));
+    icLinks = await icLinksItem.getValue();
+    syncLinked();
+    icLinksItem.watch((v) => {
+      icLinks = v ?? {};
+      syncLinked();
       refresh();
     });
     watches = await getWatches();
@@ -147,9 +183,21 @@ function refresh() {
   if (!document.body) return;
   if (!ui.settings.spectrumTools) return void undecorate();
   liftBar();
-  setDecorState({ settings: ui.settings, read, watches, threads, listed, ic });
+  setDecorState({ settings: ui.settings, read, watches, threads, listed, ic, icMentions, icLinks, intelOf });
   decorate(actions);
   recordMentions();
+}
+
+/** Patch-notes subjects in a thread list → newest build per environment (the Issue Council report helper's `{build}`). */
+function recordBuilds(list: ThreadSummary[]) {
+  if (!list.some((t) => /patch\s*notes/i.test(t.subject))) return;
+  scBuildsItem
+    .getValue()
+    .then((cur) => {
+      const next = mergeBuilds(cur, list, Date.now());
+      if (next !== cur) return scBuildsItem.setValue(next);
+    })
+    .catch(() => {});
 }
 
 /** Issue Council codes in this thread's replies → `icMentions` (the issue page lists the threads). Once per thread + code set. */
@@ -236,10 +284,14 @@ function onCaptured(path: string, json: any) {
     for (const t of c.threads) {
       threads.set(t.slug, t);
       listed.add(t.slug);
+      noteMember(t.member);
     }
+    recordBuilds(c.threads);
     refresh();
   } else if (c.kind === 'thread') {
     threads.set(c.thread.slug, c.thread);
+    noteMember(c.thread.member);
+    for (const r of c.thread.replies ?? []) noteMember(r.member);
     if (parsePath(location.pathname).slug === c.thread.slug) openThread(c.thread, c.thread.replies);
   }
 }
@@ -283,6 +335,13 @@ function openThread(t: ThreadSummary, replies: import('@/lib/types').Reply[] | u
 function syncWatched() {
   const v = ui.view;
   ui.watched = !!v && watches.threads.some((w) => w.id === v.thread.id);
+  syncLinked();
+}
+/** Issue Council issues linked to the open thread (thread bar chips). */
+function syncLinked() {
+  const slug = ui.view?.thread.slug;
+  const codes = slug ? linksOfThread(icLinks, slug) : [];
+  if (codes.join(',') !== ui.linked.join(',')) ui.linked = codes;
 }
 
 /** Actions shared by the thread bar, row buttons, and keyboard shortcuts. */
@@ -356,6 +415,34 @@ export const actions = {
     );
   },
   thread: (slug: string) => threads.get(slug),
+  /** Open the hub's Org lookup on a player. */
+  lookUp: (nickname: string) => browser.runtime.sendMessage({ type: 'hub:open', tab: 'intel', params: { player: nickname } }),
+  /** Issue Council (when RSI+ has seen any): watch from a STARC chip's card, link the open thread to an issue. */
+  icIssue: (code: string) => ic[code],
+  icPick: (q: string) => pickIssues(ic, q),
+  icThreads: (code: string) => ({ mentions: icMentions[code] ?? [], links: icLinks[code] ?? [] }),
+  async toggleIcWatch(code: string) {
+    const cur = await icIssuesItem.getValue();
+    const snap = cur[code] ?? { code, title: '', status: '', contributions: null };
+    const on = toggleIcWatch(cur, snap, Date.now());
+    await icIssuesItem.setValue(cur);
+    toast(on ? `Watching ${code} in RSI+: changes reach the Feed when an Issue Council page shows them` : `Stopped watching ${code}`);
+    return on;
+  },
+  /** Link the open thread to an issue: a code, "123456", or an issue URL. false when it isn't one. */
+  async linkIssue(input: string) {
+    const code = normalizeCode(input);
+    const t = ui.view?.thread;
+    if (!code || !t) return false;
+    await icLinksItem.setValue(addLink(await icLinksItem.getValue(), code, { slug: t.slug, channelId: t.channel_id, subject: t.subject }, Date.now()));
+    toast(`Linked ${code} to this thread`);
+    return true;
+  },
+  async unlinkIssue(code: string, slug = ui.view?.thread.slug) {
+    if (!slug) return;
+    await icLinksItem.setValue(removeLink(await icLinksItem.getValue(), code, slug));
+    toast(`Unlinked ${code}`);
+  },
   openHub: (tab?: import('@/lib/messages').HubTab) => browser.runtime.sendMessage({ type: 'hub:open', tab }),
 };
 export type Actions = typeof actions;

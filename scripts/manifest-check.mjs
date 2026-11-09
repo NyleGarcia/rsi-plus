@@ -12,7 +12,7 @@ const HOSTS = new Set(['https://robertsspaceindustries.com/*']);
 const args = process.argv.slice(2);
 const files = args;
 /** Optional hosts: StarOrg Tools (Settings → Integrations → Connect, dropped on Disconnect) and the Issue Council (Settings → Issue Council). */
-const OPTIONAL_HOSTS = new Set(['https://starorg.tools/*', 'https://dev.starorg.tools/*', 'https://issue-council.robertsspaceindustries.com/*']);
+const OPTIONAL_HOSTS = new Set(['https://starorg.tools/*', 'https://dev.starorg.tools/*', 'https://issue-council.robertsspaceindustries.com/*', 'https://theimpound.com/*', 'https://star-hangar.com/*']);
 const BAD_CSP = /unsafe-eval|wasm-unsafe-eval|http:|https:\/\/(?!robertsspaceindustries\.com)/;
 const isHost = (p) => p.includes('/') || p === '<all_urls>';
 

@@ -8,14 +8,16 @@
   import Segmented from './Segmented.svelte';
   import SwitchRow from './SwitchRow.svelte';
   import StarOrgCard from './StarOrgCard.svelte';
+  import IcReportSettings from './IcReportSettings.svelte';
   import TipButton from './TipButton.svelte';
   import LazyTip from './LazyTip.svelte';
   import { LINK } from '@/lib/ui';
   import * as Card from '@/components/ui/card';
   import * as ToggleGroup from '@/components/ui/toggle-group';
   import { Input } from '@/components/ui/input';
-  import { Textarea } from '@/components/ui/textarea';
-  import { DEFAULT_TEMPLATE, IC_HOSTS, IC_ORIGIN } from '@/lib/issue-council';
+  import { IC_HOSTS, IC_ORIGIN } from '@/lib/issue-council';
+  import { IMPOUND_HOSTS, IMPOUND_ORIGIN } from '@/lib/impound';
+  import { SH_HOSTS, SH_ORIGIN } from '@/lib/starhangar';
   import { Label } from '@/components/ui/label';
   import { Button } from '@/components/ui/button';
   import { cn } from '@/lib/utils';
@@ -72,6 +74,58 @@
     set('issueCouncil', false)
       .then(() => browser.permissions.remove({ origins: IC_HOSTS }).catch(() => false))
       .then(() => ((icGranted = false), bg({ type: 'ic:sync' }).catch(() => {})));
+  }
+
+  /** The Impound: same grant-in-the-click pattern as the Issue Council. */
+  let impGranted = $state<boolean | null>(null);
+  let impMsg = $state('');
+  $effect(() => {
+    browser.permissions.contains({ origins: IMPOUND_HOSTS }).then((v) => (impGranted = v), () => (impGranted = false));
+  });
+  function grantImpound() {
+    impMsg = '';
+    browser.permissions.request({ origins: IMPOUND_HOSTS }).then(
+      async (ok) => {
+        impGranted = ok;
+        if (!ok) return void (impMsg = 'Access not granted, so RSI+ stays off on The Impound.');
+        await set('impound', true);
+        await bg({ type: 'imp:sync' }).catch(() => {});
+      },
+      (e) => (impMsg = `Could not ask for access: ${(e as Error).message}`),
+    );
+  }
+  function setImpound(v: boolean) {
+    if (v) return grantImpound();
+    impMsg = '';
+    set('impound', false)
+      .then(() => browser.permissions.remove({ origins: IMPOUND_HOSTS }).catch(() => false))
+      .then(() => ((impGranted = false), bg({ type: 'imp:sync' }).catch(() => {})));
+  }
+
+  /** Star Hangar: same pattern again. */
+  let shGranted = $state<boolean | null>(null);
+  let shMsg = $state('');
+  $effect(() => {
+    browser.permissions.contains({ origins: SH_HOSTS }).then((v) => (shGranted = v), () => (shGranted = false));
+  });
+  function grantStarHangar() {
+    shMsg = '';
+    browser.permissions.request({ origins: SH_HOSTS }).then(
+      async (ok) => {
+        shGranted = ok;
+        if (!ok) return void (shMsg = 'Access not granted, so RSI+ stays off on Star Hangar.');
+        await set('starhangar', true);
+        await bg({ type: 'sh:sync' }).catch(() => {});
+      },
+      (e) => (shMsg = `Could not ask for access: ${(e as Error).message}`),
+    );
+  }
+  function setStarHangar(v: boolean) {
+    if (v) return grantStarHangar();
+    shMsg = '';
+    set('starhangar', false)
+      .then(() => browser.permissions.remove({ origins: SH_HOSTS }).catch(() => false))
+      .then(() => ((shGranted = false), bg({ type: 'sh:sync' }).catch(() => {})));
   }
 
   let debugNames = $state(false);
@@ -239,13 +293,53 @@
             <p class="text-muted-foreground text-xs">
               Open the <a class={LINK} href={`${IC_ORIGIN}/projects/STAR-CITIZEN/`} target="_blank" rel="noopener">Issue Council</a>: issue cards show <b>+N new</b> and status changes since your last visit, issue pages mark what's new, and ☆ watches an issue. Issues you reported, contributed to or follow there are tracked too. Changes reach the Feed when an Issue Council page shows them: nothing arrives while it's closed.
             </p>
-            <Label for="set-icTemplate" class="mt-1">Report template</Label>
-            <Textarea id="set-icTemplate" rows={8} class="font-mono text-xs" value={s.icTemplate} onchange={(e) => set('icTemplate', (e.currentTarget as HTMLTextAreaElement).value)} />
-            <div class="flex items-center gap-2">
-              <span class="text-muted-foreground text-xs">Report new issue → <b>Insert template</b> puts this into the field you last clicked.</span>
-              <Button size="sm" variant="ghost" onclick={() => set('icTemplate', DEFAULT_TEMPLATE)}>Reset</Button>
-            </div>
+            <SwitchRow
+              id="set-icPatchNotify"
+              label="Notify when patch notes fix a tracked issue"
+              hint="When a Spectrum patch-notes thread you open lists the code of an issue you track under Bug Fixes. Matches by title words are only marked in the notes (maybe), never notified"
+              checked={s.icPatchNotify}
+              onchange={(v) => set('icPatchNotify', v)}
+            />
+            <IcReportSettings />
           </div>
+        {/if}
+        <SwitchRow
+          id="set-impound"
+          label="The Impound"
+          hint="On theimpound.com: the RSI price and markup on every listing, what you already own, and extra filters and sorting. Asks for access to theimpound.com; RSI+ reads its pages and public product data only, never your cart or account there, and sends nothing anywhere"
+          checked={s.impound && !!impGranted}
+          onchange={(v) => setImpound(v)}
+        />
+        {#if s.impound && impGranted === false}
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <span class="text-muted-foreground">On in your synced settings, but this browser hasn't granted access to The Impound.</span>
+            <Button size="sm" variant="outline" onclick={grantImpound}>Grant access</Button>
+          </div>
+        {/if}
+        {#if impMsg}<p class="text-destructive text-xs" role="status">{impMsg}</p>{/if}
+        {#if s.impound && impGranted}
+          <p class="text-muted-foreground rounded-md border p-3 text-xs">
+            Open <a class={LINK} href={IMPOUND_ORIGIN} target="_blank" rel="noopener">The Impound</a>: listings show the RSI price (the store price, the upgrade price, or MSRP when RSI doesn't sell it) and the markup, and mark ships, upgrades and items you own. A toolbar above each grid filters and sorts; <b>Whole collection</b> lists every page of a collection in one table. Owned marks use your hangar as last loaded in Pledges.
+          </p>
+        {/if}
+        <SwitchRow
+          id="set-starhangar"
+          label="Star Hangar"
+          hint="On star-hangar.com: the RSI price and markup on every listing, what you already own, and extra filters and sorting. Asks for access to star-hangar.com; RSI+ only reads the pages you open there, never your cart or account, and sends nothing anywhere"
+          checked={s.starhangar && !!shGranted}
+          onchange={(v) => setStarHangar(v)}
+        />
+        {#if s.starhangar && shGranted === false}
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <span class="text-muted-foreground">On in your synced settings, but this browser hasn't granted access to Star Hangar.</span>
+            <Button size="sm" variant="outline" onclick={grantStarHangar}>Grant access</Button>
+          </div>
+        {/if}
+        {#if shMsg}<p class="text-destructive text-xs" role="status">{shMsg}</p>{/if}
+        {#if s.starhangar && shGranted}
+          <p class="text-muted-foreground rounded-md border p-3 text-xs">
+            Open <a class={LINK} href={SH_ORIGIN} target="_blank" rel="noopener">Star Hangar</a>: listings show the RSI price and the markup, and mark ships, upgrades and items you own. Star Hangar gives no RSI ids, so RSI+ matches ships, upgrades and paints by name (strictly: a plushie is not the ship). Search covers seller names too.
+          </p>
         {/if}
       {/if}
     </Card.Content>

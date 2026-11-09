@@ -43,6 +43,15 @@ export interface IcIssue extends IcSnapshot {
   rel: IcRelation[];
   /** Your last visit to the issue's own page: what it showed then, and the Activity Feed entries (ids) you saw. */
   seen?: { at: number; status: string; contributions: number | null; activity: string[] };
+  /** Tracked issues only: each change a page showed (status / contributions), oldest first, last `MAX_HISTORY`. */
+  history?: IcPoint[];
+  /** Your private note (hub *Issue Council* tab; shown on the issue page). */
+  note?: string;
+}
+export interface IcPoint {
+  at: number;
+  status: string;
+  contributions: number | null;
 }
 export type IcIssues = Record<string, IcIssue>;
 
@@ -55,6 +64,49 @@ export interface IcMention {
 }
 export type IcMentions = Record<string, IcMention[]>;
 
+/** Spectrum threads you linked to an issue yourself (thread bar → *Link issue*), apart from the automatic mentions. */
+export type IcLinks = Record<string, IcMention[]>;
+
+/** "STARC-123456", "starc 123456", "123456" or an issue URL → `STARC-123456`; null when it isn't one. */
+export function normalizeCode(input: string): string | null {
+  const t = input.trim();
+  const fromUrl = codeFromUrl(t);
+  if (fromUrl) return fromUrl;
+  const m = /^(?:#?starc[\s-]*)?(\d{3,8})$/i.exec(t);
+  return m ? `STARC-${m[1]}` : null;
+}
+
+/** Link a thread to an issue (newest first, once per thread). */
+export function addLink(links: IcLinks, code: string, t: Omit<IcMention, 'at'>, now: number): IcLinks {
+  return { ...links, [code]: [{ ...t, at: now }, ...(links[code] ?? []).filter((x) => x.slug !== t.slug)] };
+}
+export function removeLink(links: IcLinks, code: string, slug: string): IcLinks {
+  const rest = (links[code] ?? []).filter((x) => x.slug !== slug);
+  const next = { ...links };
+  if (rest.length) next[code] = rest;
+  else delete next[code];
+  return next;
+}
+/** Issues a thread is linked to. */
+export const linksOfThread = (links: IcLinks, slug: string): string[] => Object.keys(links).filter((c) => links[c]!.some((x) => x.slug === slug));
+
+/** Spectrum threads for an issue: your links first (marked), then the threads RSI+ saw mention it. */
+export function threadsFor(code: string, mentions: IcMentions, links: IcLinks): (IcMention & { linked: boolean })[] {
+  const out = (links[code] ?? []).map((m) => ({ ...m, linked: true }));
+  for (const m of mentions[code] ?? []) if (!out.some((o) => o.slug === m.slug)) out.push({ ...m, linked: false });
+  return out;
+}
+
+/** Issues for the link picker: matching code / title, yours (reported, contributed, followed, watched) first. */
+export function pickIssues(issues: IcIssues, q: string, n = 8): IcIssue[] {
+  const t = q.trim().toLowerCase();
+  const code = normalizeCode(q);
+  return Object.values(issues)
+    .filter((i) => !t || i.code.toLowerCase().includes(t) || (code != null && i.code === code) || i.title.toLowerCase().includes(t))
+    .sort((a, b) => Number(!!b.rel.length) - Number(!!a.rel.length) || b.updatedAt - a.updatedAt)
+    .slice(0, n);
+}
+
 /** Report form draft (Report new issue): field name → value, per tab session of the form. */
 export interface IcDraft {
   at: number;
@@ -63,10 +115,24 @@ export interface IcDraft {
 
 export const MAX_ISSUES = 3000;
 export const MAX_ACTIVITY = 200;
+export const MAX_HISTORY = 30;
 export const MAX_MENTIONS = 8;
 export const MAX_MENTION_CODES = 1500;
 
-export const DEFAULT_TEMPLATE = `Game version / build:
+export const DEFAULT_TEMPLATE = `Game version / build: {build}
+Server region / shard:
+Location (system, place):
+Ship / vehicle (if any):
+My setup: {setup}
+
+Steps:
+1.
+2.
+3.
+
+Frequency (always / sometimes / once):`;
+/** The single template before 0.14 (stored by everyone who saved settings): migrates to the new default, not a copy. */
+export const LEGACY_DEFAULT_TEMPLATE = `Game version / build:
 Server region / shard:
 Location (system, place):
 Ship / vehicle (if any):
@@ -218,9 +284,33 @@ export function upsert(issues: IcIssues, snap: IcSnapshot, rel: IcRelation | nul
     updatedAt: now,
     rel: rel && !prev?.rel.includes(rel) ? [...(prev?.rel ?? []), rel] : (prev?.rel ?? []),
     ...(prev?.seen ? { seen: prev.seen } : {}),
+    ...(prev?.note ? { note: prev.note } : {}),
   };
+  const history = withPoint(prev?.history, next, now);
+  if (history) next.history = history;
   issues[snap.code] = next;
   return next;
+}
+
+/**
+ * History after a page showed `issue`: a point is added when the issue is tracked and its status or count differs
+ * from the last point (or there is none yet). Untracked issues keep what they had (nothing new).
+ */
+export function withPoint(history: IcPoint[] | undefined, issue: Pick<IcIssue, 'rel' | 'status' | 'contributions'>, now: number): IcPoint[] | undefined {
+  if (!issue.rel.length || (!issue.status && issue.contributions == null)) return history;
+  const last = history?.at(-1);
+  if (last && last.status === issue.status && last.contributions === issue.contributions) return history;
+  return [...(history ?? []), { at: now, status: issue.status, contributions: issue.contributions }].slice(-MAX_HISTORY);
+}
+
+/** Set or clear your note on an issue (no-op for an issue RSI+ hasn't seen). */
+export function setNote(issues: IcIssues, code: string, note: string): boolean {
+  const cur = issues[code];
+  if (!cur) return false;
+  const t = note.trim();
+  const { note: _old, ...rest } = cur;
+  issues[code] = t ? { ...rest, note: t } : rest;
+  return true;
 }
 
 /** You opened the issue page: what it shows now is read. Activity ids are kept (newest first, capped). */
@@ -240,7 +330,9 @@ export function newActivity(issue: IcIssue | undefined, page: IcIssuePage): stri
 export function toggleWatch(issues: IcIssues, snap: IcSnapshot, now: number): boolean {
   const cur = issues[snap.code] ?? upsert(issues, snap, null, now);
   const on = !cur.rel.includes('watched');
-  issues[snap.code] = { ...cur, rel: on ? [...cur.rel, 'watched'] : cur.rel.filter((r) => r !== 'watched') };
+  const rel: IcRelation[] = on ? [...cur.rel, 'watched'] : cur.rel.filter((r) => r !== 'watched');
+  const history = withPoint(cur.history, { ...cur, rel }, now);
+  issues[snap.code] = { ...cur, rel, ...(history ? { history } : {}) };
   return on;
 }
 
@@ -272,3 +364,122 @@ export const tracked = (issues: IcIssues): IcIssue[] =>
   Object.values(issues)
     .filter((i) => i.rel.length)
     .sort((a, b) => b.updatedAt - a.updatedAt);
+
+/* ---------------------------------------------------------------- hub tab ---------------------------------------------------------------- */
+
+export interface IcFilter {
+  /** Every issue RSI+ has seen, not only tracked ones. */
+  all: boolean;
+  /** Empty = any. */
+  status: string[];
+  rel: IcRelation[];
+  category: string[];
+  q: string;
+}
+export const NO_IC_FILTER: IcFilter = { all: false, status: [], rel: [], category: [], q: '' };
+
+/** Issues for the hub table: tracked (or all), filtered, most recently seen first. */
+export function filterIssues(issues: IcIssues, f: IcFilter): IcIssue[] {
+  const q = f.q.trim().toLowerCase();
+  return Object.values(issues)
+    .filter((i) => (f.all || i.rel.length) && (!f.status.length || f.status.includes(i.status)) && (!f.rel.length || f.rel.some((r) => i.rel.includes(r))))
+    .filter((i) => !f.category.length || (!!i.category && f.category.includes(i.category)))
+    .filter((i) => !q || `${i.code} ${i.title} ${i.note ?? ''}`.toLowerCase().includes(q))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Value → count over a list (facet counts: status, category). */
+export function facetCounts(list: IcIssue[], key: (i: IcIssue) => string | undefined): [string, number][] {
+  const m = new Map<string, number>();
+  for (const i of list) {
+    const k = key(i);
+    if (k) m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+/** CSV of the hub view: code, title, status, contributions, category, relations, last seen (ISO), url, note. */
+export function issuesCsv(list: IcIssue[]): string {
+  const head = ['code', 'title', 'status', 'contributions', 'category', 'relations', 'last_seen', 'url', 'note'];
+  const rows = list.map((i) => [i.code, i.title, i.status, i.contributions == null ? '' : String(i.contributions), i.category ?? '', i.rel.join(' '), new Date(i.updatedAt).toISOString(), issueUrl(i.code), i.note ?? '']);
+  return [head, ...rows].map((r) => r.map(csvCell).join(',')).join('\n') + '\n';
+}
+
+/* ---------------------------------------------------------------- similar issues ---------------------------------------------------------------- */
+
+/** Words that say nothing about which bug it is. */
+const STOP = new Set(
+  'a an the and or but of in on at to for from with by is are was were be been it its this that these those not no when while after before during into out up down off over under again can cant cannot does doesnt dont do did will wont would should could i im my me you your we our they their there here bug bugs issue issues problem problems broken error errors working work works fix fixed sometimes always randomly random game star citizen sc ptu live evocati please still also just get gets getting got'.split(' '),
+);
+/** "Quantum drive doesn't spool on Hurston" → quantum, drive, spool, hurston (simple stems: trailing s / ing / ed). */
+export function titleTokens(t: string): string[] {
+  const out = new Set<string>();
+  for (const raw of t.toLowerCase().replace(/['’]/g, '').split(/[^a-z0-9]+/)) {
+    if (raw.length < 3 || STOP.has(raw) || /^\d+$/.test(raw)) continue;
+    out.add(raw.replace(/(ing|ed|es|s)$/, '') || raw);
+  }
+  return [...out];
+}
+export interface Similar {
+  issue: IcIssue;
+  score: number;
+  shared: string[];
+}
+/**
+ * Issues RSI+ has seen whose titles share words with `title`: overlap ÷ smaller title (so a short title fully inside
+ * a long one still scores), at least 2 shared words, best first. Fixed / archived are left out unless asked for.
+ */
+export function similarIssues(title: string, issues: IcIssues | IcIssue[], opts: { n?: number; min?: number; includeClosed?: boolean; category?: string } = {}): Similar[] {
+  const want = titleTokens(title);
+  if (want.length < 2) return [];
+  const w = new Set(want);
+  const out: Similar[] = [];
+  for (const i of Array.isArray(issues) ? issues : Object.values(issues)) {
+    if (!opts.includeClosed && /^(fixed|archived|closed|resolved)$/.test(i.status)) continue;
+    const have = titleTokens(i.title);
+    const shared = have.filter((t) => w.has(t));
+    if (shared.length < 2) continue;
+    let score = shared.length / Math.min(want.length, have.length);
+    if (opts.category && i.category && i.category.toLowerCase() === opts.category.toLowerCase()) score += 0.1;
+    if (score >= (opts.min ?? 0.5)) out.push({ issue: i, score, shared });
+  }
+  return out.sort((a, b) => b.score - a.score || (b.issue.contributions ?? 0) - (a.issue.contributions ?? 0)).slice(0, opts.n ?? 5);
+}
+
+/* ---------------------------------------------------------------- patch notes ---------------------------------------------------------------- */
+
+export type NotesSection = 'known' | 'fixed' | 'other';
+/** A heading in patch notes → which section starts: "Known Issues", "Bug Fixes" / "Fixes", anything else. */
+export function notesSection(heading: string): NotesSection {
+  if (/known\s+issues?/i.test(heading)) return 'known';
+  if (/\b(bug\s*fix(es)?|fixes|fixed)\b/i.test(heading)) return 'fixed';
+  return 'other';
+}
+export interface NotesMatch {
+  /** Index of the line in the input. */
+  line: number;
+  code: string;
+  how: 'code' | 'maybe';
+  section: NotesSection;
+}
+/**
+ * Lines of a patch-notes post that concern issues you track: a STARC code (any section), or — only under Known Issues
+ * / Bug Fixes — a line whose words closely match a tracked issue's title (`maybe`: never certain).
+ */
+export function notesMatches(lines: { text: string; section: NotesSection }[], trackedIssues: IcIssue[], min = 0.6): NotesMatch[] {
+  const mine = new Set(trackedIssues.map((i) => i.code));
+  const out: NotesMatch[] = [];
+  lines.forEach((l, line) => {
+    const codes = findCodes(l.text).filter((c) => mine.has(c));
+    for (const code of codes) out.push({ line, code, how: 'code', section: l.section });
+    if (codes.length || l.section === 'other') return;
+    const best = similarIssues(l.text, trackedIssues, { n: 1, min, includeClosed: true })[0];
+    if (best) out.push({ line, code: best.issue.code, how: 'maybe', section: l.section });
+  });
+  return out;
+}
+/** Feed event: a tracked issue listed by code under Bug Fixes (Settings → *Notify when patch notes fix a tracked issue*). */
+export function fixedEvent(issue: IcIssue, notes: { subject: string; url: string; version: string }, now: number): FeedEvent {
+  return { key: `ic-fixed:${issue.code}:${notes.version}`, kind: 'issue', title: `${issue.code} possibly fixed in ${notes.version}`, body: `${issue.title || issue.code}: listed under Bug Fixes in "${notes.subject}"`, url: notes.url, at: now, seen: false };
+}

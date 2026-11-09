@@ -75,3 +75,48 @@
 .sp-compact .forum-thread-item .member-avatar,
 .sp-compact .forum-thread-item .avatar { transform: scale(0.8); transform-origin: top left; }
 .sp-compact .forum-thread-item .content-blocks { margin-top: 2px !important; }
+
+/* ---- STARC chip hover card ---- */
+.sp-starc-card {
+  position: fixed; z-index: 2147483000; width: min(340px, 92vw); padding: 10px 12px; display: grid; gap: 6px;
+  border: 1px solid rgb(255 255 255 / 0.14); border-radius: 10px; background: #0e1218; color: #e8edf3;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.5); font: 12px/1.45 system-ui, sans-serif;
+}
+.sp-starc-card p { margin: 0; }
+.sp-starc-card-head { display: flex; gap: 8px; align-items: center; }
+.sp-starc-card-status { border: 1px solid rgb(60 200 255 / 0.35); border-radius: 999px; padding: 0 8px; color: #3cc8ff; text-transform: capitalize; }
+.sp-starc-card-title { font-weight: 600; font-size: 13px; }
+.sp-starc-card-muted { color: #9da1b0; }
+.sp-starc-card-rel { color: #ffd166; }
+.sp-starc-card-note { color: #ffd166; white-space: pre-wrap; }
+.sp-starc-card-threads { display: grid; gap: 2px; }
+.sp-starc-card-threads a { color: #3cc8ff !important; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-starc-card-actions { display: flex; gap: 6px; }
+.sp-starc-card-btn {
+  border: 1px solid rgb(255 255 255 / 0.18); border-radius: 6px; padding: 3px 9px; background: transparent;
+  color: #e8edf3 !important; font: inherit; cursor: pointer; text-decoration: none !important;
+}
+.sp-starc-card-btn.on { border-color: rgb(255 209 102 / 0.5); color: #ffd166 !important; }
+.sp-starc-chip:focus-visible, .sp-starc-card-btn:focus-visible { outline: 2px solid #3cc8ff; outline-offset: 1px; }
+
+/* ---- patch notes: tracked issues ---- */
+.sp-pn-bar {
+  display: flex; gap: 10px; align-items: center; margin: 0 0 10px; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid rgb(255 209 102 / 0.4); background: rgb(255 209 102 / 0.08); color: #ffd166; font: 600 12px/1.4 system-ui, sans-serif;
+}
+.sp-pn-jump { border: 1px solid rgb(255 209 102 / 0.4); border-radius: 6px; background: transparent; color: #ffd166; font: inherit; padding: 1px 8px; cursor: pointer; }
+.sp-pn-line { box-shadow: inset 2px 0 0 rgb(255 209 102 / 0.6); padding-left: 6px; }
+.sp-pn-line.sp-pn-code { box-shadow: inset 3px 0 0 #ffd166; background: rgb(255 209 102 / 0.06); }
+.sp-pn-tag { margin-left: 8px; font: 600 11px/1.4 system-ui, sans-serif; color: #ffd166 !important; text-decoration: none !important; white-space: nowrap; }
+.sp-pn-tag.maybe { color: #9da1b0 !important; font-weight: 500; }
+
+/* ---- org lookup flag next to a reply author ---- */
+.sp-intel {
+  margin-left: 8px; border: 1px solid rgb(255 255 255 / 0.2); border-radius: 999px; padding: 0 8px; background: transparent;
+  font: 700 11px/1.6 system-ui, sans-serif; cursor: pointer; color: #c8ced8;
+}
+.sp-intel-hostile { border-color: rgb(255 92 92 / 0.6); background: rgb(255 92 92 / 0.14); color: #ff7a7a; }
+.sp-intel-caution { border-color: rgb(255 181 71 / 0.6); background: rgb(255 181 71 / 0.12); color: #ffb547; }
+.sp-intel-friendly { border-color: rgb(61 220 151 / 0.5); color: #3ddc97; font-weight: 600; }
+.sp-intel-ally { border-color: rgb(60 200 255 / 0.5); color: #3cc8ff; font-weight: 600; }
+.sp-intel:focus-visible { outline: 2px solid #3cc8ff; outline-offset: 1px; }

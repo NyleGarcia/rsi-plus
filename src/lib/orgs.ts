@@ -38,7 +38,7 @@ export function mainOrgFromBadges(m: Pick<Member, 'meta'> | null | undefined): P
   return null;
 }
 
-const decode = (s: string) =>
+export const decodeEntities = (s: string) =>
   s
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -63,9 +63,9 @@ export function parseCitizenOrgs(html: string): Org[] {
       continue;
     }
     out.push({
-      sid: decode(sid).toUpperCase(),
-      name: name ? decode(name) : decode(sid),
-      rank: rank ? decode(rank) || null : null,
+      sid: decodeEntities(sid).toUpperCase(),
+      name: name ? decodeEntities(name) : decodeEntities(sid),
+      rank: rank ? decodeEntities(rank) || null : null,
       main,
       members: members ? Number(members.replace(/,/g, '')) : null,
       redacted: false,

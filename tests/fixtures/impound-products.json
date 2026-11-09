@@ -1,0 +1,183 @@
+{
+ "products": [
+  {
+   "handle": "corsair-standalone-ship",
+   "title": "Corsair - Standalone Ship",
+   "product_type": "Exploration",
+   "vendor": "Drake Interplanetary",
+   "tags": [
+    "10 Years Insurance",
+    "commission",
+    "Corsair",
+    "Gunship",
+    "LTI",
+    "Medium Multirole",
+    "Pathfinder",
+    "Ship",
+    "Standalone CCUed"
+   ],
+   "variants": [
+    {
+     "id": 42348215107837,
+     "title": "CCU'ed / LTI",
+     "sku": "0-178.L.CC",
+     "price": "239.99",
+     "compare_at_price": "250.00",
+     "available": true
+    },
+    {
+     "id": 42348215140605,
+     "title": "CCU'ed / 10 Years",
+     "sku": "0-178.120M.CC",
+     "price": "229.99",
+     "compare_at_price": "250.00",
+     "available": true
+    }
+   ]
+  },
+  {
+   "handle": "herald-original-concept-lti",
+   "title": "Herald - Original Concept LTI",
+   "product_type": "",
+   "vendor": "Drake Interplanetary",
+   "tags": [
+    "commission",
+    "Drake Interplanetary",
+    "Herald",
+    "LTI",
+    "Original Concept",
+    "Ship"
+   ],
+   "variants": [
+    {
+     "id": 42534934348029,
+     "title": "Default Title",
+     "sku": "UNIQUE.61.L",
+     "price": "199.99",
+     "compare_at_price": null,
+     "available": true
+    }
+   ]
+  },
+  {
+   "handle": "upgrade-to-cutlass-red",
+   "title": "Upgrade to Cutlass Red",
+   "product_type": "Upgrade",
+   "vendor": "Drake Interplanetary",
+   "tags": [
+    "Cutlass",
+    "Drake Interplanetary",
+    "evergreen upgrade",
+    "Medical",
+    "Red",
+    "Ship",
+    "Upgrade"
+   ],
+   "variants": [
+    {
+     "id": 45930653843709,
+     "title": "350r",
+     "sku": "10-57.0M.N",
+     "price": "20.99",
+     "compare_at_price": null,
+     "available": false
+    },
+    {
+     "id": 45930653876477,
+     "title": "C1 Spirit",
+     "sku": "234-57.0M.N",
+     "price": "25.99",
+     "compare_at_price": null,
+     "available": false
+    },
+    {
+     "id": 45930653909245,
+     "title": "F7C Hornet Mk I",
+     "sku": "11-57.0M.N",
+     "price": "20.99",
+     "compare_at_price": null,
+     "available": false
+    },
+    {
+     "id": 42805017346301,
+     "title": "Cutlass Black",
+     "sku": "56-57.0M.N",
+     "price": "37.99",
+     "compare_at_price": null,
+     "available": false
+    },
+    {
+     "id": 45930653942013,
+     "title": "315p",
+     "sku": "8-57.0M.N",
+     "price": "87.99",
+     "compare_at_price": null,
+     "available": false
+    },
+    {
+     "id": 42805017673981,
+     "title": "Arrow",
+     "sku": "173-57.0M.N",
+     "price": "75.99",
+     "compare_at_price": null,
+     "available": false
+    }
+   ]
+  },
+  {
+   "handle": "ambush-pack-perseus-2x-arrows-original-concept-lti",
+   "title": "Ambush Pack (Perseus + 2x Arrows) - Original Concept LTI",
+   "product_type": "Ship Combo",
+   "vendor": "RSI",
+   "tags": [
+    "Arrow",
+    "commission",
+    "Corvette",
+    "Gunship",
+    "LTI",
+    "Original Concept",
+    "Perseus",
+    "RSI",
+    "Ship"
+   ],
+   "variants": [
+    {
+     "id": 44877421576445,
+     "title": "Default Title",
+     "sku": "UNIQUE.217.173.173.L",
+     "price": "1099.99",
+     "compare_at_price": null,
+     "available": false
+    }
+   ]
+  },
+  {
+   "handle": "100-series-melrose-paint-imperator",
+   "title": "100 Series - Melrose Paint - Imperator",
+   "product_type": "Paint",
+   "vendor": "Paint",
+   "tags": [
+    "100",
+    "100i",
+    "125a",
+    "135c",
+    "commission",
+    "EG",
+    "Evergreen",
+    "Paint",
+    "Ship Paint",
+    "Subscriber"
+   ],
+   "variants": [
+    {
+     "id": 45651921469693,
+     "title": "Default Title",
+     "sku": "p.1000",
+     "price": "6.99",
+     "compare_at_price": null,
+     "available": true
+    }
+   ]
+  }
+ ]
+}
