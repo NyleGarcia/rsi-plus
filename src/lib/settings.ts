@@ -14,8 +14,9 @@ import type { Profiles } from './accounts';
 import type { ReadState } from './read';
 import type { Funding, FundingRange } from './wallet';
 import { NO_WATCHES, type FeedEvent, type Watches } from './watch';
-import { type IcDraft, type IcIssues, type IcLinks, type IcMentions } from './issue-council';
+import { DEFAULT_TEMPLATE, LEGACY_DEFAULT_TEMPLATE, type IcDraft, type IcIssues, type IcLinks, type IcMentions } from './issue-council';
 import type { ImpCache, ImpFilter, ImpSort } from './impound';
+import type { IcTemplate, ScBuilds, ScEnv } from './sc-builds';
 import { NO_INTEL_CACHE, type Intel, type IntelCache } from './intel';
 
 /**
@@ -73,6 +74,12 @@ export interface Settings {
    * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
    */
   issueCouncil: boolean;
+  /** Report new issue → *Insert template* menu (lib/sc-builds.ts `fillTemplate` fills `{build}`, `{setup}`, `{date}`). */
+  icTemplates: IcTemplate[];
+  /** Your setup (region, hardware, OS…), typed by you: `{setup}` in templates and *Insert my setup*. */
+  icSetup: string;
+  /** Which game environment `{build}` means (the report bar's picker, remembered). */
+  icEnv: ScEnv;
   /** Feed + notification when Spectrum patch notes you open list a tracked issue's code under Bug Fixes. Off by default. */
   icPatchNotify: boolean;
   /**
@@ -115,6 +122,9 @@ export const DEFAULTS: Settings = {
   spectrumBar: true,
   spectrumTools: true,
   issueCouncil: false,
+  icTemplates: [{ id: 'default', name: 'Default', body: DEFAULT_TEMPLATE }],
+  icSetup: '',
+  icEnv: 'LIVE',
   icPatchNotify: false,
   impound: false,
   accountSwitcher: false,
@@ -204,6 +214,7 @@ export const icIssuesItem = storage.defineItem<IcIssues>(acct('local:icIssues'),
 export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMentions'), { fallback: {} });
 /** Report new issue form draft (autosaved while typing, offered back on the next visit). */
 /** Newest Star Citizen build per environment, from Spectrum patch-notes subjects (public, shared). */
+export const scBuildsItem = storage.defineItem<ScBuilds>('local:scBuilds', { fallback: {} });
 /** Org lookup: your tags on players and orgs (with notes). This browser; share them with Export / Import. */
 export const intelItem = storage.defineItem<Intel>('local:intel', { fallback: {} });
 /** Org lookup: cached citizen / org / member lookups (public RSI data) and the recent list. */
@@ -236,9 +247,10 @@ export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 export async function getSettings(): Promise<Settings> {
   const s = await settingsItem.getValue();
   // `starorgSendCost` (Send pledge values) was removed: drop it, so the next save stops storing it.
-  // `icTemplate` (the Issue Council report template) was removed (feat/issue-council-templates): dropped the same way.
-  const { starorgSendCost: _gone, icTemplate: _tpl, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown; icTemplate?: unknown };
-  return { ...DEFAULTS, ...kept, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
+  // `icTemplate` (one report template) became `icTemplates`: a saved one becomes the *Default* template.
+  const { starorgSendCost: _gone, icTemplate, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown; icTemplate?: unknown };
+  const migrated = !kept.icTemplates?.length && typeof icTemplate === 'string' && icTemplate.trim() && icTemplate !== LEGACY_DEFAULT_TEMPLATE ? { icTemplates: [{ id: 'default', name: 'Default', body: icTemplate }] } : {};
+  return { ...DEFAULTS, ...kept, ...migrated, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
 }
 
 export async function patchSettings(patch: Partial<Settings>) {

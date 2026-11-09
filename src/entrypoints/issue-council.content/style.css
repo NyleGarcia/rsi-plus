@@ -70,6 +70,15 @@
 /* Activity Feed entries added since your last visit. */
 .rp-ic-new { box-shadow: inset 3px 0 0 var(--rp-accent, #3cc8ff); background: rgb(60 200 255 / 0.06); }
 .rp-ic-note span:last-child { white-space: pre-wrap; color: var(--rp-gold); }
+.rp-ic-select {
+  font: inherit;
+  color: #e8edf3;
+  background: rgb(14 18 24 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.15);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.rp-ic-select option { color: #111; }
 .rp-ic-dups {
   display: grid;
   gap: 4px;
