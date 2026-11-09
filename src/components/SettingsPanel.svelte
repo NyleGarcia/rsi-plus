@@ -337,6 +337,13 @@
         {/if}
         {#if shMsg}<p class="text-destructive text-xs" role="status">{shMsg}</p>{/if}
         {#if s.starhangar && shGranted}
+          <SwitchRow
+            id="set-starhangar-dark"
+            label="Star Hangar dark mode"
+            hint="Turn Star Hangar's white pages dark (photos keep their colours). Also a Dark mode button on the RSI+ bar there"
+            checked={s.starhangarDark}
+            onchange={(v) => set('starhangarDark', v)}
+          />
           <p class="text-muted-foreground rounded-md border p-3 text-xs">
             Open <a class={LINK} href={SH_ORIGIN} target="_blank" rel="noopener">Star Hangar</a>: listings show the RSI price and the markup, and mark ships, upgrades and items you own. Star Hangar gives no RSI ids, so RSI+ matches ships, upgrades and paints by name (strictly: a plushie is not the ship). Search covers seller names too.
           </p>

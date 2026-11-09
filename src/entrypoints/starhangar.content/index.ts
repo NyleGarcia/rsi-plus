@@ -6,7 +6,7 @@
  * Same as The Impound (lib/market-dom.ts): RSI price, markup and what you own on every listing, the filter / sort
  * toolbar over category and search results, and an RSI+ box on product pages.
  */
-import { buybackItem, catalogItem, gameShipsItem, getSettings, hangarItem, paintCatalogItem, settingsItem, starhangarViewItem } from '@/lib/settings';
+import { buybackItem, catalogItem, gameShipsItem, getSettings, hangarItem, paintCatalogItem, patchSettings, settingsItem, starhangarViewItem } from '@/lib/settings';
 import { bg } from '@/lib/messages';
 import { ownedCcus } from '@/lib/ccu';
 import { ownedHulls, ownedTitleCounts } from '@/lib/owned-counts';
@@ -31,6 +31,7 @@ export default defineContentScript({
     style.id = 'rsiplus-sh-style';
     style.textContent = css;
     (document.head ?? document.documentElement).append(style);
+    setDark((await getSettings()).starhangarDark);
 
     const saved = await starhangarViewItem.getValue();
     configureMarket({
@@ -44,7 +45,9 @@ export default defineContentScript({
     await loadData();
     for (const it of [catalogItem, paintCatalogItem, hangarItem, buybackItem, gameShipsItem] as const) it.watch(() => loadData().then(schedule));
     settingsItem.watch(async () => {
-      if (!(await getSettings()).starhangar) document.querySelectorAll('.rp-imp').forEach((n) => n.remove());
+      const s = await getSettings();
+      setDark(s.starhangar && s.starhangarDark);
+      if (!s.starhangar) document.querySelectorAll('.rp-imp').forEach((n) => n.remove());
     });
 
     let timer = 0;
@@ -83,6 +86,31 @@ async function loadData() {
   market.hasHangar = !!hangar?.pledges.length;
 }
 
+/**
+ * Dark mode (Settings → Star Hangar dark mode, or the bar's button): html.rp-sh-dark inverts the page and flips photos
+ * back (style.css). Off: white pages, so RSI+ uses its light palette (html.rp-imp-light).
+ */
+let dark = false;
+function setDark(on: boolean) {
+  dark = on;
+  document.documentElement.classList.toggle('rp-sh-dark', on);
+  document.documentElement.classList.toggle('rp-imp-light', !on);
+  for (const b of document.querySelectorAll<HTMLElement>('.rp-sh-darkbtn')) {
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+function darkButton(cls = 'rp-imp-chip'): HTMLElement {
+  const b = el('button', `${cls} rp-sh-darkbtn${dark ? ' on' : ''}`, 'Dark mode');
+  b.title = 'Turn Star Hangar dark (also in RSI+ Settings)';
+  b.setAttribute('aria-pressed', String(dark));
+  b.addEventListener('click', () => {
+    setDark(!dark);
+    void patchSettings({ starhangarDark: dark }).catch(() => {});
+  });
+  return b;
+}
+
 /** A card's row: parsed fresh from the card each paint (Star Hangar cards carry everything). */
 function rowFor(card: Element): ImpRow | null {
   const c = parseCard(card);
@@ -103,7 +131,7 @@ function paint() {
     if (main?.contains(info)) rows.set(info.closest<HTMLElement>('li.product-item') ?? info, r);
   }
   if (main && rows.size) {
-    paintToolbar([...rows.keys()], [], main.closest<HTMLElement>('.products.wrapper') ?? main);
+    paintToolbar([...rows.keys()], [darkButton()], main.closest<HTMLElement>('.products.wrapper') ?? main);
     applyView(rows);
   }
 }
@@ -136,11 +164,14 @@ function paintProduct() {
   box.dataset.key = key;
   const head = el('div', 'rp-imp-row');
   head.append(el('span', 'rp-imp-logo', 'RSI+'));
+  const db = darkButton();
+  db.style.marginLeft = 'auto';
   if (r.rsi.cents != null && r.markup) {
     const s = el('span', `rp-imp-price big ${tone(r.markup)}`, `RSI ${money(r.rsi.cents)} · Star Hangar ${money(r.variant.price)} · ${signed(r.markup.cents)} (${pct(r.markup.pct)})`);
     s.title = r.rsi.basis;
     head.append(s);
   } else head.append(el('span', 'rp-imp-muted', ships.length ? 'No RSI price to compare for this one' : 'Open the RSI+ hub once to load RSI prices'));
+  head.append(db);
   box.append(head);
   if (r.rsi.basis) box.append(el('div', 'rp-imp-muted', r.rsi.basis + (r.kind === 'ship' ? `. ${insuranceLabel(r.info.insurance) || 'Insurance'} and other extras are not priced in.` : '')));
   if (r.kind === 'other' && r.rsi.cents == null) box.append(el('div', 'rp-imp-muted', 'RSI+ matches ships, upgrades and paints by name; this one it could not place.'));

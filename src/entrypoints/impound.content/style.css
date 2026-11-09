@@ -32,7 +32,7 @@
 }
 .rp-imp-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rp-imp-sep { width: 1px; height: 18px; background: rgb(255 255 255 / 0.15); margin: 0 4px; }
-.rp-imp-input, .rp-imp-select {
+.rp-imp .rp-imp-input, .rp-imp .rp-imp-select {
   font: inherit;
   color: #e8edf3;
   background: rgb(255 255 255 / 0.06);
@@ -40,10 +40,11 @@
   border-radius: 6px;
   padding: 4px 8px;
   height: 28px;
+  box-shadow: none;
 }
 .rp-imp-input { min-width: 240px; flex: 1 1 240px; }
 .rp-imp-select option { color: #111; }
-.rp-imp-chip, .rp-imp-btn {
+.rp-imp .rp-imp-chip, .rp-imp .rp-imp-btn {
   font: inherit;
   color: #e8edf3;
   background: transparent;
@@ -51,10 +52,14 @@
   border-radius: 999px;
   padding: 2px 10px;
   cursor: pointer;
+  box-shadow: none;
+  text-transform: none;
+  font-weight: 400;
+  line-height: 1.45;
 }
-.rp-imp-btn { border-radius: 6px; padding: 4px 10px; }
-.rp-imp-btn.primary { border-color: rgb(60 200 255 / 0.5); color: var(--rp-accent); }
-.rp-imp-chip.on { background: rgb(60 200 255 / 0.18); border-color: rgb(60 200 255 / 0.6); color: var(--rp-accent); }
+.rp-imp .rp-imp-btn { border-radius: 6px; padding: 4px 10px; }
+.rp-imp .rp-imp-btn.primary { border-color: rgb(60 200 255 / 0.5); color: var(--rp-accent); }
+.rp-imp .rp-imp-chip.on { background: rgb(60 200 255 / 0.18); border-color: rgb(60 200 255 / 0.6); color: var(--rp-accent); }
 .rp-imp-chip:focus-visible, .rp-imp-btn:focus-visible, .rp-imp-input:focus-visible, .rp-imp-select:focus-visible { outline: 2px solid var(--rp-accent); outline-offset: 1px; }
 .rp-imp-count { margin-left: auto; }
 .rp-imp-product {
@@ -104,3 +109,65 @@
 .rp-imp-contents { margin: 0; padding: 0 0 0 4px; list-style: none; columns: 2 220px; }
 .rp-imp-contents li { color: var(--rp-muted); }
 .rp-imp-contents li.have { color: var(--rp-good); }
+
+/* Any store's cards (Star Hangar's are li.product-item): hidden by the filter, faded when owned. */
+.rp-imp-hidden { display: none !important; }
+li.product-item.rp-imp-owned .product-item-photo { opacity: 0.45; }
+
+/*
+ * Light stores (Star Hangar: white / light grey pages). The script sets html.rp-imp-light. Selectors carry `.rp-imp` twice over
+ * where the store's own `input` / `select` / `button` rules would otherwise win.
+ */
+/* Card badges stay on the dark palette: Star Hangar's listing cards are navy. */
+.rp-imp-light .rp-imp:not(.rp-imp-card) {
+  --rp-accent: #0369a1;
+  --rp-good: #15803d;
+  --rp-mid: #a16207;
+  --rp-high: #b91c1c;
+  --rp-muted: #5b6472;
+  color: #1f2937;
+}
+.rp-imp-light .rp-imp-bar,
+.rp-imp-light .rp-imp-product,
+.rp-imp-light .rp-imp-panel {
+  background: #f6f8fb;
+  border-color: rgb(0 0 0 / 0.12);
+}
+.rp-imp-light .rp-imp-sep { background: rgb(0 0 0 / 0.15); }
+.rp-imp-light .rp-imp .rp-imp-input,
+.rp-imp-light .rp-imp .rp-imp-select {
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  box-shadow: none;
+}
+.rp-imp-light .rp-imp .rp-imp-chip,
+.rp-imp-light .rp-imp .rp-imp-btn {
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  box-shadow: none;
+  text-transform: none;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.rp-imp-light .rp-imp .rp-imp-chip.on { background: rgb(3 105 161 / 0.1); border-color: rgb(3 105 161 / 0.5); color: var(--rp-accent); }
+.rp-imp-light .rp-imp .rp-imp-btn.primary { border-color: rgb(3 105 161 / 0.5); color: var(--rp-accent); }
+.rp-imp-light .rp-imp-table th,
+.rp-imp-light .rp-imp-table td { border-bottom-color: rgb(0 0 0 / 0.08); }
+.rp-imp-light .rp-imp-table tr.sel td { background: rgb(3 105 161 / 0.08); }
+
+/*
+ * Star Hangar dark mode (html.rp-sh-dark): invert the page, then flip back what should keep its colours — photos, the
+ * listing cards (already navy) and RSI+'s own boxes (dark palette). Anything inside a flipped-back box is left alone.
+ * html's own background paints the canvas unfiltered, so it is set dark here.
+ */
+html.rp-sh-dark { filter: invert(1) hue-rotate(180deg); background: #111 !important; }
+html.rp-sh-dark :is(img, video, picture, iframe, canvas, [style*='background-image']),
+html.rp-sh-dark .product-item-info,
+html.rp-sh-dark .rp-imp:not(.rp-imp .rp-imp, .product-item-info .rp-imp) { filter: invert(1) hue-rotate(180deg); }
+html.rp-sh-dark :is(.product-item-info, .rp-imp, picture) :is(img, video, picture, iframe, canvas, [style*='background-image']) { filter: none; }
+
+/* Store form rules (Magento: select width 100%) would stack the bar's controls. */
+.rp-imp .rp-imp-select { width: auto; flex: 0 0 auto; }
+.rp-imp .rp-imp-input { width: auto; }

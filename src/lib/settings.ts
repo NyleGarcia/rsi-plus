@@ -89,6 +89,8 @@ export interface Settings {
   impound: boolean;
   /** Star Hangar integration (opt-in): the same on star-hangar.com. Asks for that host; off drops it. */
   starhangar: boolean;
+  /** Star Hangar in dark mode: the page is inverted (photos flipped back). Toggle in Settings or on the RSI+ bar there. */
+  starhangarDark: boolean;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
   accountSwitcher: boolean;
   /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
@@ -130,6 +132,7 @@ export const DEFAULTS: Settings = {
   icPatchNotify: false,
   impound: false,
   starhangar: false,
+  starhangarDark: false,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',
