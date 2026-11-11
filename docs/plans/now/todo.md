@@ -1,9 +1,13 @@
 ---
 title: Now
 tags: [plans]
-updated: 2026-11-07
+updated: 2026-11-10
 ---
 # Now
+- [ ] 0.14.0 release: paste `store/LISTING.md` into the dashboard before the release PR merges (description, single purpose, `scripting` and `https://theimpound.com/*` justifications, data usage, test instructions — 0.13.0 was refused for a missing justification); fix `CHANGELOG.md` on the release PR (the `feat` commit names Star Hangar and report templates, both off `dev`)
+- [ ] Live-verify Issue Council v2 — [[specs/issue-council-v2]] · [spec](../specs/issue-council-v2.md): hub *Issue Council* page (facets, note, history, CSV / JSON), similar issues while typing a report title, STARC chip hover card, patch-notes marks + *Notify when patch notes fix a tracked issue*, thread bar *Link issue*; a stored `icTemplate` is gone after the update with no error
+- [ ] Live-verify The Impound: switch asks for theimpound.com and off gives it back; badges on collection / search grids and a product page (RSI price, markup, owned, *have x / y* on packs), toolbar filters + sort (first card stays in place), *Whole collection* table, no request with cookies; an update from 0.13.0 asks for no new permission
+- [ ] Live-verify Org lookup: player / org / member list on real pages (redacted and hidden orgs), 24 h cache + *Refresh*, Discord link on an org that posts one (check where the real page puts it, and that RSI's own footer link is not picked up), tag + note, flags on Spectrum replies and Friends rows, reply *Look up*, export → import with and without *Overwrite*
 - [ ] StarOrg verification tiers ([#33](https://github.com/NyleGarcia/rsi-plus/issues/33)) — [[specs/rsi-verification-tiers]] · [spec](../specs/rsi-verification-tiers.md): RSI+ side done; waiting on StarOrg Tools for `rsi_tier` / `rsi_conflict` and the `/verify/rsi` page, then look at the card against StarOrg dev
 - [ ] Live-verify facets and labels — [[specs/filters-and-labels]]: Pledges / Ships / CCUs / Browse / Catalog bars on a real hangar (gifted guess, sold-today, counts), RSI ribbons on Browse; then planner `from=` param + exclude list for the CCUs page
 - [ ] Live-verify Plan ahead: pick a hull with no CCU on sale, chain shows *Later* steps + *to pay now* / *later* tiles, Verify marks them *waits for a sale*, save it; after a catalog refresh with that CCU on sale the Feed shows the *Store* alert opening `#ccu` and the saved chain says *on sale now*; Ship catalog *Not on sale* segment + last-seen dates after a day of refreshes

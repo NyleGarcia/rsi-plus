@@ -11,6 +11,7 @@ import {
   getWatches,
   lastPollItem,
   orgCacheItem,
+  intelCacheItem,
   presenceItem,
   seenRequestsItem,
   partyModeItem,
@@ -39,10 +40,13 @@ import { saveStoreCopy } from '@/lib/storelog-save';
 import { threadUrl } from '@/lib/types';
 import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
 import { IC_HOSTS } from '@/lib/issue-council';
+import { IMPOUND_HOSTS } from '@/lib/impound';
+import { MEMBERS_PAGE, RSI as RSI_ORIGIN, isFresh, parseCitizen, parseMembers, parseOrg, touchRecent, type OrgLookup, type PlayerLookup } from '@/lib/intel';
 
 const ALARM = 'spectrumplus:poll';
 /** Runtime-registered Issue Council content script (entrypoints/issue-council.content, `registration: 'runtime'`). */
 const IC_SCRIPT = 'rsiplus-issue-council';
+const IMP_SCRIPT = 'rsiplus-impound';
 const PARTY_ALARM = 'spectrumplus:party';
 
 export default defineBackground(() => {
@@ -67,12 +71,15 @@ export default defineBackground(() => {
   });
   browser.runtime.onStartup.addListener(() => schedule());
   syncIssueCouncil().catch((e) => console.warn('[RSI+] issue council', e));
+  syncImpound().catch((e) => console.warn('[RSI+] impound', e));
   // Access granted or taken back (Settings, or the browser's extension page): register / unregister to match.
-  browser.permissions.onAdded?.addListener(() => syncIssueCouncil().catch(() => {}));
-  browser.permissions.onRemoved?.addListener(() => syncIssueCouncil().catch(() => {}));
+  const syncAll = () => (syncIssueCouncil().catch(() => {}), syncImpound().catch(() => {}));
+  browser.permissions.onAdded?.addListener(syncAll);
+  browser.permissions.onRemoved?.addListener(syncAll);
   settingsItem.watch((next, prev) => {
     schedule();
     if (!!next?.issueCouncil !== !!prev?.issueCouncil) syncIssueCouncil().catch((e) => console.warn('[RSI+] issue council', e));
+    if (!!next?.impound !== !!prev?.impound) syncImpound().catch((e) => console.warn('[RSI+] impound', e));
     // StarOrg Tools switched off (here, in the other context or on another synced device): disconnect everywhere.
     if (prev?.starorg && !next?.starorg) disconnectAll().catch((e) => console.warn('[RSI+] starorg disconnect', e));
   });
@@ -119,6 +126,9 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
     case 'feed:seen':
       await markSeen(msg.keys);
       return { ok: true };
+    case 'feed:clear':
+      await clearFeed(msg.keys);
+      return { ok: true };
     case 'channels:list':
       return api.channels();
     case 'friends:get':
@@ -134,12 +144,20 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
     }
     case 'orgs:get':
       return orgs(msg.nicknames, !!msg.force);
+    case 'intel:player':
+      return intelPlayer(msg.handle, !!msg.force);
+    case 'intel:org':
+      return intelOrg(msg.sid, !!msg.force);
+    case 'intel:members':
+      return intelMembers(msg.sid, msg.page, !!msg.force);
     case 'catalog:get':
       return catalog(!!msg.fresh);
     case 'ic:events':
       return { added: await pushEvents(msg.events) };
     case 'ic:sync':
       return { registered: await syncIssueCouncil() };
+    case 'imp:sync':
+      return { registered: await syncImpound() };
     case 'paints:get':
       return paints(!!msg.fresh);
     case 'sound:ding':
@@ -188,6 +206,12 @@ async function openHub(tab: HubTab = 'feed', params?: Record<string, string>, wi
 async function markSeen(keys?: string[]) {
   const set = keys ? new Set(keys) : null;
   await feedItem.setValue((await feedItem.getValue()).map((e) => (!set || set.has(e.key) ? { ...e, seen: true } : e)));
+}
+
+/** Delete feed events: the given keys, or everything. */
+async function clearFeed(keys?: string[]) {
+  const set = keys ? new Set(keys) : null;
+  await feedItem.setValue(set ? (await feedItem.getValue()).filter((e) => !set.has(e.key)) : []);
 }
 
 function updateBadge(feed: FeedEvent[]) {
@@ -379,6 +403,69 @@ async function orgs(nicknames: string[], force: boolean): Promise<OrgCache> {
   return out;
 }
 
+/* ---- org lookup (lib/intel.ts): public RSI pages, cached in `intelCache` (24 h) ---- */
+
+/** A player: their citizen page and their org list (the shared org cache). Cached; `force` re-reads both. */
+async function intelPlayer(handle: string, force: boolean): Promise<PlayerLookup> {
+  const key = handle.toLowerCase();
+  const now = Date.now();
+  const cache = await intelCacheItem.getValue();
+  let hit = cache.citizens[key];
+  if (force || !isFresh(hit, now)) {
+    try {
+      const res = await fetch(`${RSI_ORIGIN}/citizens/${encodeURIComponent(handle)}`, { credentials: 'omit' });
+      hit = res.ok ? { at: now, citizen: parseCitizen(await res.text()) } : { at: now, citizen: null, error: res.status === 404 ? 'No such citizen' : `HTTP ${res.status}` };
+      if (hit.citizen === null && !hit.error) hit.error = 'No such citizen';
+    } catch (e) {
+      hit = { at: now, citizen: hit?.citizen ?? null, error: (e as Error).message };
+    }
+  }
+  const o = hit.citizen ? ((await orgs([hit.citizen.handle], force))[hit.citizen.handle.toLowerCase()] ?? null) : null;
+  const cur = await intelCacheItem.getValue();
+  await intelCacheItem.setValue(touchRecent({ ...cur, citizens: { ...cur.citizens, [key]: hit } }, `player:${hit.citizen?.handle ?? handle}`));
+  return { at: hit.at, citizen: hit.citizen, orgs: o?.orgs ?? [], ...(hit.error || o?.error ? { error: hit.error ?? o?.error } : {}) };
+}
+async function intelOrg(sid: string, force: boolean): Promise<OrgLookup> {
+  const key = sid.toUpperCase();
+  const now = Date.now();
+  const cache = await intelCacheItem.getValue();
+  let hit = cache.orgs[key];
+  if (force || !isFresh(hit, now)) {
+    try {
+      const res = await fetch(`${RSI_ORIGIN}/orgs/${encodeURIComponent(key)}`, { credentials: 'omit' });
+      const org = res.ok ? parseOrg(await res.text()) : null;
+      hit = { at: now, org, ...(org ? {} : { error: res.ok || res.status === 404 ? 'No such org' : `HTTP ${res.status}` }) };
+    } catch (e) {
+      hit = { at: now, org: hit?.org ?? null, error: (e as Error).message };
+    }
+  }
+  const cur = await intelCacheItem.getValue();
+  await intelCacheItem.setValue(touchRecent({ ...cur, orgs: { ...cur.orgs, [key]: hit } }, `org:${key}`));
+  return hit;
+}
+/** An org's members up to `page` (32 a page), cached; asks RSI only for pages not read yet (1 s apart). */
+async function intelMembers(sid: string, page: number, force: boolean) {
+  const key = sid.toUpperCase();
+  const now = Date.now();
+  const cache = await intelCacheItem.getValue();
+  let m = cache.members[key];
+  if (force || !isFresh(m, now)) m = { at: now, total: 0, pages: 0, list: [] };
+  const want = Math.max(1, Math.min(page, 50));
+  for (let p = m.pages + 1; p <= want; p++) {
+    if (p > 1 && m.list.length >= m.total) break;
+    if (p > 1) await sleep(1000);
+    const res = await fetch(`${RSI_ORIGIN}/api/orgs/getOrgMembers`, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: key, search: '', pagesize: MEMBERS_PAGE, page: p }) });
+    const j = res.ok ? await res.json().catch(() => null) : null;
+    if (!j?.success) break;
+    const list = parseMembers(j.data?.html ?? '');
+    m = { at: m.at, total: Number(j.data?.totalrows) || m.total, pages: p, list: [...m.list, ...list] };
+    if (!list.length) break;
+  }
+  const cur = await intelCacheItem.getValue();
+  await intelCacheItem.setValue({ ...cur, members: { ...cur.members, [key]: m } });
+  return m;
+}
+
 let catalogPromise: Promise<Catalog> | null = null;
 /** Public pledge-store catalog; cached 30 min unless `fresh`. */
 async function catalog(fresh: boolean): Promise<Catalog> {
@@ -488,13 +575,19 @@ async function pushEvents(events: FeedEvent[]): Promise<number> {
  * (Settings offers *Grant access* there) — the setting is never flipped from here. true when registered.
  */
 async function syncIssueCouncil(): Promise<boolean> {
-  const on = (await getSettings()).issueCouncil;
-  const granted = await browser.permissions.contains({ origins: IC_HOSTS }).catch(() => false);
+  return syncRuntimeScript(IC_SCRIPT, (await getSettings()).issueCouncil, IC_HOSTS, 'content-scripts/issue-council.js');
+}
+/** The Impound content script: same rules as the Issue Council one (setting on *and* host granted here). */
+async function syncImpound(): Promise<boolean> {
+  return syncRuntimeScript(IMP_SCRIPT, (await getSettings()).impound, IMPOUND_HOSTS, 'content-scripts/impound.js');
+}
+async function syncRuntimeScript(id: string, on: boolean, hosts: string[], js: string): Promise<boolean> {
+  const granted = await browser.permissions.contains({ origins: hosts }).catch(() => false);
   const want = on && granted;
-  const have = ((await browser.scripting.getRegisteredContentScripts({ ids: [IC_SCRIPT] }).catch(() => [])) ?? []).length > 0;
+  const have = ((await browser.scripting.getRegisteredContentScripts({ ids: [id] }).catch(() => [])) ?? []).length > 0;
   try {
-    if (want && !have) await browser.scripting.registerContentScripts([{ id: IC_SCRIPT, matches: IC_HOSTS, js: ['content-scripts/issue-council.js'], runAt: 'document_idle' }]);
-    if (!want && have) await browser.scripting.unregisterContentScripts({ ids: [IC_SCRIPT] });
+    if (want && !have) await browser.scripting.registerContentScripts([{ id, matches: hosts, js: [js], runAt: 'document_idle' }]);
+    if (!want && have) await browser.scripting.unregisterContentScripts({ ids: [id] });
   } catch (e) {
     // Split incognito: the other background registered it first (registration is extension-wide).
     if (!/Duplicate script ID|Nonexistent script ID/i.test(String(e))) throw e;

@@ -1,11 +1,18 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-07
+updated: 2026-11-10
 ---
 # Changelog
 
 ## Unreleased
+- **Feed: delete entries, and act on what is shown.** New *Delete all* button on the Feed. With a kind filter or *unseen only* on, the buttons become *Mark shown seen* and *Delete shown* and only touch the entries listed.
+- **Issue Council page in the hub.** With the Issue Council integration on, the hub has an *Issue Council* page: every issue you track (watched, reported, contributed to, followed), or every issue RSI+ has seen, with filters by status, relation and category, a search box, your own private note per issue, a history of how its status and contribution count changed, and CSV / JSON export.
+- **Issue Council: similar issues while you report.** On *Report new issue*, as you type the title, RSI+ lists issues it has already seen with a similar title, so you can contribute to one instead of filing a duplicate. It only knows the issues you have opened or listed on the Issue Council.
+- **Issue Council on Spectrum.** Hover a *STARC* chip in a reply for the issue's title, status and counts. Patch-notes threads mark the lines about issues you track (*★ you track STARC-…*; lines matched only by title words say *maybe*). New switch Settings → Integrations → Issue Council → *Notify when patch notes fix a tracked issue* (off by default): a Feed entry and a notification when patch notes you open list a tracked issue's code under Bug Fixes. You can also link a thread to an issue yourself from the thread bar (*Link issue*); linked threads show on the issue.
+- **Issue Council: *Insert template* is gone for now.** The report template added in 0.13.0 has been taken out while it is rebuilt with several templates and build fill-ins. A template you saved in Settings is not kept. The report draft (*Restore draft*) still works.
+- **The Impound (optional).** New switch Settings → Integrations → *The Impound* (off by default; asks for access to theimpound.com). On that store, each listing shows RSI's price and the markup, and marks ships, upgrades and items you already own (packs show *have x / y*). A toolbar above each grid searches, filters (kind, owned, can apply, in stock, LTI, at most RSI price) and sorts; *Whole collection* lists every page of a collection in one table. RSI+ reads the store's pages and public product data only: nothing about you is sent, and its cart and account are never touched.
+- **Org lookup.** New hub page *Org lookup*: look up a player or an org from RSI's public pages (profile, orgs and rank, org details, member list), kept for 24 hours. If an org posted a Discord invite on its page, the lookup shows the link. Tag players and orgs *Hostile*, *Caution*, *Neutral*, *Friendly* or *Ally* with a note and labels. Your tags show as flags on Spectrum replies and Friends rows. *Export* / *Import* a JSON file to share tags with your org. Everything stays in your browser.
 
 ## 0.13.0 — 2026-11-07
 - **StarOrg Tools never gets pledge values.** The *Send pledge values* switch is gone: StarOrg Tools doesn't use them, so every send carries the value field empty, whatever the switch was set to before. On Firefox, RSI+ no longer asks for the "financial and payment information" data category. *JSON for StarOrg Tools* (the file you download yourself) is unchanged.

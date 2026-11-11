@@ -64,6 +64,8 @@
   const LOADERS = {
     feed: () => import('@/components/FeedPanel.svelte'),
     watching: () => import('@/components/WatchingPanel.svelte'),
+    issues: () => import('@/components/IssuesPanel.svelte'),
+    intel: () => import('@/components/IntelPanel.svelte'),
     friends: () => import('@/components/FriendsPanel.svelte'),
     hangar: () => import('@/components/HangarPanel.svelte'),
     wallet: () => import('@/components/WalletPanel.svelte'),
@@ -120,11 +122,14 @@
   /** Settings → Spectrum tools off: Watching and Mutes leave the nav (still reachable by link); Feed and Friends stay. */
   const SPECTRUM_ONLY = new Set<Item['tab']>(['watching', 'mutes']);
   let spectrumTools = $state(true);
+  /** Settings → Integrations → Issue Council off: its page leaves the nav too (the data stays). */
+  let issueCouncil = $state(false);
   $effect(() => {
-    getSettings().then((s) => (spectrumTools = s.spectrumTools));
-    return settingsItem.watch(async () => (spectrumTools = (await getSettings()).spectrumTools));
+    const apply = (s: { spectrumTools: boolean; issueCouncil: boolean }) => ((spectrumTools = s.spectrumTools), (issueCouncil = s.issueCouncil));
+    getSettings().then(apply);
+    return settingsItem.watch(async () => apply(await getSettings()));
   });
-  const groups = $derived(HUB_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => spectrumTools || !SPECTRUM_ONLY.has(it.tab)) })));
+  const groups = $derived(HUB_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => (spectrumTools || !SPECTRUM_ONLY.has(it.tab)) && (issueCouncil || it.tab !== 'issues')) })));
   const navItems = $derived([...groups.flatMap((g) => g.items), SETTINGS_PAGE]);
 
   function select(it: Item) {

@@ -14,7 +14,9 @@ import type { Profiles } from './accounts';
 import type { ReadState } from './read';
 import type { Funding, FundingRange } from './wallet';
 import { NO_WATCHES, type FeedEvent, type Watches } from './watch';
-import { DEFAULT_TEMPLATE, type IcDraft, type IcIssues, type IcMentions } from './issue-council';
+import { type IcDraft, type IcIssues, type IcLinks, type IcMentions } from './issue-council';
+import type { ImpCache, ImpFilter, ImpSort } from './impound';
+import { NO_INTEL_CACHE, type Intel, type IntelCache } from './intel';
 
 /**
  * True in an incognito context (manifest `incognito: 'split'` → separate background / pages / content scripts).
@@ -71,8 +73,13 @@ export interface Settings {
    * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
    */
   issueCouncil: boolean;
-  /** Report new issue → *Insert template*: the text put into the focused field. */
-  icTemplate: string;
+  /** Feed + notification when Spectrum patch notes you open list a tracked issue's code under Bug Fixes. Off by default. */
+  icPatchNotify: boolean;
+  /**
+   * The Impound integration (opt-in): RSI price, markup and owned marks plus filters on theimpound.com.
+   * Turning it on asks for that host (optional permission) and registers the content script; off drops both.
+   */
+  impound: boolean;
   /** Account switcher in the hub header and the popup (save RSI logins, swap between them). Opt-in. */
   accountSwitcher: boolean;
   /** StarOrg Tools integration: the *JSON for StarOrg Tools* export and Settings → Integrations → StarOrg Tools. Opt-in; off hides both and sends nothing. */
@@ -108,7 +115,8 @@ export const DEFAULTS: Settings = {
   spectrumBar: true,
   spectrumTools: true,
   issueCouncil: false,
-  icTemplate: DEFAULT_TEMPLATE,
+  icPatchNotify: false,
+  impound: false,
   accountSwitcher: false,
   starorg: false,
   starorgTarget: 'prod',
@@ -194,6 +202,16 @@ export const partyLogItem = storage.defineItem<PartyLogEntry[]>(acct('local:part
 export const icIssuesItem = storage.defineItem<IcIssues>(acct('local:icIssues'), { fallback: {} });
 /** Spectrum threads that mention an Issue Council code. */
 export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMentions'), { fallback: {} });
+/** Org lookup: your tags on players and orgs (with notes). This browser; share them with Export / Import. */
+export const intelItem = storage.defineItem<Intel>('local:intel', { fallback: {} });
+/** Org lookup: cached citizen / org / member lookups (public RSI data) and the recent list. */
+export const intelCacheItem = storage.defineItem<IntelCache>('local:intelCache', { fallback: NO_INTEL_CACHE });
+/** Spectrum threads you linked to Issue Council issues yourself. */
+export const icLinksItem = storage.defineItem<IcLinks>(acct('local:icLinks'), { fallback: {} });
+/** The Impound products read (public Shopify data, shared across accounts), by handle: lib/impound.ts. */
+export const impoundCacheItem = storage.defineItem<ImpCache>('local:impoundCache', { fallback: {} });
+/** The Impound toolbar: filters, sort, dim owned (this browser). */
+export const impoundViewItem = storage.defineItem<{ f: ImpFilter; sort: ImpSort; dimOwned: boolean } | null>('local:impoundView', { fallback: null });
 /** Report new issue form draft (autosaved while typing, offered back on the next visit). */
 export const icDraftItem = storage.defineItem<IcDraft | null>(acct('local:icDraft'), { fallback: null });
 export const lastPollItem = storage.defineItem<{ at: number; error: string | null } | null>(acct('local:lastPoll'), { fallback: null });
@@ -217,7 +235,8 @@ export const profileDataKey = (id: string) => acct(`local:profileData.${id}`);
 export async function getSettings(): Promise<Settings> {
   const s = await settingsItem.getValue();
   // `starorgSendCost` (Send pledge values) was removed: drop it, so the next save stops storing it.
-  const { starorgSendCost: _gone, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown };
+  // `icTemplate` (the Issue Council report template) was removed (feat/issue-council-templates): dropped the same way.
+  const { starorgSendCost: _gone, icTemplate: _tpl, ...kept } = (s ?? {}) as Partial<Settings> & { starorgSendCost?: unknown; icTemplate?: unknown };
   return { ...DEFAULTS, ...kept, mutes: { ...NO_MUTES, ...(s?.mutes ?? {}) } };
 }
 

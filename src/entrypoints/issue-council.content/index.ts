@@ -9,9 +9,9 @@
  *   Watch, what changed, and the Spectrum threads RSI+ saw mention the code.
  * - Tracked issues (watched, or on My reports / My contributions / Followed issues) that changed since RSI+ last saw
  *   them → Feed + desktop notification, through the background.
- * - Report new issue: autosaves the form, offers the draft back, inserts your template.
+ * - Report new issue: autosaves the form, offers the draft back, flags issues that look the same.
  */
-import { getSettings, icDraftItem, icIssuesItem, icMentionsItem, settingsItem, type Settings } from '@/lib/settings';
+import { getSettings, icDraftItem, icIssuesItem, icLinksItem, icMentionsItem, settingsItem, type Settings } from '@/lib/settings';
 import {
   issueEvents,
   markSeen,
@@ -22,21 +22,26 @@ import {
   parseIssuePage,
   prune,
   readState,
+  similarIssues,
   statusLabel,
+  threadsFor,
   toggleWatch,
   upsert,
   type IcIssue,
   type IcIssues,
+  type IcLinks,
   type IcMentions,
   type IcSnapshot,
 } from '@/lib/issue-council';
 import { threadUrl } from '@/lib/types';
+import { issueUrl } from '@/lib/issue-council';
 import type { FeedEvent } from '@/lib/watch';
 import css from './style.css?inline';
 
 let settings: Settings;
 let issues: IcIssues = {};
 let mentions: IcMentions = {};
+let links: IcLinks = {};
 let path = location.pathname;
 /** Issue pages marked read in this page view (a re-render must not count the visit twice). */
 const visited = new Set<string>();
@@ -65,6 +70,11 @@ export default defineContentScript({
       schedule();
     });
     icMentionsItem.watch((v) => (mentions = v ?? {}));
+    links = await icLinksItem.getValue();
+    icLinksItem.watch((v) => {
+      links = v ?? {};
+      schedule();
+    });
 
     let timer = 0;
     const schedule = () => {
@@ -200,9 +210,9 @@ function paintIssuePage(p: ReturnType<typeof parseIssuePage> & {}) {
   const prev = before.get(p.code);
   const rs = readState(prev, p);
   const nNew = fresh.get(p.code)?.size ?? 0;
-  const ment = mentions[p.code] ?? [];
+  const ment = threadsFor(p.code, mentions, links);
   const watched = !!issue?.rel.includes('watched');
-  const key = [watched, issue?.rel.join(','), rs.newContrib, rs.statusFrom, nNew, prev?.seen?.at, ment.map((m) => m.slug).join(',')].join('|');
+  const key = [watched, issue?.rel.join(','), rs.newContrib, rs.statusFrom, nNew, prev?.seen?.at, ment.map((m) => `${m.slug}${m.linked ? '*' : ''}`).join(','), issue?.note ?? ''].join('|');
   let box = header.parentElement?.querySelector<HTMLElement>(':scope > .rp-ic-panel');
   if (box?.dataset.key === key) return;
   box?.remove();
@@ -233,11 +243,19 @@ function paintIssuePage(p: ReturnType<typeof parseIssuePage> & {}) {
   }
   box.append(since);
 
+  if (issue?.note) {
+    const n = el('div', 'rp-ic-row rp-ic-note');
+    n.append(el('span', 'rp-ic-muted', 'Your note:'), el('span', '', issue.note));
+    n.title = 'Edit it in the RSI+ hub → Issue Council';
+    box.append(n);
+  }
+
   if (ment.length) {
     const m = el('div', 'rp-ic-row');
     m.append(el('span', 'rp-ic-muted', 'On Spectrum:'));
     for (const t of ment) {
-      const a = el('a', 'rp-ic-link', t.subject || t.slug);
+      const a = el('a', 'rp-ic-link', `${t.linked ? '🔗 ' : ''}${t.subject || t.slug}`);
+      if (t.linked) a.title = 'Linked by you (Spectrum thread bar → Link issue)';
       a.href = threadUrl(t.channelId, t.slug);
       a.target = '_blank';
       a.rel = 'noopener';
@@ -262,12 +280,61 @@ function setValue(f: Field, v: string) {
   f.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/** The category picked on the report form (lower case), when RSI+ can find the field. */
+function categoryOf(form: Element): string {
+  const f = form.querySelector<HTMLInputElement | HTMLSelectElement>('select[name*="categ" i], input[name*="categ" i]:checked, input[name*="categ" i][type="hidden"]');
+  const sel = f instanceof HTMLSelectElement ? f.selectedOptions[0]?.textContent : f?.value;
+  return (sel ?? form.querySelector('[class*="category" i] [aria-selected="true"], [class*="category" i] .is-selected')?.textContent ?? '').trim().toLowerCase();
+}
+
+/* ---- duplicate finder: issues RSI+ has seen with a title like the one being typed ---- */
+let dupTimer = 0;
+let showClosed = false;
+const titleField = (form: Element) =>
+  form.querySelector<HTMLInputElement>('input[name*="title" i], input[name*="summary" i]') ?? form.querySelector<HTMLInputElement>('input[type="text"][name], input:not([type])[name]');
+function onTitle(e: Event) {
+  const t = e.target;
+  if (pageOf(path) !== 'create' || !(t instanceof HTMLInputElement)) return;
+  const form = t.closest(FORM);
+  if (!form || titleField(form) !== t) return;
+  clearTimeout(dupTimer);
+  dupTimer = window.setTimeout(() => paintDuplicates(t, form), 300);
+}
+function paintDuplicates(input: HTMLInputElement, form: Element) {
+  const found = similarIssues(input.value, issues, { includeClosed: showClosed, category: categoryOf(form) });
+  let box = document.querySelector<HTMLElement>('.rp-ic-dups');
+  if (!input.value.trim() || (!found.length && !showClosed)) return void box?.remove();
+  if (!box) {
+    box = el('div', 'rp-ic rp-ic-dups');
+    box.setAttribute('role', 'status');
+  }
+  box.replaceChildren();
+  const head = el('div', 'rp-ic-row');
+  head.append(el('span', 'rp-ic-logo', 'RSI+'), el('strong', '', found.length ? 'Seen by RSI+, may be the same issue:' : 'No similar issue seen by RSI+'));
+  const closed = el('label', 'rp-ic-muted');
+  const cb = Object.assign(document.createElement('input'), { type: 'checkbox', checked: showClosed });
+  cb.addEventListener('change', () => ((showClosed = cb.checked), paintDuplicates(input, form)));
+  closed.append(cb, ' show fixed');
+  head.append(closed);
+  box.append(head);
+  for (const s of found) {
+    const row = el('div', 'rp-ic-row');
+    const a = el('a', 'rp-ic-link', `${s.issue.code} · ${s.issue.title}`);
+    a.href = issueUrl(s.issue.code);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = `Shares: ${s.shared.join(', ')}`;
+    row.append(a, el('span', 'rp-ic-muted', [statusLabel(s.issue.status), s.issue.contributions != null ? `${s.issue.contributions} contributions` : ''].filter(Boolean).join(' · ')), watchButton(s.issue, !!s.issue.rel.includes('watched')));
+    box.append(row);
+  }
+  box.append(el('div', 'rp-ic-muted', "Only issues you've opened or seen listed on the Issue Council are checked. If one matches, contributing to it helps more than a new report."));
+  if (!box.isConnected) (input.closest('div') ?? input).after(box);
+}
+
 function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
   let saveTimer = 0;
   /** Restore requested: fields of later steps get filled as they render. */
   let restoring: Record<string, string> | null = null;
-  /** The text box last clicked: the template goes there (multi-line fields only — the title holds 60 characters). */
-  let lastField: HTMLTextAreaElement | null = null;
 
   const save = () => {
     clearTimeout(saveTimer);
@@ -288,13 +355,10 @@ function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
     if (pageOf(path) !== 'create' || !t?.closest?.(FORM) || !(t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)) return;
     save(); // merges into the stored draft, so restored fields of steps not on screen stay
   };
-  const onFocus = (e: Event) => {
-    const t = e.target;
-    if (t instanceof HTMLTextAreaElement && t.closest(FORM)) lastField = t;
-  };
   document.addEventListener('input', onInput, true);
-  document.addEventListener('focusin', onFocus, true);
-  ctx.onInvalidated(() => (document.removeEventListener('input', onInput, true), document.removeEventListener('focusin', onFocus, true)));
+  document.addEventListener('input', onTitle, true);
+  ctx.onInvalidated(() => document.removeEventListener('input', onTitle, true));
+  ctx.onInvalidated(() => document.removeEventListener('input', onInput, true));
 
   const fill = () => {
     const form = document.querySelector(FORM);
@@ -331,20 +395,6 @@ function startReportHelper(ctx: { onInvalidated(cb: () => void): void }) {
         drop.addEventListener('click', () => icDraftItem.setValue(null).then(paint));
         box.append(restore, drop);
       } else box.append(el('span', 'rp-ic-muted', draft ? `Draft saved ${when(draft.at)}` : 'Your answers are saved as you type'));
-      const tpl = el('button', 'rp-ic-btn', 'Insert template');
-      tpl.title = 'Put your template (Settings → Integrations → Issue Council) into the text box you last clicked';
-      const hint = el('span', 'rp-ic-muted');
-      tpl.addEventListener('click', () => {
-        const target = lastField?.isConnected ? lastField : (form.querySelector<HTMLTextAreaElement>('textarea[name]') ?? null);
-        if (!target) return void (hint.textContent = 'No text box on this step: it goes into a description field (after Next).');
-        hint.textContent = '';
-        const t = settings.icTemplate || '';
-        const start = target.selectionStart ?? target.value.length;
-        const end = target.selectionEnd ?? start;
-        setValue(target, target.value.slice(0, start) + t + target.value.slice(end));
-        target.focus();
-      });
-      box.append(tpl, hint);
       form.before(box);
     } finally {
       painting = false;

@@ -17,7 +17,9 @@
     const offs = [icIssuesItem.watch((v) => (issues = v ?? {})), settingsItem.watch(async () => (on = (await getSettings()).issueCouncil))];
     return () => offs.forEach((o) => o());
   });
-  const rows = $derived(tracked(issues));
+  const all = $derived(tracked(issues));
+  /** A summary: the full list, filters and notes are on the hub's Issue Council page. */
+  const rows = $derived(all.slice(0, 5));
   const relLabel = (i: IcIssue) => IC_RELATIONS.filter((r) => i.rel.includes(r.id)).map((r) => r.label).join(', ');
   async function unwatch(code: string) {
     const cur = await icIssuesItem.getValue();
@@ -75,6 +77,7 @@
           {/each}
         </Table.Body>
       </Table.Root>
+      <a class={LINK_QUIET + ' text-sm'} href="#issues">{all.length > rows.length ? `All ${all.length} tracked issues` : 'Open'}, filters and notes → Issue Council</a>
     {/if}
   </Card.Content>
 </Card.Root>

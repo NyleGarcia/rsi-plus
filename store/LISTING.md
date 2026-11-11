@@ -38,12 +38,17 @@ SPECTRUM
 • Watches + notifications: star any thread, watch channels, authors or subject keywords (regex ok), friends-online bells; a background check (every 5 minutes by default) feeds the hub and desktop notifications.
 • Friends manager: search, filter and sort, status and last seen, organisations, friend requests (accept / decline / cancel, accept all, party mode that auto-accepts for two hours), and when each friend was added.
 • Cleaner UI: full-width threads, compact replies, dev-post highlight, keyboard navigation (j / k, o, w, m / u, n, ?).
+• Org lookup: look up a player or an organisation on RSI's public pages, tag them (hostile … ally) with your own notes, and see your tags on Spectrum replies and in Friends. Tags stay in your browser; export / import a file to share them with your org.
+
+OPTIONAL (OFF UNTIL YOU TURN THEM ON)
+• Issue Council: on RSI's bug tracker, see what changed on the issues you track since your last visit, get a hint about similar issues while you write a report, and keep notes and a history of them in the hub.
+• Resale store price check: on a third-party ship resale site, see RSI's own price and the markup next to each listing and what you already own.
 
 ON THE SITE
 • An RSI+ bar on store ship pages (MSRP, warbond price, wishlist, Plan CCU) and on hangar / buyback / upgrade pages that opens the matching hub view.
 
 PRIVACY
-RSI+ talks only to robertsspaceindustries.com, and to an org fleet site if you connect it. Optional: connect an org fleet site to send your RSI handle and ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge id and pledge name; never pledge values). Off until you press Connect; nothing else from RSI is ever sent. Settings shows every field sent and can preview the exact list. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
+RSI+ talks only to robertsspaceindustries.com, and to an org fleet site if you connect it. The optional resale store price check reads that store's public listings while you browse it and sends it nothing about you. Optional: connect an org fleet site to send your RSI handle and ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge id and pledge name; never pledge values). Off until you press Connect; nothing else from RSI is ever sent. Settings shows every field sent and can preview the exact list. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
 
 Open source: https://github.com/NyleGarcia/rsi-plus
 
@@ -68,11 +73,11 @@ RSI+ is an unofficial Star Citizen fan tool, made by the community. It is not af
 
 **Single purpose description:**
 ```
-RSI+ improves the Roberts Space Industries website for its users: Spectrum read tracking, mutes, watches and notifications, a friends manager, and explorers for the hangar, buyback and pledge store with a CCU upgrade planner and paint-rebuy planner. All features act on the user's own RSI account and only talk to robertsspaceindustries.com, except an optional, off-by-default sync that sends the user's own ship list to StarOrg Tools (starorg.tools), an org fleet manager, after the user connects it.
+RSI+ improves the Roberts Space Industries website for its users: Spectrum read tracking, mutes, watches and notifications, a friends manager, and explorers for the hangar, buyback and pledge store with a CCU upgrade planner and paint-rebuy planner. All features act on the user's own RSI account and only talk to robertsspaceindustries.com, except an optional, off-by-default sync that sends the user's own ship list to StarOrg Tools (starorg.tools), an org fleet manager, after the user connects it, and an optional, off-by-default price check that shows RSI's own prices next to the listings of The Impound (theimpound.com), a ship resale store, reading only that store's public listings and sending it nothing about the user.
 ```
 
-> The description above names the org fleet site generically (metadata rule); the privacy fields below name
-> `starorg.tools`, because a host-permission justification has to say which host and why.
+> The description above names the org fleet site and the resale store generically (metadata rule); the privacy fields
+> below name `starorg.tools` and `theimpound.com`, because a host-permission justification has to say which host and why.
 
 **Permission justifications:**
 - `storage` — settings, read marks, mutes, watches, friends snapshots, cached hangar / buyback / catalog pages, CCU chains and paint plans, kept in the browser's extension storage.
@@ -85,13 +90,16 @@ RSI+ improves the Roberts Space Industries website for its users: Spectrum read 
 - `incognito: split` — an incognito window gets its own background (own cookie jar), so an incognito RSI login is kept separate from the normal one.
 - `identity` — `launchWebAuthFlow` for the optional StarOrg Tools sign-in (the user presses Connect in Settings → Integrations; StarOrg's own Discord sign-in, PKCE). Unused until then.
 - Optional host permissions `https://starorg.tools/*` and `https://dev.starorg.tools/*` (StarOrg Tools production and its dev site, chosen by the user) — only the chosen one is requested, only when the user has turned the StarOrg Tools integration on in Settings and presses Connect, given back if the sign-in is cancelled or fails, removed on Disconnect (kept while an incognito window is still connected, since host permissions are shared). Used to sign in and to send the user's own RSI handle and ship list (per ship: model and maker, the name the user gave that ship, LTI / warbond / insurance, pledge id and title, whether pledged or in-game; never pledge values — every field is listed in the privacy policy and in the extension, which can preview the exact payload) with *Send hangar now* or the user's *Auto-sync* switch (after each full hangar load, and weekly if the re-read ship list changed since the last successful send).
+- `scripting` — registers the two optional content scripts at runtime (`scripting.registerContentScripts`): the Issue Council one and The Impound one, each only while the user has turned on its switch in Settings → Integrations and granted its host; turning a switch off unregisters its script. Both scripts are packaged in the extension. No code is injected anywhere else, and no remote code is used.
+- Optional host permission `https://issue-council.robertsspaceindustries.com/*` (RSI's own bug tracker) — requested only when the user turns on the Issue Council integration, removed when it is turned off. Used to read the Issue Council pages the user opens (which issues are new or changed since their last visit, issues they follow) and to save their report draft, all kept locally; nothing is sent anywhere, and the Issue Council login token is never read.
+- Optional host permission `https://theimpound.com/*` (The Impound, a third-party Star Citizen ship resale store) — requested only when the user turns on Settings → Integrations → *The Impound*, removed when it is turned off. Used to show, on the store's listing and product pages the user opens, RSI's own price and the markup next to each listing, to mark ships, upgrades and items the user already owns (from the hangar data already kept locally), and to add filters and sorting. It reads the pages and the store's public product data (the same public JSON the store's own pages load), requested without cookies. Nothing about the user, their RSI account or their hangar is sent to the store or anywhere else, and the store's cart, checkout and account are never read or touched.
 
 **Remote code:** No, I am not using remote code.
 
 **Data usage — what the extension collects (ticked):**
-- Personally identifiable information — the user's RSI handle / display name and their friends' handles (shown in the extension; stored locally). With the optional StarOrg Tools sync connected, the user's own RSI handle is sent to starorg.tools with the ship list.
+- Personally identifiable information — the user's RSI handle / display name and their friends' handles (shown in the extension; stored locally). Org lookup: the public RSI handles and organisations the user looks up, with the tags and notes the user writes about them, stored locally and never sent (the user can export them as a file). With the optional StarOrg Tools sync connected, the user's own RSI handle is sent to starorg.tools with the ship list.
 - Authentication information — the RSI session cookie, read locally and only sent back to robertsspaceindustries.com; saved logins stored locally only if the user uses the account switcher; the StarOrg Tools sign-in token (optional sync), stored locally and sent only to the StarOrg Tools site that issued it.
-- Website content — Spectrum threads and replies, hangar / buyback / store pages the extension reads to build its views. With the optional sync connected, the ship list read from the user's hangar pages is sent to starorg.tools.
+- Website content — Spectrum threads and replies, hangar / buyback / store pages the extension reads to build its views. With the optional sync connected, the ship list read from the user's hangar pages is sent to starorg.tools. With the optional integrations on: the Issue Council pages the user opens, and The Impound's listings (public product data), read and kept locally.
 - Financial and payment information — not ticked: store credit and pledge values are read from the user's own RSI pages and kept locally, never sent anywhere (the optional sync sends `pledge_cost` empty); no payment details are touched.
 - Not collected: health, personal communications, location, web history, user activity.
 
@@ -110,5 +118,6 @@ RSI+ works on robertsspaceindustries.com with the reviewer's own RSI account (fr
 
 Without logging in: open the extension popup → Store (public ship catalog, prices, discounts) and Settings (theme, screenshare mode) work; Spectrum thread lists still get the RSI+ UI.
 Logged in: popup → Hangar → Load hangar reads the account's pledges; Buyback, Wallet, CCU planner and Paint rebuy build on that. Spectrum (https://robertsspaceindustries.com/spectrum/community/SC) shows read badges, Mute / Watch buttons on rows, and the Friends tab lists friends and requests.
+Optional integrations (hub → Settings → Integrations, all off by default): turning on Issue Council or The Impound shows the browser's permission prompt for that one site; after that RSI+ adds its marks on issue-council.robertsspaceindustries.com / theimpound.com. Turning the switch off removes the permission.
 Nothing is purchased or melted by the extension: "Add to cart" only fills the RSI cart; melting opens RSI's own confirmation dialog.
 ```

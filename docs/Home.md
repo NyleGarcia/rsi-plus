@@ -18,3 +18,4 @@ updated: 2026-10-22
 - [[plans/specs/shadcn-migration]] · [spec: shadcn-svelte + LayerChart migration](plans/specs/shadcn-migration.md)
 - [[plans/specs/filters-and-labels]] · [spec: facets, labels and the sidebar](plans/specs/filters-and-labels.md)
 - [[plans/specs/rsi-verification-tiers]] · [spec: RSI handle verification tiers](plans/specs/rsi-verification-tiers.md)
+- [[plans/specs/issue-council-v2]] · [spec: Issue Council v2](plans/specs/issue-council-v2.md)

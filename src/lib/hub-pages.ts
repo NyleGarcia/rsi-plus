@@ -6,6 +6,8 @@ import type { Component } from 'svelte';
 import type { HubTab } from './messages';
 import Rss from '@lucide/svelte/icons/rss';
 import Eye from '@lucide/svelte/icons/eye';
+import Bug from '@lucide/svelte/icons/bug';
+import ShieldAlert from '@lucide/svelte/icons/shield-alert';
 import Users from '@lucide/svelte/icons/users';
 import VolumeX from '@lucide/svelte/icons/volume-x';
 import Warehouse from '@lucide/svelte/icons/warehouse';
@@ -44,7 +46,9 @@ export const HUB_GROUPS: HubGroup[] = [
     items: [
       { tab: 'feed', label: 'Feed', sub: 'Watches, friends, store alerts, store changes', icon: Rss, popup: true, short: 'Feed' },
       { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
+      { tab: 'issues', label: 'Issue Council', sub: 'Issues you track, notes, trends', icon: Bug },
       { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true, short: 'Friends' },
+      { tab: 'intel', label: 'Org lookup', sub: 'Players & orgs, your threat tags', icon: ShieldAlert },
       { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
     ],
   },
