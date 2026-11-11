@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.14.0 — 2026-11-11
 - **Feed: delete entries, and act on what is shown.** New *Delete all* button on the Feed. With a kind filter or *unseen only* on, the buttons become *Mark shown seen* and *Delete shown* and only touch the entries listed.
 - **Issue Council page in the hub.** With the Issue Council integration on, the hub has an *Issue Council* page: every issue you track (watched, reported, contributed to, followed), or every issue RSI+ has seen, with filters by status, relation and category, a search box, your own private note per issue, a history of how its status and contribution count changed, and CSV / JSON export.
 - **Issue Council: similar issues while you report.** On *Report new issue*, as you type the title, RSI+ lists issues it has already seen with a similar title, so you can contribute to one instead of filing a duplicate. It only knows the issues you have opened or listed on the Issue Council.

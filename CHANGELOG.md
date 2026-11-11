@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.14.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.13.0...v0.14.0) (2026-11-11)
+
+
+### Features
+
+* **feed:** delete entries, mark or delete only the entries shown ([2b893ef](https://github.com/NyleGarcia/rsi-plus/commit/2b893ef4aa3b647a22fbb92b7e91f840b9b262cc))
+* **intel:** show an org's Discord invite on Org lookup ([b6868f5](https://github.com/NyleGarcia/rsi-plus/commit/b6868f55410ca28aa127f906b023eb987e166b53))
+* Issue Council v2 (hub page, duplicate finder, Spectrum links), The Impound integration, org lookup ([0dd38ee](https://github.com/NyleGarcia/rsi-plus/commit/0dd38ee6b7380bee8303d0b6295d988fbcccde38))
+
+
+### Bug Fixes
+
+* **intel:** Recent shows the last 5 lookups, not 14 ([d53198f](https://github.com/NyleGarcia/rsi-plus/commit/d53198f1b68f740dc57bc300e77e63075c2abc6d))
+* **intel:** strip tags from org names until none are left ([e2f998b](https://github.com/NyleGarcia/rsi-plus/commit/e2f998b4404263f374e5700887c615ed03210493))
+* **market:** sorted cards no longer leave the first card at the end ([dd4cc82](https://github.com/NyleGarcia/rsi-plus/commit/dd4cc82c005494d071ce5f51cf773b46614e5c82))
+* unescape &amp; last in The Impound descriptions, strip stray angle brackets from org names ([30c2046](https://github.com/NyleGarcia/rsi-plus/commit/30c204646546851649beb4e4cb9ae233dc33b57b))
+
 ## [0.13.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.12.0...v0.13.0) (2026-11-07)
 
 
