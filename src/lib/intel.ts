@@ -229,6 +229,16 @@ export function parseDiscord(html: string): string[] {
   return [...seen.values()].slice(0, 5);
 }
 
+/** Text without tags: stripped until nothing changes (`<scr<b>ipt>` leaves no tag behind), then stray angle brackets. */
+function stripTags(s: string): string {
+  let prev: string;
+  do {
+    prev = s;
+    s = s.replace(/<[^>]*>/g, '');
+  } while (s !== prev);
+  return s.replace(/[<>]/g, '');
+}
+
 /** `/orgs/<SID>` page → org; null when it isn't an org page. */
 export function parseOrg(html: string): OrgInfo | null {
   const h1 = /<h1>([\s\S]*?)\/\s*<span class="symbol">([^<]+)<\/span>\s*<\/h1>/.exec(html);
@@ -240,7 +250,7 @@ export function parseOrg(html: string): OrgInfo | null {
   const members = /<span class="count">\s*([\d,]+)\s+members?/.exec(html)?.[1];
   return {
     sid: decodeEntities(h1[2]!).toUpperCase(),
-    name: decodeEntities(h1[1]!.replace(/<[^>]*>/g, '').replace(/[<>]/g, '')),
+    name: decodeEntities(stripTags(h1[1]!)),
     members: members ? Number(members.replace(/,/g, '')) : null,
     model: of('model'),
     commitment: of('commitment'),
