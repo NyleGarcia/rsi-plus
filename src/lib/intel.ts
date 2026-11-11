@@ -240,7 +240,7 @@ export function parseOrg(html: string): OrgInfo | null {
   const members = /<span class="count">\s*([\d,]+)\s+members?/.exec(html)?.[1];
   return {
     sid: decodeEntities(h1[2]!).toUpperCase(),
-    name: decodeEntities(h1[1]!.replace(/<[^>]+>/g, '')),
+    name: decodeEntities(h1[1]!.replace(/<[^>]*>/g, '').replace(/[<>]/g, '')),
     members: members ? Number(members.replace(/,/g, '')) : null,
     model: of('model'),
     commitment: of('commitment'),

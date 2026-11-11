@@ -50,10 +50,11 @@ export function descText(html: unknown): string | undefined {
   const head = html.split(/<h2[^>]*>/i)[0] ?? html;
   const t = head
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&rsquo;|&lsquo;/g, "'")
     .replace(/&nbsp;/g, ' ')
+    // `&amp;` last: unescaping it first would turn `&amp;quot;` into a quote
+    .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
   return t ? t.slice(0, 2000) : undefined;
