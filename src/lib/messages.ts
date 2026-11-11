@@ -8,6 +8,7 @@ export type BgRequest =
   /** `windowId`: open the hub in that window (popup passes its own; content scripts are placed by the sender's tab). */
   | { type: 'hub:open'; tab?: HubTab; params?: Record<string, string>; windowId?: number }
   | { type: 'feed:seen'; keys?: string[] }
+  | { type: 'feed:clear'; keys?: string[] }
   | { type: 'channels:list' }
   | { type: 'friends:get' }
   | { type: 'friends:remove'; ids: string[] }
@@ -38,6 +39,7 @@ export interface BgResponses {
   'poll:now': { events: number; error: string | null };
   'hub:open': { ok: true };
   'feed:seen': { ok: true };
+  'feed:clear': { ok: true };
   'channels:list': Channel[];
   'friends:get': FriendsData;
   'friends:remove': BulkResult;

@@ -95,6 +95,8 @@
   });
   const present = $derived(EVENT_KINDS.filter((k) => (count.get(k.id) ?? 0) > 0 || kinds.includes(k.id)));
   const shown = $derived(kinds.length ? base.filter((e) => kinds.includes(e.kind)) : base);
+  const filtered = $derived(kinds.length > 0 || unseenOnly);
+  const shownUnseen = $derived(shown.filter((e) => !e.seen).map((e) => e.key));
   const unseen = $derived(feed.filter((e) => !e.seen).length);
   const ICON: Record<EventKind, typeof Rss> = { replies: MessageSquare, thread: Rss, dev: Code, author: AtSign, keyword: Hash, friend: Users, request: UserPlus, party: PartyPopper, store: Store, hangar: Warehouse, issue: Bug };
   const TONE: Partial<Record<EventKind, TimelineEvent['tone']>> = { friend: 'success', request: 'success', party: 'warning', store: 'warning', replies: 'info', keyword: 'info', hangar: 'info', dev: 'warning', issue: 'warning' };
@@ -140,7 +142,8 @@
         </Card.Description>
         <Card.Action class="flex flex-wrap items-center gap-2">
           <Button variant="outline" disabled={busy} onclick={pollNow}>{busy ? 'Checking…' : 'Check now'}</Button>
-          <Button variant="outline" disabled={!unseen} onclick={() => bg({ type: 'feed:seen' })}>Mark all seen</Button>
+          <Button variant="outline" disabled={!shownUnseen.length} onclick={() => bg({ type: 'feed:seen', keys: shownUnseen })}>{filtered ? 'Mark shown seen' : 'Mark all seen'}</Button>
+          <Button variant="outline" disabled={!shown.length} onclick={() => bg({ type: 'feed:clear', keys: shown.map((e) => e.key) })}>{filtered ? 'Delete shown' : 'Delete all'}</Button>
         </Card.Action>
       </Card.Header>
 

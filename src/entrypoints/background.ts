@@ -126,6 +126,9 @@ async function handle(msg: BgRequest, senderWindow?: number): Promise<BgResponse
     case 'feed:seen':
       await markSeen(msg.keys);
       return { ok: true };
+    case 'feed:clear':
+      await clearFeed(msg.keys);
+      return { ok: true };
     case 'channels:list':
       return api.channels();
     case 'friends:get':
@@ -203,6 +206,12 @@ async function openHub(tab: HubTab = 'feed', params?: Record<string, string>, wi
 async function markSeen(keys?: string[]) {
   const set = keys ? new Set(keys) : null;
   await feedItem.setValue((await feedItem.getValue()).map((e) => (!set || set.has(e.key) ? { ...e, seen: true } : e)));
+}
+
+/** Delete feed events: the given keys, or everything. */
+async function clearFeed(keys?: string[]) {
+  const set = keys ? new Set(keys) : null;
+  await feedItem.setValue(set ? (await feedItem.getValue()).filter((e) => !set.has(e.key)) : []);
 }
 
 function updateBadge(feed: FeedEvent[]) {
