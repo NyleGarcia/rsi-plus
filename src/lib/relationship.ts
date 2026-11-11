@@ -7,6 +7,7 @@
  * Field names vary (camel/snake, wrapped lists), so everything is read defensively.
  */
 import type { FriendRequest, Member, Presence, PresenceStatus } from './types';
+import { cleanName } from './orgs';
 
 type Obj = Record<string, any>;
 
@@ -45,7 +46,7 @@ export function normFriend(o: Obj | null | undefined): Member | null {
   if (!nickname || id == null) return null;
   return {
     id: String(id),
-    displayname: m.displayname ?? m.displayName ?? nickname,
+    displayname: cleanName(m.displayname ?? m.displayName, nickname),
     nickname,
     avatar: m.avatar ?? m.avatarUrl ?? null,
     isGM: !!(m.isGM ?? m.isGm),
