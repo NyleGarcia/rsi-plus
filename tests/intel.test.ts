@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
-import { exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
+import { addSuspect, importSuspects, removeSuspect, suspectedMembers, suspectedOrgs, exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
 
 const fx = (f: string) => fs.readFileSync(`tests/fixtures/${f}`, 'utf8');
 
@@ -82,6 +82,55 @@ describe('tags and threat', () => {
     const over = importIntel(mine, file, { overwrite: true, source: 'f', now: 20 });
     expect(over.intel[intelKey('org', 'BLKSYN')]!.tag).toBe('hostile');
     expect(() => importIntel({}, '{"format":"x"}', { overwrite: false, source: '', now: 1 })).toThrow('Not an RSI+ intel export');
+  });
+});
+
+describe('suspected orgs (your guesses)', () => {
+  let intel: Intel = setTag({}, { kind: 'org', id: 'BLKSYN', name: 'The Black Syndicate', tag: 'hostile' }, 1);
+  intel = setTag(intel, { kind: 'org', id: 'TEST', name: 'Test', tag: 'caution' }, 2);
+  const hidden = [{ sid: '', name: 'Redacted', main: true, redacted: true }];
+  it('adds once, normalizes, rejects what is not a handle or SID', () => {
+    let s = addSuspect({}, { handle: '@Someone', sid: '[blksyn]' }, 5);
+    s = addSuspect(s, { handle: 'someone', sid: 'BLKSYN', name: 'The Black Syndicate' }, 9);
+    expect(Object.values(s)).toEqual([{ handle: 'someone', sid: 'BLKSYN', name: 'The Black Syndicate', at: 5 }]);
+    const bad = addSuspect(s, { handle: 'two words', sid: 'BLKSYN' }, 9);
+    expect(bad).toBe(s);
+    expect(addSuspect(s, { handle: 'x', sid: 'not a sid!' }, 9)).toBe(s);
+    expect(suspectedOrgs(s, 'SOMEONE').map((x) => x.sid)).toEqual(['BLKSYN']);
+    expect(suspectedMembers(s, 'blksyn').map((x) => x.handle)).toEqual(['someone']);
+    expect(removeSuspect(s, 'Someone', 'blksyn')).toEqual({});
+  });
+  it('a suspected org flags like a membership, marked as a guess', () => {
+    const s = addSuspect({}, { handle: 'Someone', sid: 'BLKSYN' }, 5);
+    expect(threatOf('Someone', hidden, intel).tag).toBeNull();
+    const t = threatOf('Someone', hidden, intel, s);
+    expect(t.tag).toBe('hostile');
+    expect(t.hidden).toBe(1);
+    expect(t.reasons).toEqual([{ tag: 'hostile', text: 'Hostile: suspected member of The Black Syndicate [BLKSYN], your guess', via: 'org', sid: 'BLKSYN', guess: true }]);
+    expect(threatOf('Other', hidden, intel, s).tag).toBeNull();
+  });
+  it('untagged org: no flag; listed by RSI: not a guess; your player tag still wins; listed first at the same tag', () => {
+    expect(threatOf('Someone', hidden, intel, addSuspect({}, { handle: 'Someone', sid: 'NOTAG' }, 5)).tag).toBeNull();
+    const s = addSuspect({}, { handle: 'Someone', sid: 'BLKSYN' }, 5);
+    const listed = threatOf('Someone', [{ sid: 'BLKSYN', name: 'The Black Syndicate', main: true, redacted: false }], intel, s);
+    expect(listed.reasons.map((r) => !!r.guess)).toEqual([false]);
+    expect(threatOf('Someone', hidden, setTag(intel, { kind: 'player', id: 'Someone', tag: 'ally' }, 3), s).tag).toBe('ally');
+    const both = setTag(intel, { kind: 'org', id: 'TEST', name: 'Test', tag: 'hostile' }, 4);
+    const t = threatOf('Someone', [{ sid: 'TEST', name: 'Test', main: true, redacted: false }], both, s);
+    expect(t.reasons.map((r) => [r.sid, !!r.guess])).toEqual([['TEST', false], ['BLKSYN', true]]);
+  });
+  it('export carries guesses, import adds the ones you lack and skips junk', () => {
+    const s = addSuspect({}, { handle: 'Someone', sid: 'BLKSYN' }, 5);
+    const file = exportIntel([], 10, Object.values(s));
+    expect(JSON.parse(exportIntel([], 10)).suspects).toBeUndefined();
+    const r = importSuspects({}, file, { source: 'f.json', now: 20 });
+    expect(r.added).toBe(1);
+    expect(Object.values(r.suspects)).toEqual([{ handle: 'Someone', sid: 'BLKSYN', at: 20, source: 'f.json' }]);
+    expect(importSuspects(s, file, { source: 'f.json', now: 20 })).toEqual({ suspects: s, added: 0 });
+    const junk = JSON.stringify({ format: 'rsi-plus-intel', entries: [], suspects: [{ handle: '<img>', sid: 'X' }, { handle: 'ok', sid: 5 }, null] });
+    expect(importSuspects({}, junk, { source: '', now: 1 }).added).toBe(0);
+    expect(importSuspects({}, 'nope', { source: '', now: 1 }).added).toBe(0);
+    expect(importIntel({}, file, { overwrite: false, source: '', now: 1 }).added).toBe(0);
   });
 });
 

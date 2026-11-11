@@ -6,6 +6,7 @@ updated: 2026-11-11
 # Changelog
 
 ## Unreleased
+- **Org lookup: suspected orgs.** When a player hides an org (RSI shows *REDACTED*) or you just think they belong to one, add the org's SID under *Suspected orgs* on their lookup, or add their handle under *Suspected members* on the org's. Once you tag that org, the player gets its flag on Spectrum replies and Friends rows, marked with a **?** and the words *suspected member … your guess*, so a guess never looks like something RSI said. A membership RSI lists comes first, and your own tag on the player still wins. Guesses stay in your browser; *Export* includes them and *Import* adds the ones you don't have.
 
 ## 0.14.0 — 2026-11-11
 - **Feed: delete entries, and act on what is shown.** New *Delete all* button on the Feed. With a kind filter or *unseen only* on, the buttons become *Mark shown seen* and *Delete shown* and only touch the entries listed.

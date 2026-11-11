@@ -4,12 +4,12 @@ import { classify } from '@/lib/capture';
 import { HOOK_CONFIG_KEY, HOOK_TAG, type HookConfig } from '@/lib/hook-config';
 import { trackPath } from '@/lib/page-path.svelte';
 import { firstNewReply, markRead, markUnread, type ReadState } from '@/lib/read';
-import { getSettings, getWatches, icIssuesItem, icLinksItem, icMentionsItem, intelItem, orgCacheItem, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
+import { getSettings, getWatches, icIssuesItem, icLinksItem, icMentionsItem, intelItem, intelSuspectsItem, orgCacheItem, patchSettings, readItem, settingsItem, watchesItem, type Settings } from '@/lib/settings';
 import { addLink, addMentions, linksOfThread, normalizeCode, pickIssues, removeLink, toggleWatch as toggleIcWatch, type IcIssues, type IcLinks, type IcMentions } from '@/lib/issue-council';
 import { toast, ui } from '@/lib/state.svelte';
 import { parsePath, threadUrl, type ThreadSummary } from '@/lib/types';
 import { NO_WATCHES, type Watches } from '@/lib/watch';
-import { threatOf, type Intel } from '@/lib/intel';
+import { threatOf, type Intel, type Suspects } from '@/lib/intel';
 import { mainOrgFromBadges, type OrgCache } from '@/lib/orgs';
 import type { Member } from '@/lib/types';
 import { decorate, pageCodes, setDecorState, undecorate } from './decorate';
@@ -26,6 +26,7 @@ let ic: IcIssues = {};
 let icMentions: IcMentions = {};
 let icLinks: IcLinks = {};
 let intel: Intel = {};
+let suspects: Suspects = {};
 let orgCache: OrgCache = {};
 /** Main org per author (lower-case nickname), from the member badges in Spectrum's own payloads. */
 const mainOrgs = new Map<string, { sid: string; name: string }>();
@@ -39,7 +40,7 @@ function intelOf(nickname: string) {
   const key = nickname.toLowerCase();
   const main = mainOrgs.get(key);
   const orgs = orgCache[key]?.orgs ?? (main ? [{ ...main, main: true, redacted: false }] : []);
-  const t = threatOf(nickname, orgs, intel);
+  const t = threatOf(nickname, orgs, intel, suspects);
   return t.tag ? t : null;
 }
 
@@ -88,6 +89,8 @@ export default defineContentScript({
     intel = await intelItem.getValue();
     orgCache = await orgCacheItem.getValue();
     intelItem.watch((v) => ((intel = v ?? {}), refresh()));
+    suspects = await intelSuspectsItem.getValue();
+    intelSuspectsItem.watch((v) => ((suspects = v ?? {}), refresh()));
     orgCacheItem.watch((v) => ((orgCache = v ?? {}), refresh()));
     icLinks = await icLinksItem.getValue();
     syncLinked();

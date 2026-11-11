@@ -15,7 +15,7 @@ const PERSONAL = /handle|nick|email|moniker|display_?name|custom_?name|reserved_
  * Maps keyed by a person (org cache: handle → orgs; presence / friend notes: member id → …). Without names their keys
  * become `#1`, `#2` … — the same person gets the same alias in every map, so presence and notes still line up.
  */
-const KEYED = /^(incognito\.)?(orgs|presence|friendNotes|intel)$/;
+const KEYED = /^(incognito\.)?(orgs|presence|friendNotes|intel|intelSuspects)$/;
 /** Saved logins: `active` and each `id` are the handle plus a suffix. */
 const PROFILES = /^(incognito\.)?profiles$/;
 /** Parked account data per saved login (`profileData.<id>`): the key carries the handle. */
