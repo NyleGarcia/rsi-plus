@@ -179,7 +179,7 @@
       {#if cache.recent.length}
         <div class="flex flex-wrap items-center gap-1.5 text-xs">
           <span class="text-muted-foreground">Recent (cached):</span>
-          {#each cache.recent.slice(0, 14) as key (key)}
+          {#each cache.recent.slice(0, 5) as key (key)}
             {@const k = key.startsWith('org:') ? 'org' : 'player'}
             {@const t = tagOf(k, key.slice(key.indexOf(':') + 1))}
             <Button size="xs" variant="outline" class={cn(t && TAG_TONE[t])} onclick={() => openRecent(key)}>{recentLabel(key)}</Button>
