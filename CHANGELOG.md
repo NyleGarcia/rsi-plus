@@ -7,7 +7,7 @@
 
 * **feed:** delete entries, mark or delete only the entries shown ([2b893ef](https://github.com/NyleGarcia/rsi-plus/commit/2b893ef4aa3b647a22fbb92b7e91f840b9b262cc))
 * **intel:** show an org's Discord invite on Org lookup ([b6868f5](https://github.com/NyleGarcia/rsi-plus/commit/b6868f55410ca28aa127f906b023eb987e166b53))
-* Issue Council v2, The Impound + Star Hangar integrations, org lookup ([0dd38ee](https://github.com/NyleGarcia/rsi-plus/commit/0dd38ee6b7380bee8303d0b6295d988fbcccde38))
+* Issue Council v2 (hub page, duplicate finder, Spectrum links), The Impound integration, org lookup ([0dd38ee](https://github.com/NyleGarcia/rsi-plus/commit/0dd38ee6b7380bee8303d0b6295d988fbcccde38))
 
 
 ### Bug Fixes
