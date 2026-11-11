@@ -14,7 +14,7 @@
  * - `POST /api/orgs/getOrgMembers {symbol, search, pagesize, page}` → `{data: {totalrows, html}}`; each
  *   `li.member-item.org-visibility-[VRH]`: `.name`, `.nick`, `.rank`, `.stars` width %.
  */
-import { decodeEntities } from './orgs';
+import { cleanName, decodeEntities } from './orgs';
 import type { Org } from './orgs';
 
 export const RSI = 'https://robertsspaceindustries.com';
@@ -273,7 +273,7 @@ export function parseCitizen(html: string): Citizen | null {
   const title = /<span class="icon">[\s\S]*?<\/span>\s*<span class="value">([^<]*)<\/span>/.exec(info)?.[1];
   return {
     handle,
-    moniker: moniker || handle,
+    moniker: cleanName(moniker, handle),
     record: /citizen-record">[\s\S]*?<strong class="value">([^<]*)</.exec(html)?.[1]?.trim() ?? null,
     enlisted: field(html, 'Enlisted'),
     location: field(html, 'Location'),
@@ -345,7 +345,7 @@ export function parseMembers(html: string): OrgMember[] {
       const stars = /class="stars" style="width:\s*([\d.]+)%/.exec(b)?.[1];
       return {
         handle,
-        name: decodeEntities(cls('name')) || handle,
+        name: cleanName(decodeEntities(cls('name')), handle),
         rank: decodeEntities(/<span class="rank">([^<]*)</.exec(b)?.[1] ?? '') || null,
         stars: stars != null ? Math.round(Number(stars) / 20) : null,
         visibility,
@@ -392,6 +392,17 @@ export interface OrgLookup {
   at: number;
   org: OrgInfo | null;
   error?: string;
+}
+
+/**
+ * Spectrum's own search page, filtered to a player's threads and replies in every community, newest first, any date.
+ * `member` takes the handle: the page looks the member up itself (checked in Spectrum's bundle 2026-11: URL params
+ * `q, sort, range, scopes, page, role, member, visibility`; an empty `q` with a member lists everything by them).
+ * An ordinary link: RSI+ makes no request for it.
+ */
+export function spectrumPostsUrl(handle: string): string {
+  const q = new URLSearchParams({ member: handle, sort: 'latest', range: 'all', scopes: 'op,reply', page: '1', visibility: 'nonerased' });
+  return `${RSI}/spectrum/search?${q}`;
 }
 
 /** Text typed into the lookup box → a handle or SID (URLs and "@handle" welcome). */

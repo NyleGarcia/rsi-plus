@@ -4,6 +4,7 @@ tags: [plans]
 updated: 2026-11-10
 ---
 # Now
+- [ ] Look over (0.15.0): sidebar resize by dragging its right edge at several window widths (long labels truncate, popup unaffected); a friend / Spectrum author / org member with a `&nbsp;` or blank name shows the handle; Org lookup *Spectrum posts by @handle* opens the search logged in
 - [ ] Live-verify Org lookup suspected orgs (0.15.0): on a player with a REDACTED org add a SID → row under *Suspected orgs*; tag that org → flag with `SID?` on their Spectrum replies and Friends row, tooltip says *suspected member … your guess*; the org's lookup lists them under *Suspected members*; Remove clears the flag; export → import on another profile adds the guesses
 - [ ] 0.14.0 release: paste `store/LISTING.md` into the dashboard before the release PR merges (description, single purpose, `scripting` and `https://theimpound.com/*` justifications, data usage, test instructions — 0.13.0 was refused for a missing justification); fix `CHANGELOG.md` on the release PR (the `feat` commit names Star Hangar and report templates, both off `dev`)
 - [ ] Live-verify Issue Council v2 — [[specs/issue-council-v2]] · [spec](../specs/issue-council-v2.md): hub *Issue Council* page (facets, note, history, CSV / JSON), similar issues while typing a report title, STARC chip hover card, patch-notes marks + *Notify when patch notes fix a tracked issue*, thread bar *Link issue*; a stored `icTemplate` is gone after the update with no error

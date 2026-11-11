@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { cleanName, decodeEntities } from '@/lib/orgs';
 import fs from 'node:fs';
-import { addSuspect, importSuspects, removeSuspect, suspectedMembers, suspectedOrgs, exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
+import { addSuspect, importSuspects, removeSuspect, spectrumPostsUrl, suspectedMembers, suspectedOrgs, exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
 
 const fx = (f: string) => fs.readFileSync(`tests/fixtures/${f}`, 'utf8');
 
@@ -134,7 +135,31 @@ describe('suspected orgs (your guesses)', () => {
   });
 });
 
+describe('names', () => {
+  it('entities decode once, in the right order', () => {
+    expect(decodeEntities('Tom &amp; Jerry &lt;3 &#39;x&#39; &#x41;&#66;')).toBe("Tom & Jerry <3 'x' AB");
+    expect(decodeEntities('&amp;lt;b&amp;gt;')).toBe('&lt;b&gt;');
+    expect(decodeEntities('a&nbsp;b\u200b')).toBe('a b');
+    expect(decodeEntities('&#99999999999;x')).toBe('x');
+  });
+  it('a name made of &nbsp; or invisible characters falls back to the handle', () => {
+    const troll = '&nbsp;'.repeat(13) + ' @&nbsp;&nbsp;&';
+    expect(cleanName(troll, 'SomeHandle')).toBe('SomeHandle');
+    expect(cleanName('&amp;nbsp;&amp;nbsp;', 'h')).toBe('h');
+    expect(cleanName('\u00a0\u200b \ufeff', 'h')).toBe('h');
+    expect(cleanName('Bob&nbsp;&nbsp;Smith ', 'h')).toBe('Bob Smith');
+    expect(cleanName('R&D', 'h')).toBe('R&D');
+    expect(cleanName('Tom & Jerry', 'h')).toBe('Tom & Jerry');
+    expect(cleanName('名前', 'h')).toBe('名前');
+    expect(cleanName(undefined, 'h')).toBe('h');
+  });
+});
+
 describe('lookup input and cache', () => {
+  it('Spectrum search link for a player', () => {
+    expect(spectrumPostsUrl('Stamp-CIG')).toBe('https://robertsspaceindustries.com/spectrum/search?member=Stamp-CIG&sort=latest&range=all&scopes=op%2Creply&page=1&visibility=nonerased');
+    expect(spectrumPostsUrl('a&b=c')).toContain('member=a%26b%3Dc&');
+  });
   it('parses handles, SIDs and URLs', () => {
     expect(parseLookup('https://robertsspaceindustries.com/en/orgs/BLKSYN/members')).toEqual({ kind: 'org', id: 'BLKSYN' });
     expect(parseLookup('robertsspaceindustries.com/citizens/Stamp-CIG')).toEqual({ kind: 'player', id: 'Stamp-CIG' });

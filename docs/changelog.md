@@ -6,6 +6,9 @@ updated: 2026-11-11
 # Changelog
 
 ## Unreleased
+- **Resize the sidebar.** Drag the right edge of the hub's sidebar to make it narrower or wider (or focus the edge and use the left / right arrow keys). The width is remembered in this browser. A click on the edge still collapses and expands it.
+- **Org lookup: a player's Spectrum posts.** A player's lookup has a *Spectrum posts by @handle* link: it opens Spectrum's own search with every thread and reply by that player, newest first.
+- **Blank and `&nbsp;` names show the handle.** Players who name themselves with `&nbsp;` or invisible characters (so the name looks empty on RSI) showed up as a row of `&nbsp;&nbsp;…` in Friends, Spectrum and Org lookup. Those names now show the player's handle instead, and padding inside a normal name becomes a single space.
 - **Org lookup: suspected orgs.** When a player hides an org (RSI shows *REDACTED*) or you just think they belong to one, add the org's SID under *Suspected orgs* on their lookup, or add their handle under *Suspected members* on the org's. Once you tag that org, the player gets its flag on Spectrum replies and Friends rows, marked with a **?** and the words *suspected member … your guess*, so a guess never looks like something RSI said. A membership RSI lists comes first, and your own tag on the player still wins. Guesses stay in your browser; *Export* includes them and *Import* adds the ones you don't have.
 
 ## 0.14.0 — 2026-11-11

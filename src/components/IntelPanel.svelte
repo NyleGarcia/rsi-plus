@@ -20,6 +20,7 @@
     intelKey,
     parseLookup,
     setTag,
+    spectrumPostsUrl,
     tagLabel,
     threatOf,
     type Intel,
@@ -242,6 +243,9 @@
             <Card.Description>
               {[c.title, c.record ? `Record ${c.record}` : '', c.enlisted ? `Enlisted ${c.enlisted}` : '', c.location, c.fluency ? `Speaks ${c.fluency}` : ''].filter(Boolean).join(' · ')}
             </Card.Description>
+            <p class="text-sm">
+              <a class={LINK_QUIET} href={spectrumPostsUrl(c.handle)} target="_blank" rel="noopener" title={`Opens Spectrum's search for every thread and reply by @${c.handle}, newest first`}>Spectrum posts by @{c.handle} ↗</a>
+            </p>
           </div>
           <div class="text-muted-foreground flex items-center gap-2 text-xs">
             Cached {ago(player.at)}
