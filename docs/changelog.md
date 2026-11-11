@@ -6,6 +6,7 @@ updated: 2026-11-11
 # Changelog
 
 ## Unreleased
+- **Org lookup: clear the cache.** *Clear cache (n)* next to *Recent* forgets every saved lookup (players, orgs, member lists and the Recent list), so the next lookup reads RSI again. Your tags and suspected orgs are kept.
 - **Resize the sidebar.** Drag the right edge of the hub's sidebar to make it narrower or wider (or focus the edge and use the left / right arrow keys). The width is remembered in this browser. A click on the edge still collapses and expands it.
 - **Org lookup: a player's Spectrum posts.** A player's lookup has a *Spectrum posts by @handle* link: it opens Spectrum's own search with every thread and reply by that player, newest first.
 - **Blank and `&nbsp;` names show the handle.** Players who name themselves with `&nbsp;` or invisible characters (so the name looks empty on RSI) showed up as a row of `&nbsp;&nbsp;…` in Friends, Spectrum and Org lookup. Those names now show the player's handle instead, and padding inside a normal name becomes a single space.

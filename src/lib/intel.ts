@@ -366,6 +366,8 @@ export interface IntelCache {
   recent: string[];
 }
 export const NO_INTEL_CACHE: IntelCache = { citizens: {}, orgs: {}, members: {}, recent: [] };
+/** How many lookups are kept: players and orgs (an org's member pages count with the org). */
+export const cachedLookups = (c: IntelCache): number => new Set([...Object.keys(c.citizens).map((k) => `p:${k}`), ...Object.keys(c.orgs).map((k) => `o:${k}`), ...Object.keys(c.members).map((k) => `o:${k}`)]).size;
 export const INTEL_TTL = 24 * 3600_000;
 export const INTEL_MAX = 500;
 export const MEMBERS_PAGE = 32;
