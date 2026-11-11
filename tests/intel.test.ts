@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
-import { exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
+import { exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
 
 const fx = (f: string) => fs.readFileSync(`tests/fixtures/${f}`, 'utf8');
 
@@ -34,6 +34,14 @@ describe('RSI pages (saved 2026-11)', () => {
     const m = parseMembers(JSON.parse(fx('intel-members.json')).data.html);
     expect(m).toHaveLength(4);
     expect(m[0]).toEqual({ handle: 'Crota_son_of_oryx', name: 'Crota', rank: 'Initiate', stars: 0, visibility: 'V', main: true });
+  });
+  it('Discord invites on an org page', () => {
+    const page = (body: string, chrome = '') => `<header><a href="https://discord.gg/sitechrome">Discord</a></header>${fx('intel-org.html').replace('<p>Welcome', `${body}<p>Welcome`)}<footer>${chrome}</footer>`;
+    expect(parseOrg(page(''))!.discord).toBeUndefined();
+    expect(
+      parseOrg(page('<p><a href="https://discord.gg/BlkSyn?x=1">Join</a> or discord.com/invite/abc-123, HTTPS://DISCORDAPP.COM/INVITE/abc-123 <a href="/redirect?u=https%3A%2F%2Fdiscord.gg%2Fwrapped">x</a> discord.com/channels/1/2</p>', '<a href="https://discord.gg/footer">RSI</a>'))!.discord,
+    ).toEqual(['https://discord.gg/BlkSyn', 'https://discord.gg/abc-123', 'https://discord.gg/wrapped']);
+    expect(parseDiscord('<p>discord.gg/"onclick=x</p>')).toEqual([]);
   });
 });
 

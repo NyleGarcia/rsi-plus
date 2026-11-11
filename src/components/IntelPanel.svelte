@@ -265,6 +265,14 @@
             <Card.Description>
               {[o.members != null ? `${o.members.toLocaleString()} members` : '', o.model, o.commitment, ...o.tags, o.focus.primary ? `Focus: ${[o.focus.primary, o.focus.secondary].filter(Boolean).join(' / ')}` : ''].filter(Boolean).join(' · ')}
             </Card.Description>
+            {#if Array.isArray(o.discord) && o.discord.length}
+              <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <span class="text-muted-foreground">Discord (from the org's page):</span>
+                {#each o.discord as d (d)}
+                  <a class={LINK_QUIET} href={d} target="_blank" rel="noopener noreferrer">{d.replace('https://', '')}</a>
+                {/each}
+              </p>
+            {/if}
           </div>
           <div class="text-muted-foreground flex items-center gap-2 text-xs">
             Cached {ago(org.at)}

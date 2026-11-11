@@ -171,6 +171,8 @@ export interface OrgInfo {
   tags: string[];
   focus: { primary: string | null; secondary: string | null };
   logo: string | null;
+  /** Discord invites the org posted on its page, as `https://discord.gg/<code>` (left out when there are none). */
+  discord?: string[];
 }
 export interface OrgMember {
   handle: string;
@@ -209,10 +211,29 @@ export function parseCitizen(html: string): Citizen | null {
   };
 }
 
+/**
+ * Discord invites in an org page (links or plain text: `discord.gg/<code>`, `discord.com/invite/<code>`,
+ * `discordapp.com/invite/<code>`), each once, as `https://discord.gg/<code>`. Only the org's own part of the page is
+ * read (`#organization` up to the footer), so a Discord link in RSI's site chrome is not taken for the org's. The URL
+ * is rebuilt from the invite code alone, so nothing else from the page ends up in the link.
+ */
+export function parseDiscord(html: string): string[] {
+  const from = html.indexOf('id="organization"');
+  const end = html.search(/<footer\b|id="footer"/);
+  const part = html.slice(Math.max(from, 0), end > from ? end : undefined).replace(/%2F/gi, '/');
+  const seen = new Map<string, string>();
+  for (const m of part.matchAll(/discord(?:\.gg|(?:app)?\.com\/invite)\/([A-Za-z0-9-]{2,32})/gi)) {
+    const code = m[1]!;
+    if (!seen.has(code.toLowerCase())) seen.set(code.toLowerCase(), `https://discord.gg/${code}`);
+  }
+  return [...seen.values()].slice(0, 5);
+}
+
 /** `/orgs/<SID>` page → org; null when it isn't an org page. */
 export function parseOrg(html: string): OrgInfo | null {
   const h1 = /<h1>([\s\S]*?)\/\s*<span class="symbol">([^<]+)<\/span>\s*<\/h1>/.exec(html);
   if (!h1) return null;
+  const discord = parseDiscord(html);
   const tags = [...html.matchAll(/<ul class="tags[^"]*">([\s\S]*?)<\/ul>/g)].flatMap((m) => [...m[1]!.matchAll(/<li class="([^"]+)">([^<]*)<\/li>/g)].map((x) => [x[1]!, decodeEntities(x[2]!)] as const));
   const of = (k: string) => tags.find(([c]) => c === k)?.[1] || null;
   const focus = (k: string) => decodeEntities(new RegExp(`<li class="${k}[^"]*">\\s*<img [^>]*alt="([^"]*)"`).exec(html)?.[1] ?? '') || null;
@@ -226,6 +247,7 @@ export function parseOrg(html: string): OrgInfo | null {
     tags: tags.filter(([c]) => c !== 'model' && c !== 'commitment').map(([, v]) => v).filter(Boolean),
     focus: { primary: focus('primary'), secondary: focus('secondary') },
     logo: abs(/<div class="logo[^"]*">\s*<img src="([^"]+)"/.exec(html)?.[1]),
+    ...(discord.length ? { discord } : {}),
   };
 }
 
