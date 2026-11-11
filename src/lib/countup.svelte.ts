@@ -3,6 +3,8 @@
  * 245", "12%") run from the previous value to the new one; prefix / suffix text stays. Nothing to count (masked
  * "$•••", "—") renders as is. Honours prefers-reduced-motion.
  */
+import { fmtGrouped } from '@/lib/fmt';
+// `fmtGrouped` (en-US grouping) is what `parse` below reads back: a KPI string must be formatted with it.
 const NUM = /^(.*?)(-?\d[\d,]*(?:\.\d+)?)(.*)$/s;
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -20,7 +22,7 @@ export function countUp(initial: string, ms = 900) {
     const dec = (m[2]!.split('.')[1] ?? '').length;
     return { pre: m[1]!, n, dec, post: m[3]! };
   };
-  const fmt = (p: { pre: string; dec: number; post: string }, n: number) => `${p.pre}${n.toLocaleString('en-US', { minimumFractionDigits: p.dec, maximumFractionDigits: p.dec })}${p.post}`;
+  const fmt = (p: { pre: string; dec: number; post: string }, n: number) => `${p.pre}${fmtGrouped(n, { minimumFractionDigits: p.dec, maximumFractionDigits: p.dec })}${p.post}`;
   function set(next: string) {
     cancelAnimationFrame(raf);
     const p = parse(next);

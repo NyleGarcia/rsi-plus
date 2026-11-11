@@ -6,6 +6,7 @@ updated: 2026-11-11
 # Changelog
 
 ## Unreleased
+- **Dates and counts follow your browser's language everywhere.** A few places printed them the US way whatever the browser was set to (the Wallet funding chart's months, some counts). Prices keep one look in every language, `$1,234.50`, now on The Impound too.
 - **Resize the sidebar.** Drag the right edge of the hub's sidebar to make it narrower or wider (or focus the edge and use the left / right arrow keys). The width is remembered in this browser. A click on the edge still collapses and expands it.
 - **Org lookup: a player's Spectrum posts.** A player's lookup has a *Spectrum posts by @handle* link: it opens Spectrum's own search with every thread and reply by that player, newest first.
 - **Blank and `&nbsp;` names show the handle.** Players who name themselves with `&nbsp;` or invisible characters (so the name looks empty on RSI) showed up as a row of `&nbsp;&nbsp;…` in Friends, Spectrum and Org lookup. Those names now show the player's handle instead, and padding inside a normal name becomes a single space.

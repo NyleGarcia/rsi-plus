@@ -1,7 +1,7 @@
 ---
 title: Architecture
 tags: [architecture]
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 # Architecture
 
@@ -167,6 +167,12 @@ Lighthouse can't open `chrome-extension://` pages, so the audit drives headless 
 
 ## Chairman's Club (`src/lib/concierge.ts`, `ConciergeCard.svelte`)
 `/account/concierge` (own session) → `parseConciergePage`: `#js-status-level`, `#js-status-date`, `.c-next-level__title`, `#progress-gauge[data-spend-until-next-rank]` (RSI's own 0–100 gauge), `.js-level-description[data-badge]` (levels earned), `#c-section--store .product-item` (Concierge specials: `data-sku`, `.final-price[data-value]`, `.state`). `null` when the page has no status block (not Concierge). Stored per account in `conciergeItem`; the card re-reads when missing or older than 12 h. `TIERS` holds RSI's published total-spend thresholds (High Admiral 1k … Legatus Navium 25k) only to turn the gauge into "≈ $ to go" (`usdToNext`). Shown on Wallet only (the one page about your spend); screenshare mode masks level and gauge.
+
+## Formats and languages (`src/lib/fmt.ts`, `public/_locales/`)
+- The UI is English only. Full localization is parked ([later](plans/later/ideas.md)); these two pieces are in place so it can start without touching every call site.
+- `lib/fmt.ts` is the only place that formats for a locale (pure: content scripts and the background use it too). `UI_LOCALE` (undefined = the browser's) drives dates, times and plain counts: `fmtDate`, `fmtDateTime`, `fmtWhen(ms, options)`, `fmtNum`. `MONEY_LOCALE` (`en-US`) drives USD amounts and numbers shown beside them: `fmtGrouped`, and the USD formatters in `lib/currency.ts`. Prices are RSI's, in USD, so they look the same in every language, and `lib/countup.svelte.ts` parses that grouping back (a KPI tile's number must use `fmtGrouped`). Formatters are cached. `lib/dates.ts` re-exports `fmtDate` / `fmtDateTime`. No `toLocaleString` / `'en-US'` anywhere else (the vendored chart tooltip in `components/ui/` aside).
+- Manifest: `name` and `description` are `__MSG_extName__` / `__MSG_extDescription__` with `default_locale: en`; the text is in `public/_locales/en/messages.json` (WXT copies `public/` as is). Another store language = another `_locales/<lang>/messages.json`, no code change. The summary is 132 characters, the store's limit.
+- For new code: write a whole sentence with placeholders rather than joining pieces around a variable, and format dates and numbers only through `lib/fmt.ts`.
 
 ## Theme (`src/lib/theme.ts`, hub → Settings)
 `data-theme` (dark / light, `system` resolved against `prefers-color-scheme` and followed live), `data-palette` (surfaces — dark: rsi / slate / black / graphite / ember, light: light / paper / cool, one remembered per mode) and `data-accent` (cyan, green, amber, orange, rose, violet) on `<html>`, set from `localStorage` `rsiplus:theme` before the first paint by `initTheme()` in `hub/main.ts` and `popup/main.ts` (one origin, so both pages agree). `app.css` maps them: `:root[data-theme='light']` swaps the surfaces, `:root[data-theme=…][data-palette=…]` overrides background / card / popover / muted / sidebar / border per palette, `:root[data-accent=…]` sets `--primary` (bright tint in dark, deep shade in light) and derives ring / sidebar-primary / chart-1 from it. Content scripts untouched. `SettingsPanel.svelte` (header gear, `#settings`) holds the theme + accent pickers and the same Spectrum / notification / site switches as the popup, plus muted-thread mode, poll interval and party reminder. Fix: the old `--muted: var(--muted-foreground)` alias in `:root` had been overriding the real `--muted` surface, so `bg-muted` (tab strips, muted chips) rendered light grey.

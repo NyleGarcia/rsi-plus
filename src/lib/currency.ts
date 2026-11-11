@@ -7,6 +7,7 @@
  * Plain module state, set once per page by `initCurrency` (hub, popup); the page reloads when the setting changes,
  * so the 500-row tables need no reactive formatter.
  */
+import { MONEY_LOCALE } from '@/lib/fmt';
 export const CURRENCIES = ['USD', 'CAD', 'EUR', 'GBP', 'AUD', 'NZD', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'JPY', 'BRL', 'MXN'] as const;
 export type CurrencyCode = (typeof CURRENCIES)[number];
 
@@ -22,7 +23,7 @@ interface Display {
 const make = (code: CurrencyCode, rate: number, locale?: string): Display => {
   if (code === 'USD') {
     // Built once: `toLocaleString` makes a new formatter per call, which showed up in profiles of 500-row tables.
-    return { code, rate: 1, whole: new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }), cents: new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), symbol: '$' };
+    return { code, rate: 1, whole: new Intl.NumberFormat(MONEY_LOCALE, { maximumFractionDigits: 2 }), cents: new Intl.NumberFormat(MONEY_LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), symbol: '$' };
   }
   const opts = { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' } as const;
   const whole = new Intl.NumberFormat(locale, { ...opts, minimumFractionDigits: 0, maximumFractionDigits: 0 });

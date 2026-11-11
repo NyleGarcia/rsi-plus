@@ -4,6 +4,7 @@
    * Lives on Wallet only (the one place your spend is shown). Reads `/account/concierge` once when
    * nothing is stored or it is older than 12 h; *Refresh* re-reads. Screenshare mode masks the level and the gauge.
    */
+  import { fmtDateTime } from '@/lib/fmt';
   import { clubFromSpend, fetchConcierge, usdToNext, type Concierge } from '@/lib/concierge';
   import { clubSpend, type ClubSpend } from '@/lib/orders';
   import { conciergeItem, ordersItem } from '@/lib/settings';
@@ -64,7 +65,7 @@
       <div class="grid leading-tight">
         <strong class="text-sm">Chairman's Club</strong>
         <span class="text-muted-foreground text-xs">
-          {#if c}Read {new Date(c.at).toLocaleString()} from your Concierge page.{:else if !known || busy}Reading your Concierge page…{:else}No Chairman's Club status on your account (it starts at $1,000 total spend).{/if}
+          {#if c}Read {fmtDateTime(c.at)} from your Concierge page.{:else if !known || busy}Reading your Concierge page…{:else}No Chairman's Club status on your account (it starts at $1,000 total spend).{/if}
         </span>
       </div>
       <div class="flex items-center gap-2">

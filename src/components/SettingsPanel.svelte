@@ -1,5 +1,6 @@
 <script lang="ts">
   /** Hub → Settings: appearance of the extension pages (theme / accent) and the Spectrum / site options the popup also shows. */
+  import { fmtNum } from '@/lib/fmt';
   import { ACCENTS, MODES, PALETTES, readTheme, resolveMode, saveTheme, type Accent, type Palette, type ThemePrefs } from '@/lib/theme';
   import { getSettings, patchSettings, settingsItem, type Settings } from '@/lib/settings';
   import { MUTE_MODES, PARTY_REMIND, POLL_MINUTES, SETTING_TOGGLES, STARORG_SWITCH, clampSetting, type NumberSetting } from '@/lib/settings-ui';
@@ -108,7 +109,7 @@
     try {
       const { downloadDebugFile } = await import('@/lib/debug-export');
       const bytes = await downloadDebugFile(debugNames, debugStore);
-      debugMsg = `Saved (${Math.max(1, Math.round(bytes / 1024)).toLocaleString()} KB).`;
+      debugMsg = `Saved (${fmtNum(Math.max(1, Math.round(bytes / 1024)))} KB).`;
     } catch (e) {
       debugMsg = `Export failed: ${(e as Error).message}`;
     }

@@ -3,6 +3,7 @@
    * The "Loading page 3 / 12… 240 pledges" / "240 pledges · loaded <date>" / "Not loaded yet" line under a page title,
    * with a progress bar while loading (Pledges, Buyback, …). Goes in `Card.Header` under `Card.Title`.
    */
+  import { fmtDateTime } from '@/lib/fmt';
   import type { Snippet } from 'svelte';
   import { Progress } from '@/components/ui/progress';
 
@@ -31,7 +32,7 @@
     <span>Loading page {loading.page}{loading.pages ? ` / ${loading.pages}` : ''}… {loading.count} {noun}</span>
     {#if pct != null}<Progress value={pct} class="h-1.5 w-[140px]" aria-label={`${pct}% loaded`} />{/if}
   {:else if data}
-    <span>{count} {noun} · {data.complete === false ? `partial (stopped after page ${data.page})` : 'loaded'} {new Date(data.at).toLocaleString()}</span>
+    <span>{count} {noun} · {data.complete === false ? `partial (stopped after page ${data.page})` : 'loaded'} {fmtDateTime(data.at)}</span>
   {:else}
     <span>{empty}</span>
   {/if}
