@@ -202,8 +202,6 @@ export const partyLogItem = storage.defineItem<PartyLogEntry[]>(acct('local:part
 export const icIssuesItem = storage.defineItem<IcIssues>(acct('local:icIssues'), { fallback: {} });
 /** Spectrum threads that mention an Issue Council code. */
 export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMentions'), { fallback: {} });
-/** Report new issue form draft (autosaved while typing, offered back on the next visit). */
-/** Newest Star Citizen build per environment, from Spectrum patch-notes subjects (public, shared). */
 /** Org lookup: your tags on players and orgs (with notes). This browser; share them with Export / Import. */
 export const intelItem = storage.defineItem<Intel>('local:intel', { fallback: {} });
 /** Org lookup: cached citizen / org / member lookups (public RSI data) and the recent list. */
@@ -214,6 +212,7 @@ export const icLinksItem = storage.defineItem<IcLinks>(acct('local:icLinks'), { 
 export const impoundCacheItem = storage.defineItem<ImpCache>('local:impoundCache', { fallback: {} });
 /** The Impound toolbar: filters, sort, dim owned (this browser). */
 export const impoundViewItem = storage.defineItem<{ f: ImpFilter; sort: ImpSort; dimOwned: boolean } | null>('local:impoundView', { fallback: null });
+/** Report new issue form draft (autosaved while typing, offered back on the next visit). */
 export const icDraftItem = storage.defineItem<IcDraft | null>(acct('local:icDraft'), { fallback: null });
 export const lastPollItem = storage.defineItem<{ at: number; error: string | null } | null>(acct('local:lastPoll'), { fallback: null });
 /**

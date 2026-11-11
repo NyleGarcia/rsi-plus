@@ -1,10 +1,12 @@
 ---
 title: Issue Council v2 (hub tab, duplicates, report helper, Spectrum links)
 tags: [spec, issue-council, spectrum]
-status: draft
-updated: 2026-11-08
+status: active
+updated: 2026-11-10
 ---
 # Issue Council v2
+
+> **Shipping state (0.14.0):** features 1 (hub tab), 2 (duplicate finder) and the Spectrum parts (chip hover cards, patch-notes cross-reference, thread ↔ issue links) are on `dev`. Feature 3 (report helper v2: template list, `{build}` / `{setup}` fill-ins, *My setup*) is not: it lives on `feat/issue-council-templates`, together with 0.13.0's *Insert template*, which was taken out of `dev` (a stored `icTemplate` is dropped, not migrated). `parseBuild` stayed, for the patch-notes cross-reference.
 
 Builds on the 0.13.0 Issue Council integration (`src/lib/issue-council.ts`, `entrypoints/issue-council.content/`, [architecture](../../architecture.md)). Same ground rules, unchanged:
 - RSI+ reads only the Issue Council pages you open (DOM). No Issue Council API, no login token, no background checks.
