@@ -3,6 +3,7 @@
  * from the bundle — unverified) shapes; everything downstream uses the v1 `ThreadSummary` fields.
  */
 import type { Activity, Member, Reply, ThreadFull, ThreadSummary } from './types';
+import { cleanName } from './orgs';
 
 type Obj = Record<string, any>;
 const pick = (o: Obj, ...keys: string[]) => {
@@ -27,7 +28,7 @@ export function normMember(o: Obj | null | undefined): Member | null {
   if (!nickname) return null;
   return {
     id: String(pick(o, 'id', 'memberId') ?? ''),
-    displayname: pick(o, 'displayname', 'displayName') ?? nickname,
+    displayname: cleanName(pick(o, 'displayname', 'displayName'), nickname),
     nickname,
     avatar: pick(o, 'avatar') ?? null,
     isGM: !!pick(o, 'isGM', 'is_gm'),

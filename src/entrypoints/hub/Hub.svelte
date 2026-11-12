@@ -173,10 +173,74 @@
       /* private mode etc. */
     }
   }
+
+  /**
+   * Expanded sidebar width: drag the rail (the sidebar's right edge). A per-browser UI pref, in px; null = the default
+   * (16rem). A click without a drag still collapses / expands; arrow keys on the focused rail resize too.
+   */
+  const SIDEBAR_W_PREF = 'rsiplus:hub:sidebar-width';
+  const SIDEBAR_W = { min: 168, max: 384, def: 256 };
+  const clampW = (w: number) => Math.round(Math.min(SIDEBAR_W.max, Math.max(SIDEBAR_W.min, w)));
+  let sidebarW = $state<number | null>(
+    (() => {
+      try {
+        const w = Number(localStorage.getItem(SIDEBAR_W_PREF));
+        return Number.isFinite(w) && w > 0 ? clampW(w) : null;
+      } catch {
+        return null;
+      }
+    })(),
+  );
+  let resizing = $state(false);
+  let drag: { x: number; w: number; moved: boolean } | null = null;
+  function saveW() {
+    try {
+      if (sidebarW == null) localStorage.removeItem(SIDEBAR_W_PREF);
+      else localStorage.setItem(SIDEBAR_W_PREF, String(sidebarW));
+    } catch {
+      /* private mode etc. */
+    }
+  }
+  function railDown(e: PointerEvent) {
+    if (!sidebarOpen || e.button !== 0) return;
+    drag = { x: e.clientX, w: sidebarW ?? SIDEBAR_W.def, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function railMove(e: PointerEvent) {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) < 4) return;
+    drag.moved = true;
+    resizing = true;
+    sidebarW = clampW(drag.w + dx);
+  }
+  function railUp() {
+    if (drag?.moved) saveW();
+    resizing = false;
+    // `drag` is cleared by the click that follows (so a drag doesn't also toggle); a cancelled pointer has no click.
+  }
+  function railClick() {
+    const moved = !!drag?.moved;
+    drag = null;
+    if (moved) return;
+    sidebarOpen = !sidebarOpen;
+    onSidebar(sidebarOpen);
+  }
+  function railKey(e: KeyboardEvent) {
+    if (!sidebarOpen || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    e.preventDefault();
+    sidebarW = clampW((sidebarW ?? SIDEBAR_W.def) + (e.key === 'ArrowRight' ? 16 : -16));
+    saveW();
+  }
 </script>
 
 <Tooltip.Provider delayDuration={300}>
-  <Sidebar.Provider bind:open={sidebarOpen} onOpenChange={onSidebar}>
+  <Sidebar.Provider
+    bind:open={sidebarOpen}
+    onOpenChange={onSidebar}
+    style={sidebarW != null ? `--sidebar-width: ${sidebarW}px;` : ''}
+    class={resizing ? 'cursor-col-resize select-none [&_[data-slot=sidebar-container]]:transition-none! [&_[data-slot=sidebar-gap]]:transition-none!' : ''}
+  >
     <Sidebar.Root collapsible="icon">
       <Sidebar.Header>
         <div class="flex h-8 items-center gap-2 px-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
@@ -205,7 +269,18 @@
           {/each}
         </nav>
       </Sidebar.Content>
-      <Sidebar.Rail />
+      <Sidebar.Rail
+        tabindex={sidebarOpen ? 0 : -1}
+        title={sidebarOpen ? 'Drag to resize the sidebar (or arrow keys), click to collapse' : 'Expand sidebar'}
+        aria-label={sidebarOpen ? 'Resize sidebar: drag or use the arrow keys; click to collapse' : 'Expand sidebar'}
+        class="touch-none [[data-state=expanded]_&]:cursor-col-resize! focus-visible:after:bg-sidebar-ring"
+        onpointerdown={railDown}
+        onpointermove={railMove}
+        onpointerup={railUp}
+        onpointercancel={() => ((drag = null), (resizing = false))}
+        onclick={railClick}
+        onkeydown={railKey}
+      />
     </Sidebar.Root>
 
     <Sidebar.Inset class="min-w-0">

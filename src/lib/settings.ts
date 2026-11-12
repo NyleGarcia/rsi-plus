@@ -16,7 +16,7 @@ import type { Funding, FundingRange } from './wallet';
 import { NO_WATCHES, type FeedEvent, type Watches } from './watch';
 import { type IcDraft, type IcIssues, type IcLinks, type IcMentions } from './issue-council';
 import type { ImpCache, ImpFilter, ImpSort } from './impound';
-import { NO_INTEL_CACHE, type Intel, type IntelCache } from './intel';
+import { NO_INTEL_CACHE, type Intel, type IntelCache, type Suspects } from './intel';
 
 /**
  * True in an incognito context (manifest `incognito: 'split'` → separate background / pages / content scripts).
@@ -204,6 +204,8 @@ export const icIssuesItem = storage.defineItem<IcIssues>(acct('local:icIssues'),
 export const icMentionsItem = storage.defineItem<IcMentions>(acct('local:icMentions'), { fallback: {} });
 /** Org lookup: your tags on players and orgs (with notes). This browser; share them with Export / Import. */
 export const intelItem = storage.defineItem<Intel>('local:intel', { fallback: {} });
+/** Org lookup: orgs you suspect players are in (your guesses, e.g. behind a REDACTED membership). This browser; export / import. */
+export const intelSuspectsItem = storage.defineItem<Suspects>('local:intelSuspects', { fallback: {} });
 /** Org lookup: cached citizen / org / member lookups (public RSI data) and the recent list. */
 export const intelCacheItem = storage.defineItem<IntelCache>('local:intelCache', { fallback: NO_INTEL_CACHE });
 /** Spectrum threads you linked to Issue Council issues yourself. */

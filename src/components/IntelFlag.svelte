@@ -9,6 +9,6 @@
 
 {#if threat?.tag}
   <a href={`#intel?player=${encodeURIComponent(nickname)}`} title={`Org lookup:\n${threat.reasons.map((r) => r.text).join('\n')}`} class="no-underline">
-    <Badge variant={BADGE_VARIANT[threat.tag]}>{threat.tag === 'hostile' || threat.tag === 'caution' ? '⚠ ' : ''}{tagLabel(threat.tag)}{threat.reasons[0]?.sid ? ` · ${threat.reasons[0].sid}` : ''}</Badge>
+    <Badge variant={BADGE_VARIANT[threat.tag]}>{threat.tag === 'hostile' || threat.tag === 'caution' ? '⚠ ' : ''}{tagLabel(threat.tag)}{threat.reasons[0]?.sid ? ` · ${threat.reasons[0].sid}${threat.reasons[0].guess ? '?' : ''}` : ''}</Badge>
   </a>
 {/if}

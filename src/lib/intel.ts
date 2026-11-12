@@ -14,7 +14,7 @@
  * - `POST /api/orgs/getOrgMembers {symbol, search, pagesize, page}` → `{data: {totalrows, html}}`; each
  *   `li.member-item.org-visibility-[VRH]`: `.name`, `.nick`, `.rank`, `.stars` width %.
  */
-import { decodeEntities } from './orgs';
+import { cleanName, decodeEntities } from './orgs';
 import type { Org } from './orgs';
 
 export const RSI = 'https://robertsspaceindustries.com';
@@ -66,19 +66,64 @@ export function removeTag(intel: Intel, kind: IntelEntry['kind'], id: string): I
   return next;
 }
 
+/* ---------------------------------------------------------------- suspected orgs ---------------------------------------------------------------- */
+
+/**
+ * An org you think a player is in (their membership is hidden on RSI, or not listed at all). Your guess, never
+ * something RSI said: it is always shown as *suspected* and marked with `?`, and it only matters once you tag that org.
+ */
+export interface Suspect {
+  /** Handle as written. */
+  handle: string;
+  /** Org SID (upper case). */
+  sid: string;
+  /** Org name when known, for lists. */
+  name?: string;
+  at: number;
+  /** The file it was imported from. */
+  source?: string;
+}
+/** `<handle lower>|<SID>` → suspected membership. */
+export type Suspects = Record<string, Suspect>;
+export const suspectKey = (handle: string, sid: string) => `${handle.toLowerCase()}|${sid.toUpperCase()}`;
+const HANDLE_RE = /^[\w-]{1,60}$/;
+const SID_RE = /^[A-Za-z0-9]{1,10}$/;
+/** Add a suspected membership (once per player and org); a handle or SID that can't be one is left out. */
+export function addSuspect(s: Suspects, e: { handle: string; sid: string; name?: string; source?: string }, now: number): Suspects {
+  const handle = e.handle.trim().replace(/^@/, '');
+  const sid = e.sid.trim().replace(/^\[|\]$/g, '').toUpperCase();
+  if (!HANDLE_RE.test(handle) || !SID_RE.test(sid)) return s;
+  const k = suspectKey(handle, sid);
+  const name = e.name?.trim() || s[k]?.name;
+  return { ...s, [k]: { handle, sid, ...(name ? { name } : {}), at: s[k]?.at ?? now, ...((e.source ?? s[k]?.source) ? { source: e.source ?? s[k]?.source } : {}) } };
+}
+export function removeSuspect(s: Suspects, handle: string, sid: string): Suspects {
+  const next = { ...s };
+  delete next[suspectKey(handle, sid)];
+  return next;
+}
+/** Orgs you suspect a player is in, newest first. */
+export const suspectedOrgs = (s: Suspects, handle: string): Suspect[] => Object.values(s).filter((x) => x.handle.toLowerCase() === handle.toLowerCase()).sort((a, b) => b.at - a.at);
+/** Players you suspect are in an org, newest first. */
+export const suspectedMembers = (s: Suspects, sid: string): Suspect[] => Object.values(s).filter((x) => x.sid === sid.toUpperCase()).sort((a, b) => b.at - a.at);
+
 export interface Threat {
   /** The worst tag that applies, null when none. */
   tag: IntelTag | null;
-  /** Why, worst first: "Hostile: you tagged this player", "Caution: member of BLKSYN (affiliate)". */
-  reasons: { tag: IntelTag; text: string; via: 'player' | 'org'; sid?: string }[];
+  /**
+   * Why, worst first: "Hostile: you tagged this player", "Caution: member of BLKSYN (affiliate)". `guess`: the
+   * membership is one you suspect, not one RSI lists.
+   */
+  reasons: { tag: IntelTag; text: string; via: 'player' | 'org'; sid?: string; guess?: boolean }[];
   /** Hidden memberships (RSI "REDACTED"): unknown orgs. */
   hidden: number;
 }
 /**
  * What applies to a player: your tag on them, and your tags on every org they're in (main or affiliate). A player tag
- * wins over org tags (you know them better); otherwise the worst org tag.
+ * wins over org tags (you know them better); otherwise the worst org tag. Orgs you only suspect them of (`suspects`)
+ * count like memberships but are marked as a guess, and at the same tag a membership RSI lists comes first.
  */
-export function threatOf(handle: string, orgs: Pick<Org, 'sid' | 'name' | 'main' | 'redacted'>[] | null | undefined, intel: Intel): Threat {
+export function threatOf(handle: string, orgs: Pick<Org, 'sid' | 'name' | 'main' | 'redacted'>[] | null | undefined, intel: Intel, suspects?: Suspects): Threat {
   const reasons: Threat['reasons'] = [];
   const p = intel[intelKey('player', handle)];
   if (p) reasons.push({ tag: p.tag, text: `${tagLabel(p.tag)}: you tagged this player${p.note ? ` (${p.note.split('\n')[0]})` : ''}`, via: 'player' });
@@ -91,7 +136,13 @@ export function threatOf(handle: string, orgs: Pick<Org, 'sid' | 'name' | 'main'
     const e = intel[intelKey('org', o.sid)];
     if (e) reasons.push({ tag: e.tag, text: `${tagLabel(e.tag)}: ${o.main ? 'main org' : 'affiliate of'} ${o.name} [${o.sid}]${e.note ? ` (${e.note.split('\n')[0]})` : ''}`, via: 'org', sid: o.sid });
   }
-  const orgReasons = reasons.filter((r) => r.via === 'org').sort((a, b) => (RANK.get(b.tag) ?? 0) - (RANK.get(a.tag) ?? 0));
+  const listed = new Set((orgs ?? []).filter((o) => !o.redacted).map((o) => o.sid.toUpperCase()));
+  for (const g of suspects ? suspectedOrgs(suspects, handle) : []) {
+    if (listed.has(g.sid)) continue; // RSI lists it: no longer a guess
+    const e = intel[intelKey('org', g.sid)];
+    if (e) reasons.push({ tag: e.tag, text: `${tagLabel(e.tag)}: suspected member of ${g.name ?? e.name ?? g.sid} [${g.sid}], your guess${e.note ? ` (${e.note.split('\n')[0]})` : ''}`, via: 'org', sid: g.sid, guess: true });
+  }
+  const orgReasons = reasons.filter((r) => r.via === 'org').sort((a, b) => (RANK.get(b.tag) ?? 0) - (RANK.get(a.tag) ?? 0) || Number(!!a.guess) - Number(!!b.guess));
   const tag = p ? p.tag : (orgReasons[0]?.tag ?? null);
   return { tag, reasons: [...reasons.filter((r) => r.via === 'player'), ...orgReasons], hidden };
 }
@@ -110,8 +161,29 @@ export function filterIntel(intel: Intel, f: { kind?: IntelEntry['kind'] | ''; t
 /* ---------------------------------------------------------------- export / import ---------------------------------------------------------------- */
 
 export const INTEL_FORMAT = 'rsi-plus-intel';
-export function exportIntel(entries: IntelEntry[], now: number): string {
-  return JSON.stringify({ format: INTEL_FORMAT, version: 1, exportedAt: new Date(now).toISOString(), entries }, null, 1);
+export function exportIntel(entries: IntelEntry[], now: number, suspects: Suspect[] = []): string {
+  return JSON.stringify({ format: INTEL_FORMAT, version: 1, exportedAt: new Date(now).toISOString(), entries, ...(suspects.length ? { suspects } : {}) }, null, 1);
+}
+/** Suspected memberships of an exported file, merged into yours: ones you don't have are added (yours keep their date). */
+export function importSuspects(s: Suspects, json: string, opts: { source: string; now: number }): { suspects: Suspects; added: number } {
+  let data: any;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return { suspects: s, added: 0 };
+  }
+  if (data?.format !== INTEL_FORMAT || !Array.isArray(data.suspects)) return { suspects: s, added: 0 };
+  let next = s;
+  let added = 0;
+  for (const e of (data.suspects as Partial<Suspect>[]).slice(0, 5000)) {
+    if (typeof e?.handle !== 'string' || typeof e.sid !== 'string') continue;
+    const probe = addSuspect({}, { handle: e.handle, sid: e.sid }, opts.now);
+    const k = Object.keys(probe)[0];
+    if (!k || next[k]) continue; // not a handle / SID, or you have it already
+    next = addSuspect(next, { handle: e.handle, sid: e.sid, name: typeof e.name === 'string' ? e.name.slice(0, 120) : undefined, source: opts.source }, opts.now);
+    added++;
+  }
+  return { suspects: next, added };
 }
 /**
  * Merge an exported file: entries you don't have are added; for ones you have, `overwrite` takes theirs, otherwise
@@ -201,7 +273,7 @@ export function parseCitizen(html: string): Citizen | null {
   const title = /<span class="icon">[\s\S]*?<\/span>\s*<span class="value">([^<]*)<\/span>/.exec(info)?.[1];
   return {
     handle,
-    moniker: moniker || handle,
+    moniker: cleanName(moniker, handle),
     record: /citizen-record">[\s\S]*?<strong class="value">([^<]*)</.exec(html)?.[1]?.trim() ?? null,
     enlisted: field(html, 'Enlisted'),
     location: field(html, 'Location'),
@@ -273,7 +345,7 @@ export function parseMembers(html: string): OrgMember[] {
       const stars = /class="stars" style="width:\s*([\d.]+)%/.exec(b)?.[1];
       return {
         handle,
-        name: decodeEntities(cls('name')) || handle,
+        name: cleanName(decodeEntities(cls('name')), handle),
         rank: decodeEntities(/<span class="rank">([^<]*)</.exec(b)?.[1] ?? '') || null,
         stars: stars != null ? Math.round(Number(stars) / 20) : null,
         visibility,
@@ -294,6 +366,8 @@ export interface IntelCache {
   recent: string[];
 }
 export const NO_INTEL_CACHE: IntelCache = { citizens: {}, orgs: {}, members: {}, recent: [] };
+/** How many lookups are kept: players and orgs (an org's member pages count with the org). */
+export const cachedLookups = (c: IntelCache): number => new Set([...Object.keys(c.citizens).map((k) => `p:${k}`), ...Object.keys(c.orgs).map((k) => `o:${k}`), ...Object.keys(c.members).map((k) => `o:${k}`)]).size;
 export const INTEL_TTL = 24 * 3600_000;
 export const INTEL_MAX = 500;
 export const MEMBERS_PAGE = 32;
@@ -320,6 +394,17 @@ export interface OrgLookup {
   at: number;
   org: OrgInfo | null;
   error?: string;
+}
+
+/**
+ * Spectrum's own search page, filtered to a player's threads and replies in every community, newest first, any date.
+ * `member` takes the handle: the page looks the member up itself (checked in Spectrum's bundle 2026-11: URL params
+ * `q, sort, range, scopes, page, role, member, visibility`; an empty `q` with a member lists everything by them).
+ * An ordinary link: RSI+ makes no request for it.
+ */
+export function spectrumPostsUrl(handle: string): string {
+  const q = new URLSearchParams({ member: handle, sort: 'latest', range: 'all', scopes: 'op,reply', page: '1', visibility: 'nonerased' });
+  return `${RSI}/spectrum/search?${q}`;
 }
 
 /** Text typed into the lookup box → a handle or SID (URLs and "@handle" welcome). */

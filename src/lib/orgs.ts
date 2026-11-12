@@ -38,15 +38,38 @@ export function mainOrgFromBadges(m: Pick<Member, 'meta'> | null | undefined): P
   return null;
 }
 
+const codePoint = (n: number) => (Number.isFinite(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '');
+/** Invisible characters people pad names with: no-break space, zero-width space / joiners, word joiner, BOM. */
+const INVISIBLE = /[\u00a0\u200b-\u200d\u2060\ufeff]/g;
 export const decodeEntities = (s: string) =>
   s
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => codePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (_, n) => codePoint(Number(n)))
+    // `&amp;` last: unescaping it first would decode `&amp;lt;` twice
+    .replace(/&amp;/g, '&')
+    .replace(INVISIBLE, ' ')
     .trim();
+
+/**
+ * A display name fit to show. Some players name themselves with `&nbsp;` (as text) or invisible characters so the
+ * name looks blank on RSI: those become spaces, runs of spaces collapse, a cut-off entity at the end goes, and a name
+ * left with no letter or digit falls back to `fallback` (the handle), so nobody shows up as a row of `&nbsp;`.
+ */
+export function cleanName(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const s = raw
+    .replace(/&(?:amp;)?nbsp;/gi, ' ')
+    .replace(/&(?:amp;?|n(?:b(?:s(?:p)?)?)?)?$/i, '')
+    .replace(INVISIBLE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /[\p{L}\p{N}]/u.test(s) ? s : fallback;
+}
 
 export function parseCitizenOrgs(html: string): Org[] {
   const out: Org[] = [];

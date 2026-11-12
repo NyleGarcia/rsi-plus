@@ -29,13 +29,13 @@
   import { fmtDate, fmtDateTime } from '@/lib/dates';
   import { PARTY_REMIND, clampSetting, toggleOf } from '@/lib/settings-ui';
   import { groupByOrg, mainOrgFromBadges, ORG_TTL, type Org, type OrgCache } from '@/lib/orgs';
-  import { friendNotesItem, getSettings, getWatches, intelItem, orgCacheItem, partyLogItem, partyModeItem, patchSettings, patchWatches, watchesItem } from '@/lib/settings';
+  import { friendNotesItem, getSettings, getWatches, intelItem, intelSuspectsItem, orgCacheItem, partyLogItem, partyModeItem, patchSettings, patchWatches, watchesItem } from '@/lib/settings';
   import { partyActive, type PartyLogEntry, type PartyMode } from '@/lib/friends';
   import type { FriendsData } from '@/lib/api';
   import { memberUrl, type Member } from '@/lib/types';
   import { isOnline } from '@/lib/watch';
   import { cn } from '@/lib/utils';
-  import { threatOf, type Intel } from '@/lib/intel';
+  import { threatOf, type Intel, type Suspects } from '@/lib/intel';
   import IntelFlag from './IntelFlag.svelte';
   import * as Alert from '@/components/ui/alert';
   import * as Card from '@/components/ui/card';
@@ -104,6 +104,7 @@
     friendNotesItem.getValue().then((n) => (notes = n));
     orgCacheItem.getValue().then((c) => (orgCache = c));
     intelItem.getValue().then((v) => (intel = v));
+    intelSuspectsItem.getValue().then((v) => (suspects = v));
     getWatches().then((w) => (bells = w.friendsOnline));
     getSettings().then((s) => ((notifyAll = s.notifyAllFriends), (partyHours = s.partyRemindHours)));
     load();
@@ -111,6 +112,7 @@
       friendNotesItem.watch((n) => (notes = n ?? {})),
       orgCacheItem.watch((c) => (orgCache = c ?? {})),
       intelItem.watch((v) => (intel = v ?? {})),
+      intelSuspectsItem.watch((v) => (suspects = v ?? {})),
       watchesItem.watch(async () => (bells = (await getWatches()).friendsOnline)),
     ];
     return () => offs.forEach((off) => off());
@@ -136,11 +138,12 @@
   /** Known orgs: full list from the citizen page when loaded, else the main-org badge. */
   /** Org lookup tags: your tag on the player, or on an org they're in (all orgs when read, else the main one). */
   let intel = $state<Intel>({});
+  let suspects = $state<Suspects>({});
   function threatFor(m: Member) {
     if (!Object.keys(intel).length) return null;
     const main = mainOrgFromBadges(m);
     const known = orgCache[m.nickname.toLowerCase()]?.orgs;
-    return threatOf(m.nickname, known ?? (main ? [{ ...main, main: true, redacted: false }] : []), intel);
+    return threatOf(m.nickname, known ?? (main ? [{ ...main, main: true, redacted: false }] : []), intel, suspects);
   }
   function orgsOf(m: Member): Org[] {
     const c = orgCache[m.nickname.toLowerCase()];

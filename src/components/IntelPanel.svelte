@@ -3,18 +3,25 @@
    * Hub → Org lookup: look up a player or org on RSI's public pages (cached 24 h; *Refresh* re-reads), tag players
    * and orgs, browse an org's members with your tags on them, and manage / export / import your tags (lib/intel.ts).
    */
-  import { intelCacheItem, intelItem } from '@/lib/settings';
+  import { intelCacheItem, intelItem, intelSuspectsItem } from '@/lib/settings';
   import { bg } from '@/lib/messages';
   import {
     INTEL_TAGS,
     MEMBERS_PAGE,
     RSI,
+    addSuspect,
+    cachedLookups,
     exportIntel,
     filterIntel,
     importIntel,
+    importSuspects,
+    removeSuspect,
+    suspectedMembers,
+    suspectedOrgs,
     intelKey,
     parseLookup,
     setTag,
+    spectrumPostsUrl,
     tagLabel,
     threatOf,
     type Intel,
@@ -24,6 +31,7 @@
     type OrgLookup,
     type OrgMember,
     type PlayerLookup,
+    type Suspects,
   } from '@/lib/intel';
   import { NO_INTEL_CACHE } from '@/lib/intel';
   import { ago } from '@/lib/dates';
@@ -41,10 +49,12 @@
 
   let intel = $state<Intel>({});
   let cache = $state<IntelCache>(NO_INTEL_CACHE);
+  let suspects = $state<Suspects>({});
   $effect(() => {
     intelItem.getValue().then((v) => (intel = v));
     intelCacheItem.getValue().then((v) => (cache = v));
-    const offs = [intelItem.watch((v) => (intel = v ?? {})), intelCacheItem.watch((v) => (cache = v ?? NO_INTEL_CACHE))];
+    intelSuspectsItem.getValue().then((v) => (suspects = v));
+    const offs = [intelItem.watch((v) => (intel = v ?? {})), intelCacheItem.watch((v) => (cache = v ?? NO_INTEL_CACHE)), intelSuspectsItem.watch((v) => (suspects = v ?? {}))];
     return () => offs.forEach((o) => o());
   });
 
@@ -57,6 +67,7 @@
   const parsed = $derived(parseLookup(input));
   async function lookPlayer(handle: string, force = false) {
     err = '';
+    cacheMsg = '';
     busy = true;
     try {
       const r = await bg({ type: 'intel:player', handle, force });
@@ -70,6 +81,7 @@
   }
   async function lookOrg(sid: string, force = false) {
     err = '';
+    cacheMsg = '';
     busy = true;
     try {
       const r = await bg({ type: 'intel:org', sid, force });
@@ -88,6 +100,21 @@
   function openRecent(key: string) {
     const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
     return kind === 'org' ? lookOrg(id) : lookPlayer(id);
+  }
+  /**
+   * Forget every cached lookup (citizen pages, org pages, member lists, the Recent list). Tags and suspected orgs are
+   * yours and stay; so do players' org lists, which live in the org cache shared with Friends (*Refresh* re-reads one).
+   */
+  let cacheMsg = $state('');
+  const nCached = $derived(cachedLookups(cache));
+  async function clearCache() {
+    const n = nCached;
+    await intelCacheItem.setValue({ citizens: {}, orgs: {}, members: {}, recent: [] });
+    player = null;
+    org = null;
+    members = null;
+    err = '';
+    cacheMsg = `Cleared ${n} cached lookup${n === 1 ? '' : 's'}. Your tags and suspected orgs are kept.`;
   }
   const recentLabel = (key: string) => {
     const id = key.slice(key.indexOf(':') + 1);
@@ -127,7 +154,28 @@
     (members?.list ?? []).filter((m) => !memberQ.trim() || `${m.handle} ${m.name} ${m.rank ?? ''}`.toLowerCase().includes(memberQ.trim().toLowerCase())),
   );
 
-  const threat = $derived(player?.citizen ? threatOf(player.citizen.handle, player.orgs, intel) : null);
+  const threat = $derived(player?.citizen ? threatOf(player.citizen.handle, player.orgs, intel, suspects) : null);
+
+  /* ---- suspected orgs: your guesses (a REDACTED membership, or one RSI doesn't list) ---- */
+  let guessSid = $state('');
+  let guessHandle = $state('');
+  let guessMsg = $state('');
+  const orgName = (sid: string) => cache.orgs[sid.toUpperCase()]?.org?.name ?? intel[intelKey('org', sid)]?.name;
+  async function addGuess(handle: string, sid: string) {
+    guessMsg = '';
+    const cur = await intelSuspectsItem.getValue();
+    const next = addSuspect(cur, { handle, sid, name: orgName(sid.trim().replace(/^\[|\]$/g, '')) }, Date.now());
+    if (next === cur) return void (guessMsg = 'Type an org SID (letters and digits, like BLKSYN) and a handle.');
+    await intelSuspectsItem.setValue(next);
+    guessSid = '';
+    guessHandle = '';
+  }
+  async function dropGuess(handle: string, sid: string) {
+    await intelSuspectsItem.setValue(removeSuspect(await intelSuspectsItem.getValue(), handle, sid));
+  }
+  const playerGuesses = $derived(player?.citizen ? suspectedOrgs(suspects, player.citizen.handle) : []);
+  const orgGuesses = $derived(org?.org ? suspectedMembers(suspects, org.org.sid) : []);
+  const hiddenOrgs = $derived((player?.orgs ?? []).filter((o) => o.redacted).length);
   const tagOf = (kind: IntelEntry['kind'], id: string) => intel[intelKey(kind, id)]?.tag ?? null;
 
   /* ---- your tags ---- */
@@ -143,7 +191,13 @@
     delete cur[intelKey(e.kind, e.id)];
     await intelItem.setValue(cur);
   }
-  const doExport = (all: boolean) => downloadFile(`rsi-plus-intel-${dateStamp()}.json`, exportIntel(all ? Object.values(intel) : list, Date.now()), 'application/json');
+  /** Export all: every guess too. Export shown: the guesses about the players and orgs shown. */
+  function doExport(all: boolean) {
+    const entries = all ? Object.values(intel) : list;
+    const shown = new Set(entries.map((e) => intelKey(e.kind, e.id)));
+    const guesses = Object.values(suspects).filter((g) => all || shown.has(intelKey('player', g.handle)) || shown.has(intelKey('org', g.sid)));
+    downloadFile(`rsi-plus-intel-${dateStamp()}.json`, exportIntel(entries, Date.now(), guesses), 'application/json');
+  }
   let overwrite = $state(false);
   let importMsg = $state('');
   async function doImport(e: Event) {
@@ -151,9 +205,12 @@
     (e.currentTarget as HTMLInputElement).value = '';
     if (!file) return;
     try {
-      const r = importIntel(await intelItem.getValue(), await file.text(), { overwrite, source: file.name, now: Date.now() });
+      const text = await file.text();
+      const r = importIntel(await intelItem.getValue(), text, { overwrite, source: file.name, now: Date.now() });
       await intelItem.setValue(r.intel);
-      importMsg = `${file.name}: ${r.added} added, ${r.updated} updated, ${r.skipped} skipped${!overwrite && r.skipped ? ' (yours kept: tick Overwrite to take theirs)' : ''}.`;
+      const g = importSuspects(await intelSuspectsItem.getValue(), text, { source: file.name, now: Date.now() });
+      if (g.added) await intelSuspectsItem.setValue(g.suspects);
+      importMsg = `${file.name}: ${r.added} added, ${r.updated} updated, ${r.skipped} skipped${!overwrite && r.skipped ? ' (yours kept: tick Overwrite to take theirs)' : ''}${g.added ? `; ${g.added} suspected membership${g.added === 1 ? '' : 's'} added (their guesses, not facts)` : ''}.`;
     } catch (x) {
       importMsg = `${file.name}: ${(x as Error).message}`;
     }
@@ -176,16 +233,18 @@
         {#if busy}<span class="text-muted-foreground text-xs">Reading RSI…</span>{/if}
       </form>
       {#if err}<p class="text-destructive text-sm" role="status">{err}</p>{/if}
-      {#if cache.recent.length}
+      {#if cache.recent.length || nCached}
         <div class="flex flex-wrap items-center gap-1.5 text-xs">
-          <span class="text-muted-foreground">Recent (cached):</span>
+          {#if cache.recent.length}<span class="text-muted-foreground">Recent (cached):</span>{/if}
           {#each cache.recent.slice(0, 5) as key (key)}
             {@const k = key.startsWith('org:') ? 'org' : 'player'}
             {@const t = tagOf(k, key.slice(key.indexOf(':') + 1))}
             <Button size="xs" variant="outline" class={cn(t && TAG_TONE[t])} onclick={() => openRecent(key)}>{recentLabel(key)}</Button>
           {/each}
+          <Button size="xs" variant="ghost" class="ml-auto" disabled={busy} title="Forget every cached lookup (players, orgs, member lists, this Recent list). Your tags and suspected orgs are kept" onclick={clearCache}>Clear cache ({nCached})</Button>
         </div>
       {/if}
+      {#if cacheMsg}<p class="text-muted-foreground text-xs" role="status">{cacheMsg}</p>{/if}
     </Card.Content>
   </Card.Root>
 
@@ -204,6 +263,9 @@
             <Card.Description>
               {[c.title, c.record ? `Record ${c.record}` : '', c.enlisted ? `Enlisted ${c.enlisted}` : '', c.location, c.fluency ? `Speaks ${c.fluency}` : ''].filter(Boolean).join(' · ')}
             </Card.Description>
+            <p class="text-sm">
+              <a class={LINK_QUIET} href={spectrumPostsUrl(c.handle)} target="_blank" rel="noopener" title={`Opens Spectrum's search for every thread and reply by @${c.handle}, newest first`}>Spectrum posts by @{c.handle} ↗</a>
+            </p>
           </div>
           <div class="text-muted-foreground flex items-center gap-2 text-xs">
             Cached {ago(player.at)}
@@ -244,6 +306,30 @@
               </Table.Body>
             </Table.Root>
           {/if}
+        </div>
+        <div class="grid gap-1.5">
+          <span class="text-sm font-medium">Suspected orgs <span class="text-muted-foreground font-normal">(your guess)</span></span>
+          <p class="text-muted-foreground text-xs">
+            {hiddenOrgs ? `${hiddenOrgs} membership${hiddenOrgs === 1 ? ' is' : 's are'} hidden on RSI. ` : ''}If you think you know an org this player is in, add its SID. It is your guess, not something RSI says: it is marked with ? wherever it shows, counts only once you tag that org, and stays in this browser unless you export it.
+          </p>
+          {#if Array.isArray(playerGuesses) && playerGuesses.length}
+            <ul class="grid gap-1 text-sm">
+              {#each playerGuesses as g (g.sid)}
+                {@const gt = tagOf('org', g.sid)}
+                <li class="flex flex-wrap items-center gap-2">
+                  <button class={cn(LINK_QUIET, 'text-left')} onclick={() => lookOrg(g.sid)}>{orgName(g.sid) ?? g.name ?? g.sid}</button>
+                  <span class="text-muted-foreground text-xs">[{g.sid}]? · added {ago(g.at)}{g.source ? ` · from ${g.source}` : ''}</span>
+                  {#if gt}<Badge variant={BADGE_VARIANT[gt]}>{tagLabel(gt)}</Badge>{:else}<span class="text-muted-foreground text-xs">org not tagged: no flag</span>{/if}
+                  <Button size="xs" variant="ghost" onclick={() => dropGuess(c.handle, g.sid)}>Remove</Button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), addGuess(c.handle, guessSid))}>
+            <Input class="h-7 w-40 text-xs" placeholder="Org SID, e.g. BLKSYN" bind:value={guessSid} aria-label={`Org SID you suspect @${c.handle} is in`} />
+            <Button type="submit" size="xs" variant="outline" disabled={!guessSid.trim()}>Add suspected org</Button>
+            {#if guessMsg}<span class="text-destructive text-xs" role="status">{guessMsg}</span>{/if}
+          </form>
         </div>
       </Card.Content>
     </Card.Root>
@@ -328,6 +414,28 @@
             </div>
           {/if}
         </div>
+        <div class="grid gap-1.5">
+          <span class="text-sm font-medium">Suspected members <span class="text-muted-foreground font-normal">(your guess)</span></span>
+          <p class="text-muted-foreground text-xs">Players you think are in [{o.sid}] though RSI doesn't list them here (hidden or redacted). Your guess only; they get this org's tag with a ? on Spectrum and in Friends.</p>
+          {#if Array.isArray(orgGuesses) && orgGuesses.length}
+            <ul class="grid gap-1 text-sm">
+              {#each orgGuesses as g (g.handle)}
+                {@const gt = tagOf('player', g.handle)}
+                <li class="flex flex-wrap items-center gap-2">
+                  <button class={cn(LINK_QUIET, 'text-left')} onclick={() => lookPlayer(g.handle)}>@{g.handle}</button>
+                  <span class="text-muted-foreground text-xs">added {ago(g.at)}{g.source ? ` · from ${g.source}` : ''}</span>
+                  {#if gt}<Badge variant={BADGE_VARIANT[gt]}>{tagLabel(gt)}</Badge>{/if}
+                  <Button size="xs" variant="ghost" onclick={() => dropGuess(g.handle, o.sid)}>Remove</Button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), addGuess(guessHandle, o.sid))}>
+            <Input class="h-7 w-48 text-xs" placeholder="Handle" bind:value={guessHandle} aria-label={`Handle you suspect is in ${o.sid}`} />
+            <Button type="submit" size="xs" variant="outline" disabled={!guessHandle.trim()}>Add suspected member</Button>
+            {#if guessMsg}<span class="text-destructive text-xs" role="status">{guessMsg}</span>{/if}
+          </form>
+        </div>
       </Card.Content>
     </Card.Root>
   {/if}
@@ -382,7 +490,7 @@
         </Table.Body>
       </Table.Root>
       <div class="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" disabled={!Object.keys(intel).length} onclick={() => doExport(true)}>Export all</Button>
+        <Button size="sm" variant="outline" disabled={!Object.keys(intel).length && !Object.keys(suspects).length} onclick={() => doExport(true)}>Export all</Button>
         <Button size="sm" variant="outline" disabled={!list.length || list.length === Object.keys(intel).length} onclick={() => doExport(false)}>Export shown ({list.length})</Button>
         <label class="border-input hover:bg-accent inline-flex h-7 cursor-pointer items-center rounded-md border px-2.5 text-[0.8rem]">
           Import…

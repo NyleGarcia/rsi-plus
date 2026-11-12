@@ -393,7 +393,7 @@ function paintIntel(item: HTMLElement, nickname: string, actions: Actions) {
   info.querySelector(':scope > .sp-intel')?.remove();
   if (!t?.tag) return;
   const why = t.reasons[0];
-  const chip = el('button', `sp-ui sp-intel sp-intel-${t.tag}`, `${t.tag === 'hostile' || t.tag === 'caution' ? '⚠ ' : ''}${tagLabel(t.tag)}${why?.sid ? ` · ${why.sid}` : ''}`);
+  const chip = el('button', `sp-ui sp-intel sp-intel-${t.tag}`, `${t.tag === 'hostile' || t.tag === 'caution' ? '⚠ ' : ''}${tagLabel(t.tag)}${why?.sid ? ` · ${why.sid}${why.guess ? '?' : ''}` : ''}`);
   chip.title = `RSI+ org lookup:\n${t.reasons.map((r) => r.text).join('\n')}${t.hidden ? `\n${t.hidden} hidden org membership${t.hidden === 1 ? '' : 's'}` : ''}\nClick to look up @${nickname}`;
   chip.addEventListener('click', (e) => {
     e.stopPropagation();
