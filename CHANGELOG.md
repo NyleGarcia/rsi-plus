@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.14.0...v0.15.0) (2026-11-12)
+
+
+### Features
+
+* **hub:** resize the expanded sidebar by dragging its edge ([8f70a1b](https://github.com/NyleGarcia/rsi-plus/commit/8f70a1bc498c09a2d50786f95e7d690fbdc13b5f))
+* **intel:** clear the lookup cache from Org lookup ([669b8f4](https://github.com/NyleGarcia/rsi-plus/commit/669b8f4f9da5ff10f3149891d24b9bd7a4614fbc))
+* **intel:** link to a player's Spectrum posts from Org lookup ([3a2f935](https://github.com/NyleGarcia/rsi-plus/commit/3a2f9356e804710191a0e2581d8ed7cd100e60b9))
+* **intel:** suspected orgs for players with hidden memberships ([b89ef36](https://github.com/NyleGarcia/rsi-plus/commit/b89ef36d4fd19ecc32a10d8cc4c7a2f0400caaa5))
+
+
+### Bug Fixes
+
+* names made of &nbsp; or invisible characters show the handle ([fca39c9](https://github.com/NyleGarcia/rsi-plus/commit/fca39c997f4b6da14c4e05e38835e4d9b9f304b4))
+
 ## [0.14.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.13.0...v0.14.0) (2026-11-11)
 
 
