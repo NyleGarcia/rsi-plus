@@ -10,6 +10,31 @@
  */
 import { token } from './api';
 import { SPECTRUM_ORIGIN } from './types';
+import { sleep } from './utils';
+
+/** RSI kept answering 429 after the retries below: said in plain words wherever a store read fails. */
+export class RateLimited extends Error {
+  constructor() {
+    super('RSI is limiting requests right now. Wait a few minutes, then try again.');
+  }
+}
+/** Pause between pages / categories of a store listing, so a refresh is not one burst (the hangar loader paces the same way). */
+const PAGE_GAP = 350;
+const RETRIES = 3;
+/** How long to wait after a 429: RSI's `Retry-After` (seconds) when it sends one, else 5 s, 10 s, 15 s; never over 30 s. */
+export function retryAfterMs(retryAfter: string | null, tries: number): number {
+  const s = Number(retryAfter);
+  const ms = retryAfter && Number.isFinite(s) && s > 0 ? s * 1000 : 5000 * (tries + 1);
+  return Math.min(ms, 30_000);
+}
+/** `fetch` for RSI's store: a 429 waits and retries (up to 3 times), then throws `RateLimited`. */
+export async function rsiFetch(url: string, init: RequestInit, tries = 0): Promise<Response> {
+  const res = await fetch(url, init);
+  if (res.status !== 429) return res;
+  if (tries >= RETRIES) throw new RateLimited();
+  await sleep(retryAfterMs(res.headers.get('Retry-After'), tries));
+  return rsiFetch(url, init, tries + 1);
+}
 import { EXTRA_SHIPS } from './data/extra-ships';
 import { fmtUsd } from './currency';
 
@@ -54,7 +79,7 @@ const GQL = `${SPECTRUM_ORIGIN}/pledge-store/api/upgrade/graphql`;
 export async function gql<T>(operationName: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
   // RSI's own pages send the Rsi-Token cookie as a header too; harmless when absent (public reads work without).
   const rsi = await token().catch(() => '');
-  const res = await fetch(GQL, {
+  const res = await rsiFetch(GQL, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(rsi ? { 'X-Rsi-Token': rsi } : {}) },
@@ -436,7 +461,8 @@ export const mapListing = (r: RawListing): StorePaint => ({
 async function fetchListing(products: string[], what = 'listing'): Promise<RawListing[]> {
   const out: RawListing[] = [];
   for (let page = 1; page < 30; page++) {
-    const res = await fetch(SEARCH, {
+    if (page > 1) await sleep(PAGE_GAP);
+    const res = await rsiFetch(SEARCH, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -456,11 +482,12 @@ export async function fetchPaints(): Promise<PaintCatalog> {
   return { at: Date.now(), paints: (await fetchListing([PAINT_PRODUCT], 'paints')).map(mapListing) };
 }
 
-/** Everything the pledge store lists in the categories above (one request per 100 items per category). */
+/** Everything the pledge store lists in the categories above (one request per 100 items per category, paced `PAGE_GAP` apart). */
 export async function fetchStoreItems(): Promise<StoreListing> {
   const items: StoreItem[] = [];
   const seen = new Set<number>();
-  for (const c of STORE_CATEGORIES) {
+  for (const [i, c] of STORE_CATEGORIES.entries()) {
+    if (i) await sleep(PAGE_GAP);
     for (const r of await fetchListing(c.products, c.label.toLowerCase())) {
       const it = mapListing(r);
       if (seen.has(it.id)) continue;
