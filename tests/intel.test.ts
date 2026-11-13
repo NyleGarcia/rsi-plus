@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cleanName, decodeEntities } from '@/lib/orgs';
 import fs from 'node:fs';
-import { addSuspect, importSuspects, removeSuspect, spectrumPostsUrl, suspectedMembers, suspectedOrgs, exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
+import { addSuspect, cachedLookups, importSuspects, removeSuspect, spectrumPostsUrl, suspectedMembers, suspectedOrgs, exportIntel, filterIntel, importIntel, intelKey, parseCitizen, parseDiscord, parseLookup, parseMembers, parseOrg, removeTag, setTag, threatOf, touchRecent, NO_INTEL_CACHE, type Intel } from '@/lib/intel';
 
 const fx = (f: string) => fs.readFileSync(`tests/fixtures/${f}`, 'utf8');
 
@@ -156,6 +156,11 @@ describe('names', () => {
 });
 
 describe('lookup input and cache', () => {
+  it('counts cached lookups: players and orgs, member pages with their org', () => {
+    expect(cachedLookups(NO_INTEL_CACHE)).toBe(0);
+    const c = { ...NO_INTEL_CACHE, citizens: { a: { at: 1, citizen: null }, b: { at: 1, citizen: null } }, orgs: { X: { at: 1, org: null } }, members: { X: { at: 1, total: 0, pages: 1, list: [] }, Y: { at: 1, total: 0, pages: 1, list: [] } } };
+    expect(cachedLookups(c)).toBe(4);
+  });
   it('Spectrum search link for a player', () => {
     expect(spectrumPostsUrl('Stamp-CIG')).toBe('https://robertsspaceindustries.com/spectrum/search?member=Stamp-CIG&sort=latest&range=all&scopes=op%2Creply&page=1&visibility=nonerased');
     expect(spectrumPostsUrl('a&b=c')).toContain('member=a%26b%3Dc&');

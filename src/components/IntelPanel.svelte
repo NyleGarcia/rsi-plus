@@ -11,6 +11,7 @@
     MEMBERS_PAGE,
     RSI,
     addSuspect,
+    cachedLookups,
     exportIntel,
     filterIntel,
     importIntel,
@@ -67,6 +68,7 @@
   const parsed = $derived(parseLookup(input));
   async function lookPlayer(handle: string, force = false) {
     err = '';
+    cacheMsg = '';
     busy = true;
     try {
       const r = await bg({ type: 'intel:player', handle, force });
@@ -80,6 +82,7 @@
   }
   async function lookOrg(sid: string, force = false) {
     err = '';
+    cacheMsg = '';
     busy = true;
     try {
       const r = await bg({ type: 'intel:org', sid, force });
@@ -98,6 +101,21 @@
   function openRecent(key: string) {
     const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
     return kind === 'org' ? lookOrg(id) : lookPlayer(id);
+  }
+  /**
+   * Forget every cached lookup (citizen pages, org pages, member lists, the Recent list). Tags and suspected orgs are
+   * yours and stay; so do players' org lists, which live in the org cache shared with Friends (*Refresh* re-reads one).
+   */
+  let cacheMsg = $state('');
+  const nCached = $derived(cachedLookups(cache));
+  async function clearCache() {
+    const n = nCached;
+    await intelCacheItem.setValue({ citizens: {}, orgs: {}, members: {}, recent: [] });
+    player = null;
+    org = null;
+    members = null;
+    err = '';
+    cacheMsg = `Cleared ${n} cached lookup${n === 1 ? '' : 's'}. Your tags and suspected orgs are kept.`;
   }
   const recentLabel = (key: string) => {
     const id = key.slice(key.indexOf(':') + 1);
@@ -216,16 +234,18 @@
         {#if busy}<span class="text-muted-foreground text-xs">Reading RSI…</span>{/if}
       </form>
       {#if err}<p class="text-destructive text-sm" role="status">{err}</p>{/if}
-      {#if cache.recent.length}
+      {#if cache.recent.length || nCached}
         <div class="flex flex-wrap items-center gap-1.5 text-xs">
-          <span class="text-muted-foreground">Recent (cached):</span>
+          {#if cache.recent.length}<span class="text-muted-foreground">Recent (cached):</span>{/if}
           {#each cache.recent.slice(0, 5) as key (key)}
             {@const k = key.startsWith('org:') ? 'org' : 'player'}
             {@const t = tagOf(k, key.slice(key.indexOf(':') + 1))}
             <Button size="xs" variant="outline" class={cn(t && TAG_TONE[t])} onclick={() => openRecent(key)}>{recentLabel(key)}</Button>
           {/each}
+          <Button size="xs" variant="ghost" class="ml-auto" disabled={busy} title="Forget every cached lookup (players, orgs, member lists, this Recent list). Your tags and suspected orgs are kept" onclick={clearCache}>Clear cache ({nCached})</Button>
         </div>
       {/if}
+      {#if cacheMsg}<p class="text-muted-foreground text-xs" role="status">{cacheMsg}</p>{/if}
     </Card.Content>
   </Card.Root>
 
