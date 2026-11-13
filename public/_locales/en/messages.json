@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "RSI+",
+    "description": "Extension name. A brand name: keep it as is in every language."
+  },
+  "extDescription": {
+    "message": "RSI, better: Spectrum read tracking, mutes, watches, friends, hangar & buyback explorer, store prices, wishlist alerts, CCU planner.",
+    "description": "Store summary, 132 characters at most. Name only RSI, Star Citizen, Spectrum and RSI+'s own features (store metadata rule, store/LISTING.md)."
+  }
+}

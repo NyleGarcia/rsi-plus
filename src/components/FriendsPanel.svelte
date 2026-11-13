@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtWhen } from '@/lib/fmt';
   import { nearView } from '@/lib/near-view';
   import {
     allTags,
@@ -490,7 +491,7 @@
         <Card.Title class="flex items-center gap-2">Party mode {#if partyOn}<Badge variant="warning">ON</Badge>{/if}</Card.Title>
         <Card.Description>
           {#if partyOn}
-            Auto-accepting friend requests every minute{party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ' until you turn it off'} · accepted people are flagged
+            Auto-accepting friend requests every minute{party?.until ? ` until ${fmtWhen(party.until, { hour: '2-digit', minute: '2-digit' })}` : ' until you turn it off'} · accepted people are flagged
             <em>party</em>.
           {:else}
             Turn on before a party: every incoming friend request is accepted automatically, flagged <em>party</em> and logged here.
@@ -522,7 +523,7 @@
           <ul class="grid max-h-64 overflow-auto">
             {#each partyLog.slice(0, 50) as l, i (`${l.requestId}:${l.at}:${i}`)}
               <li class="flex flex-wrap items-center gap-2 border-b py-1.5 last:border-0">
-                <span class="text-muted-foreground text-[11px]">{new Date(l.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                <span class="text-muted-foreground text-[11px]">{fmtWhen(l.at, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                 {#if l.nickname}<a class={cn(link, 'font-semibold')} href={memberUrl(l.nickname)} target="_blank" rel="noopener">{l.displayname}</a>
                   <span class="text-muted-foreground text-[11px]">@{l.nickname}</span>{:else}{l.displayname}{/if}
                 {#if l.ok}<Badge variant="success">accepted</Badge>{:else}<HintBadge variant="destructive" class="max-w-full" hint={l.error}

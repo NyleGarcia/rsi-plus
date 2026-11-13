@@ -27,6 +27,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { cn } from '@/lib/utils';
+  import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
   import { fmtDateTime } from '@/lib/dates';
   import { LINK, LINK_QUIET } from '@/lib/ui';
   import type { Concierge } from '@/lib/concierge';
@@ -127,8 +128,11 @@
     const hash = `#browse${p.size ? `?${p}` : ''}`;
     if (location.hash.startsWith('#browse') && location.hash !== hash) history.replaceState(null, '', hash);
   });
-  async function refresh() {
+  /** `manual` = the Refresh button: once a minute (a burst of store reads gets the session rate-limited by RSI). */
+  async function refresh(manual = false) {
     if (loading) return;
+    const wait = manual ? cooldownLeft('browse') : 0;
+    if (wait) return void (error = cooldownMsg(wait));
     loading = true;
     error = '';
     try {
@@ -137,6 +141,7 @@
       items = v;
       await saveStoreCopy('listing', listingEntries(v), v.at);
     } catch (e) {
+      cooldownReset('browse');
       error = (e as Error).message;
     } finally {
       loading = false;
@@ -369,7 +374,7 @@
       </Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
         <TipButton variant="outline" href="#paint-rebuy" tip="Melt paints you own and buy them back together with RSI's multi-paint discount">Paint rebuy value →</TipButton>
-        <Button variant="outline" disabled={loading} onclick={refresh}>{loading ? 'Loading…' : 'Refresh'}</Button>
+        <Button variant="outline" disabled={loading} onclick={() => refresh(true)}>{loading ? 'Loading…' : 'Refresh'}</Button>
         <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />
       </Card.Action>
     </Card.Header>

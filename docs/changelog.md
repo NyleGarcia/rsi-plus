@@ -6,6 +6,8 @@ updated: 2026-11-12
 # Changelog
 
 ## Unreleased
+- **Store refreshes no longer trip RSI's rate limit.** Refreshing the store lists sent every request at once, and RSI could answer *429 Too Many Requests* and block its own pages for a few minutes. Requests are now spaced out, RSI+ waits and retries when RSI asks it to slow down, and says so in plain words if RSI still refuses. *Refresh* (Browse), *Refresh prices* (Ship catalog) and *Refresh store paints* each work once a minute.
+- **Dates and counts follow your browser's language everywhere.** A few places printed them the US way whatever the browser was set to (the Wallet funding chart's months, some counts). Prices keep one look in every language, `$1,234.50`, now on The Impound too.
 
 ## 0.15.0 — 2026-11-12
 - **Org lookup: clear the cache.** *Clear cache (n)* next to *Recent* forgets every saved lookup (players, orgs, member lists and the Recent list), so the next lookup reads RSI again. Your tags and suspected orgs are kept.

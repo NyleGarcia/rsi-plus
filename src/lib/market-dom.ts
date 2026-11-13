@@ -4,6 +4,7 @@
  * bundle, so the module state below is per site: `configureMarket` sets it once.
  */
 import { IMP_SORTS, KIND_LABEL, NO_IMP_FILTER, filterRows, paidLabel, sortRows, type ImpFilter, type ImpRow, type ImpSort, type SkuKind } from './impound';
+import { fmtGrouped } from '@/lib/fmt';
 
 export interface MarketView {
   f: ImpFilter;
@@ -32,7 +33,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, t
   if (n instanceof HTMLButtonElement) n.type = 'button';
   return n;
 }
-export const money = (c: number) => `$${(c / 100).toLocaleString(undefined, { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
+export const money = (c: number) => `$${fmtGrouped(c / 100, { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 export const signed = (c: number) => `${c < 0 ? '−' : '+'}${money(Math.abs(c))}`;
 export const pct = (p: number) => `${p < 0 ? '−' : '+'}${Math.round(Math.abs(p) * 100)}%`;
 /** Markup tone: below RSI (good), up to 25 % over, more. */

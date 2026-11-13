@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtNum } from '@/lib/fmt';
   import { nearView } from '@/lib/near-view';
   import { loadBuyback, loadBuybackDetails } from '@/lib/account';
   import { addStandalone } from '@/lib/cart';
@@ -104,7 +105,7 @@
       const blocks = [...doc.querySelectorAll('article.pledge, .list-items > li, .pledge')].filter((b) => !b.parentElement?.closest('article.pledge, .pledge')).slice(0, 2);
       const out = blocks.length ? blocks.map((b) => b.outerHTML).join('\n\n<!-- next -->\n\n') : (doc.body?.innerHTML ?? html).slice(0, 20000);
       await navigator.clipboard.writeText(out);
-      debugMsg = `copied ${out.length.toLocaleString()} chars (${blocks.length} entries) — paste them to whoever fixes the parser`;
+      debugMsg = `copied ${fmtNum(out.length)} chars (${blocks.length} entries) — paste them to whoever fixes the parser`;
     } catch (e) {
       debugMsg = `could not copy: ${(e as Error).message}`;
     }

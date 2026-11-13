@@ -3,6 +3,7 @@
    * Hub → Org lookup: look up a player or org on RSI's public pages (cached 24 h; *Refresh* re-reads), tag players
    * and orgs, browse an org's members with your tags on them, and manage / export / import your tags (lib/intel.ts).
    */
+  import { fmtNum } from '@/lib/fmt';
   import { intelCacheItem, intelItem, intelSuspectsItem } from '@/lib/settings';
   import { bg } from '@/lib/messages';
   import {
@@ -297,7 +298,7 @@
                     {:else}
                       <Table.Cell class="whitespace-normal">
                         <button class={cn(LINK_QUIET, 'text-left')} onclick={() => lookOrg(o.sid)}>{o.name}</button>
-                        <span class="text-muted-foreground block text-xs">[{o.sid}] · {o.main ? 'main' : 'affiliate'}{o.rank ? ` · ${o.rank}` : ''}{o.members != null ? ` · ${o.members.toLocaleString()} members` : ''}</span>
+                        <span class="text-muted-foreground block text-xs">[{o.sid}] · {o.main ? 'main' : 'affiliate'}{o.rank ? ` · ${o.rank}` : ''}{o.members != null ? ` · ${fmtNum(o.members)} members` : ''}</span>
                       </Table.Cell>
                       <Table.Cell class="w-0"><IntelTagEditor kind="org" id={o.sid} name={o.name} compact /></Table.Cell>
                     {/if}
@@ -349,7 +350,7 @@
               {#if t}<Badge variant={BADGE_VARIANT[t]}>{tagLabel(t)}</Badge>{/if}
             </Card.Title>
             <Card.Description>
-              {[o.members != null ? `${o.members.toLocaleString()} members` : '', o.model, o.commitment, ...o.tags, o.focus.primary ? `Focus: ${[o.focus.primary, o.focus.secondary].filter(Boolean).join(' / ')}` : ''].filter(Boolean).join(' · ')}
+              {[o.members != null ? `${fmtNum(o.members)} members` : '', o.model, o.commitment, ...o.tags, o.focus.primary ? `Focus: ${[o.focus.primary, o.focus.secondary].filter(Boolean).join(' / ')}` : ''].filter(Boolean).join(' · ')}
             </Card.Description>
             {#if Array.isArray(o.discord) && o.discord.length}
               <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -374,7 +375,7 @@
         <div class="grid gap-2">
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-medium">Members</span>
-            {#if members}<span class="text-muted-foreground text-xs">{members.list.length} of {members.total.toLocaleString()} read · {members.list.filter((m) => m.visibility !== 'V').length} hidden / redacted</span>{/if}
+            {#if members}<span class="text-muted-foreground text-xs">{members.list.length} of {fmtNum(members.total)} read · {members.list.filter((m) => m.visibility !== 'V').length} hidden / redacted</span>{/if}
             <Input class="ml-auto h-7 w-56 text-xs" placeholder="Filter loaded members" bind:value={memberQ} aria-label="Filter members" />
           </div>
           {#if members?.list.length}

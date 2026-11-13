@@ -8,6 +8,7 @@
   import { useDeepLink } from '@/lib/deep-link.svelte';
   import { catalogItem, gameShipsItem, hangarItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { isLimitedSku, isLimitedTime, isWarbondSku, lastSale, lowestOffer, matchShip, usd, type Catalog, type CatalogShip, type SaleHistory, type StoreItem } from '@/lib/store';
+  import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
   import { applyFacets, SIZE_OPTIONS, STAGE_OPTIONS, stageOf, type Facet, type FacetValues, type RangeFacet } from '@/lib/facets';
   import FacetBar from './FacetBar.svelte';
   import SkeletonSwap from './SkeletonSwap.svelte';
@@ -109,11 +110,14 @@
   });
 
   async function refresh(fresh: boolean) {
+    const wait = fresh ? cooldownLeft('catalog') : 0;
+    if (wait) return void (error = cooldownMsg(wait));
     loading = true;
     error = '';
     try {
       cat = await bg({ type: 'catalog:get', fresh });
     } catch (e) {
+      if (fresh) cooldownReset('catalog');
       error = (e as Error).message;
     } finally {
       loading = false;
