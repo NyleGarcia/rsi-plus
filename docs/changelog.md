@@ -6,6 +6,7 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+- **Card headers no longer squeeze their text.** With several buttons in a card's header (Store changes: cart, *Dismiss owned*, *Dismiss all*, the filter), the title and description were pushed into a column a few characters wide. The text now keeps a readable width and the buttons wrap beside it.
 
 ## 0.17.0 — 2026-11-14
 - **My chains: apply on RSI, with the right pledge pointed out.** In a chain's apply guide, *Apply on RSI* opens RSI's own *Apply upgrade* window for the next CCU and outlines the pledge your chain means; a note shows only if you pick another one, or if RSI does not offer that pledge. You pick and confirm it yourself. After you apply an upgrade on RSI (from RSI+ or by hand), RSI+ updates its saved hangar by itself on the reloaded page, so the chain shows the step as applied without a manual reload. It does not read the whole hangar for that: RSI's hangar log says which upgrade went onto which pledge, and only that pledge is read again. *Check with RSI* asks, without changing anything, which of your pledges that CCU can go onto right now. If RSI no longer has the CCU, RSI+ looks in the hangar log instead of asking you to reload: applied → the step is recorded and the chain moves on; melted or gifted → the chain is planned without it.
