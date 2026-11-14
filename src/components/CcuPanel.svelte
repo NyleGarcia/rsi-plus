@@ -3,7 +3,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { applyAlternative, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
@@ -16,6 +16,7 @@
   import ShipSelect from './ShipSelect.svelte';
   import Stat from './Stat.svelte';
   import CcuFleet from './CcuFleet.svelte';
+  import CcuAlternatives from './CcuAlternatives.svelte';
   import StatGrid from './StatGrid.svelte';
   import Section from './Section.svelte';
   import Chip from './Chip.svelte';
@@ -725,6 +726,7 @@
               </li>
             {/each}
           </ol>
+          <CcuAlternatives {ships} owned={ccus.owned} {startId} targetId={toId} opt={used} best={result} onuse={(a) => Object.assign(opt, applyAlternative(opt, a))} />
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
               <TipButton variant="outline" size="sm" disabled={verifying || cart.busy} onclick={verifyChain} tip="Asks RSI, step by step, whether it sells each CCU from that ship and at what price. Read-only.">

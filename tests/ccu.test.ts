@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, planAlternatives, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -110,6 +110,35 @@ describe('ccu planner', () => {
     const p = plan([...ships, U], loop, 1, 4, o({ steps: 'more' }))!;
     expect(p.total).toBe(20500);
     expect(new Set(p.steps.map((s) => s.toId)).size).toBe(p.steps.length);
+  });
+
+  it('planAlternatives: other chains, each with the step it takes out, best first', () => {
+    // Best Aurora → Connie: Cutlass warbond (sku 10000) → Connie standard (sku 24000) = 20500.
+    const alts = planAlternatives(ships, [], 1, 4, o({}));
+    // Without the warbond: the direct standard (21500). Without the Connie CCU: no chain at all.
+    expect(alts).toEqual([{ plan: expect.objectContaining({ total: 21500 }), skip: [10000], exclude: [] }]);
+    expect(alts[0]!.plan.steps.map((s) => s.toId)).toEqual([4]);
+    // An owned CCU taken out goes to exclude; results are ranked and differ from the best and from each other.
+    const owned = [own(1, 3, 99, { value: 7500 })];
+    const best = plan(ships, owned, 1, 4)!;
+    const a2 = planAlternatives(ships, owned, 1, 4, o({}), 5);
+    expect(a2[0]).toMatchObject({ skip: [], exclude: [99], plan: { total: 20500 } });
+    const keys = [best, ...a2.map((a) => a.plan)].map((p) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? s.ref}`).join('|'));
+    expect(new Set(keys).size).toBe(keys.length);
+    for (let i = 1; i < a2.length; i++) expect(a2[i]!.plan.total).toBeGreaterThanOrEqual(a2[i - 1]!.plan.total);
+    // Applying what an alternative removed gives that alternative.
+    expect(plan(ships, owned, 1, 4, o({ exclude: a2[0]!.exclude, skip: a2[0]!.skip }))).toEqual(a2[0]!.plan);
+    expect(planAlternatives(ships, owned, 1, 4, o({}), 1)).toHaveLength(1);
+    expect(planAlternatives(ships, [], 1, 2, o({ skip: [5500] }))).toEqual([]);
+    // applyAlternative adds the removals once and un-forces an excluded CCU.
+    expect(applyAlternative({ skip: [1], exclude: [99], include: [99, 98] }, { skip: [1, 2], exclude: [99] })).toEqual({ skip: [1, 2], exclude: [99], include: [98] });
+  });
+
+  it('planAlternatives: future steps are never taken out', () => {
+    const E = ship(5, 'Not on sale', 30000);
+    const alts = planAlternatives([...ships, E], [], 1, 5, o({ planAhead: true }));
+    for (const a of alts) expect(a.skip.length + a.exclude.length).toBe(1);
+    expect(alts.every((a) => a.plan.steps.at(-1)!.kind === 'future')).toBe(true);
   });
 
   it('objective cash: avoids warbond new money when credit can pay a standard chain', () => {

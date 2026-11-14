@@ -379,6 +379,59 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   return { steps, total, cash, paid, msrpDiff, savings: msrpDiff - total, waits: future.length, later: future.reduce((n, s) => n + s.cost, 0) };
 }
 
+/** A chain other than the best one, and what was taken out of the options to get it (to apply it in the planner). */
+export interface Alternative {
+  plan: Plan;
+  /** Store SKUs (CCU / standalone) to add to `PlanOptions.skip`. */
+  skip: number[];
+  /** Owned / buyback refs to add to `PlanOptions.exclude`. */
+  exclude: number[];
+}
+
+/** Identity of a chain: its steps' targets, kinds and SKU / ref. */
+const chainKey = (p: Plan) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? s.ref ?? ''}`).join('|');
+
+/**
+ * Up to `n` chains that differ from the best one and from each other, best first by the planner's order. Each one is
+ * the best chain once one step of the best chain is taken out (a store SKU skipped, an owned / buyback CCU excluded);
+ * `future` steps can't be taken out. Pure, like `plan`.
+ */
+export function planAlternatives(ships: CatalogShip[], owned: OwnedCcu[], startId: number, targetId: number, opt: PlanOptions, n = 3): Alternative[] {
+  const best = plan(ships, owned, startId, targetId, opt);
+  if (!best || n <= 0) return [];
+  const seen = new Set([chainKey(best)]);
+  const out: Alternative[] = [];
+  for (const s of best.steps) {
+    let alt: Alternative;
+    if ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) {
+      const ref = s.ref;
+      if (opt.exclude.includes(ref)) continue;
+      const p = plan(ships, owned, startId, targetId, { ...opt, include: opt.include.filter((r) => r !== ref), exclude: [...opt.exclude, ref] });
+      if (!p) continue;
+      alt = { plan: p, skip: [], exclude: [ref] };
+    } else if (s.kind !== 'future' && s.skuId != null) {
+      if ((opt.skip ?? []).includes(s.skuId)) continue;
+      const p = plan(ships, owned, startId, targetId, { ...opt, skip: [...(opt.skip ?? []), s.skuId] });
+      if (!p) continue;
+      alt = { plan: p, skip: [s.skuId], exclude: [] };
+    } else continue;
+    const k = chainKey(alt.plan);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(alt);
+  }
+  return out.sort((a, b) => (planBefore(opt, a.plan, b.plan) ? -1 : planBefore(opt, b.plan, a.plan) ? 1 : 0)).slice(0, n);
+}
+
+/** The planner options with an alternative's removals added (an excluded CCU is no longer forced in). */
+export function applyAlternative(opt: Pick<PlanOptions, 'skip' | 'exclude' | 'include'>, alt: Pick<Alternative, 'skip' | 'exclude'>): Pick<PlanOptions, 'skip' | 'exclude' | 'include'> {
+  return {
+    skip: [...new Set([...(opt.skip ?? []), ...alt.skip])],
+    exclude: [...new Set([...opt.exclude, ...alt.exclude])],
+    include: opt.include.filter((r) => !alt.exclude.includes(r)),
+  };
+}
+
 export interface SavedChain {
   id: string;
   name: string;

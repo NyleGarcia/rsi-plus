@@ -6,6 +6,7 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+- **CCU planner: other routes.** Under the chain, *Show other routes* lists up to three other chains to the same target, each one without one step of the chain shown: the route, its total and new money, and how much more it costs. *Use this route* plans it, and the step it leaves out shows under *Ignored*, where you can bring it back.
 - **CCU planner: prefer more steps.** When two chains cost the same, the planner shows the one with fewer steps. The new *Prefer more steps* switch under *Options* shows the one with more steps instead: each extra step is a ship you can stop at and fly. The price of the chain never changes.
 - **CCU planner: see your RSI cart, and add several chains at once.** A new *RSI cart* block lists what is in your cart (lines, quantity, RSI's discounts, total) with *Check cart* to read it again. In *Saved chains*, tick the chains you want and *Add n chains to RSI cart* puts in the store steps of all of them, as they price today. The cart is read first, so lines it already holds are skipped (the single chain's *Add store steps* does the same). Buy-backs are left out: each checks out alone.
 - **CCU planner: CCUs RSI takes once per cart.** RSI refuses a second copy of some CCUs in one cart. That line is now marked *One per cart* with what to do (check out, then add it again) and the rest of the chain or batch still goes in, where the add used to stop at the error.
