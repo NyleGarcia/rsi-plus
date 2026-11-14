@@ -3,7 +3,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { applyAlternative, DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { applyAlternative, DEFAULT_PLAN_OPTIONS, farthestReachable, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
@@ -169,6 +169,8 @@
     return { result: a, ahead: !!a };
   });
   const result = $derived(planned.result);
+  /** No chain: the priciest hull below the target that today's sales reach (else planning ahead). */
+  const reach = $derived(!result && startId != null && toId != null ? (farthestReachable(graphNow, startId, toId) ?? farthestReachable(graphAhead, startId, toId)) : null);
   /** The options the shown chain was planned with (saved with it). */
   const used = $derived<PlanOptions>(planned.ahead ? { ...effective, planAhead: true } : effective);
   /** Running spend after each step. */
@@ -642,6 +644,9 @@
               No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
               it's not pricier than the start.
               Ships not on sale were tried too (Plan ahead) — pick a cheaper source or allow buyback / warbond CCUs.
+              {#if reach != null}
+                <span class="mt-1.5 flex flex-wrap items-center gap-2">The chain can reach {name(reach)} ({usd(byId.get(reach)?.msrp ?? 0)}). <Button variant="outline" size="xs" onclick={() => (toId = reach)}>Plan to {name(reach)} instead</Button></span>
+              {/if}
             </Alert.Description>
           </Alert.Root>
         {:else}

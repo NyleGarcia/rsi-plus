@@ -379,6 +379,28 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   return { steps, total, cash, paid, msrpDiff, savings: msrpDiff - total, waits: future.length, later: future.reduce((n, s) => n + s.cost, 0) };
 }
 
+/**
+ * When no chain gets to `targetId`: the hull with the highest MSRP below the target's that a chain from `startId` does
+ * reach on graph `g` (same MSRP: the lower id). Null when nothing below the target is reachable, or the target is unknown.
+ */
+export function farthestReachable(g: PlanGraph, startId: number, targetId: number): number | null {
+  const target = g.byId.get(targetId);
+  if (!target) return null;
+  const seen = new Set<number>([startId]);
+  const todo = [startId];
+  let best: CatalogShip | null = null;
+  while (todo.length) {
+    for (const e of g.edges(todo.pop()!)) {
+      if (seen.has(e.toId)) continue;
+      seen.add(e.toId);
+      todo.push(e.toId);
+      const s = g.byId.get(e.toId);
+      if (s && s.id !== targetId && s.msrp < target.msrp && (!best || s.msrp > best.msrp || (s.msrp === best.msrp && s.id < best.id))) best = s;
+    }
+  }
+  return best?.id ?? null;
+}
+
 /** A chain other than the best one, and what was taken out of the options to get it (to apply it in the planner). */
 export interface Alternative {
   plan: Plan;

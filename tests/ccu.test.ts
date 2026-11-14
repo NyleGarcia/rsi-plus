@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, planAlternatives, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -132,6 +132,23 @@ describe('ccu planner', () => {
     expect(planAlternatives(ships, [], 1, 2, o({ skip: [5500] }))).toEqual([]);
     // applyAlternative adds the removals once and un-forces an excluded CCU.
     expect(applyAlternative({ skip: [1], exclude: [99], include: [99, 98] }, { skip: [1, 2], exclude: [99] })).toEqual({ skip: [1, 2], exclude: [99], include: [98] });
+  });
+
+  it('farthestReachable: the priciest hull below the target a chain gets to', () => {
+    const E = ship(5, 'Not on sale', 30000);
+    const all = [...ships, E];
+    expect(plan(all, [], 1, 5)).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({})), 1, 5)).toBe(4);
+    // The Connie CCU ignored: the chain stops at the Cutlass.
+    expect(farthestReachable(planGraph(all, [], o({ skip: [24000] })), 1, 5)).toBe(3);
+    // An owned CCU counts; the start itself does not; nothing below a cheap target; unknown target.
+    expect(farthestReachable(planGraph(all, [own(1, 4, 7)], o({ skip: [24000] })), 1, 5)).toBe(4);
+    expect(farthestReachable(planGraph(all, [], o({})), 4, 5)).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({})), 3, 2)).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({})), 1, 999)).toBeNull();
+    // Store start: from the standalone ships on sale.
+    const A2 = { ...A, standalone: [sku('Aurora MR - Standalone', 2500)] };
+    expect(farthestReachable(planGraph([A2, B, C, E], [], o({})), STORE_START, 5)).toBe(3);
   });
 
   it('planAlternatives: future steps are never taken out', () => {
