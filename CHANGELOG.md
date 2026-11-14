@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.16.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.15.0...v0.16.0) (2026-11-14)
+
+
+### Features
+
+* **ccu:** cart view, add several chains, one-per-cart handling, per-step saving and ignore, sortable Your CCUs ([fe457b3](https://github.com/NyleGarcia/rsi-plus/commit/fe457b3279a794f0c3edd5eaa2a92bf539ba9c60))
+* **ccu:** My chains — saved chains and the fleet plan become one list ([0fc6992](https://github.com/NyleGarcia/rsi-plus/commit/0fc6992cabe022aa9245110affd23bf04a3f72ed))
+* **ccu:** prefer fewer or more steps when chains cost the same ([96fcfdb](https://github.com/NyleGarcia/rsi-plus/commit/96fcfdbcdfafaa86041b57c5cf199d753ffbd506))
+* **ccu:** say how far the chain gets when no chain reaches the target ([9ac825b](https://github.com/NyleGarcia/rsi-plus/commit/9ac825b8bab5f0e871f8ac1bf54ed50d8e5759e3))
+* **ccu:** share a chain as a link with its route and options ([850c5db](https://github.com/NyleGarcia/rsi-plus/commit/850c5db42bda2a71de9a007a15edc8ef7cab3e4b))
+* **ccu:** show other routes to the same target and plan one in a click ([70090ac](https://github.com/NyleGarcia/rsi-plus/commit/70090accae7c1415df28e918d5b7166f56f3f6a3))
+* **ccu:** waits must be worth it, skip a waiting step, routes with or without owned CCUs, quantities in Your CCUs ([8dd14b5](https://github.com/NyleGarcia/rsi-plus/commit/8dd14b5104e7cac2f3b4108b0713406e7ac31eee))
+* **hub:** the Feed gets its own sidebar group and pages list their parts ([eb1e59b](https://github.com/NyleGarcia/rsi-plus/commit/eb1e59bbe023e20663d579c155f40da0fde9332c))
+* **store:** price history with a shipped archive; planner prices waiting steps at the last sale price; Pledges show the saved chain a CCU belongs to ([e07546e](https://github.com/NyleGarcia/rsi-plus/commit/e07546ecb3157aedf361d65678e4ce21a8868808))
+
+
+### Bug Fixes
+
+* **ccu:** dedupe alternatives by visible route, honest reach hint, full share links replace stops ([db90295](https://github.com/NyleGarcia/rsi-plus/commit/db90295ed1504434e18a86877ef69fbf92348ee6))
+* **ccu:** saved vs MSRP counts owned CCUs, real buy-back prices, already-spent column, chain import/export as text ([22ce371](https://github.com/NyleGarcia/rsi-plus/commit/22ce37134c918f511b6bf23c4eb8fce5a66ae4a5))
+* **store:** dismiss X stays top-right on hover; add Dismiss owned to Store changes ([488a6c6](https://github.com/NyleGarcia/rsi-plus/commit/488a6c6100f5a760c0d8eefe69c6f0aa8cdcd35c))
+* **store:** pace store reads, retry on 429, one manual refresh a minute ([025e81d](https://github.com/NyleGarcia/rsi-plus/commit/025e81d03f66bee7edcc20c8b9ffbdd6b5751980))
+
 ## [0.15.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.14.0...v0.15.0) (2026-11-12)
 
 
