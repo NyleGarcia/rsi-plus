@@ -197,7 +197,8 @@
       {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly) and when you refresh Browse. Click a name to see it in RSI+, <ExternalLink class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">open on RSI</span> for the RSI page, <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">cart</span> adds it to your RSI cart (CCUs open the planner); <X class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">dismiss</span> dismisses.
     </Card.Description>
     {#if log.length}
-      <Card.Action class="flex flex-wrap items-center gap-2">
+      <!-- Under the text, not beside it: four controls next to a long description left both cramped. -->
+      <div class="flex flex-wrap items-center gap-2 pt-2">
         <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />
         {#if ownedShown}
           <TipButton variant="outline" size="default" onclick={dropOwned} tip="Dismiss what is already in your hangar (the green tiles), in the changes shown">Dismiss owned · {ownedShown}</TipButton>
@@ -212,7 +213,7 @@
           bind:value={show}
           ariaLabel="Show changes"
         />
-      </Card.Action>
+      </div>
     {/if}
   </Card.Header>
   <Card.Content>
