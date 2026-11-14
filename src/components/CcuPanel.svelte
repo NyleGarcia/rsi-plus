@@ -286,14 +286,32 @@
   // ---- ignore a step: the planner routes around that CCU (owned / buyback: its ref; store: that SKU) ----
   // a waiting step can be skipped too (the chain then never waits for that hull) — except the target itself
   const canIgnore = (s: Step) => ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) || (s.kind === 'future' && s.toId !== toId) || (s.kind !== 'future' && s.kind !== 'owned' && s.kind !== 'buyback' && s.skuId != null);
+  /** What was ignored from the chain, newest last, for *Undo* (the step as it read when ignored). */
+  let ignoredLog = $state<{ kind: 'exclude' | 'noWait' | 'skip'; id: number; label: string; forced: boolean }[]>([]);
   function ignoreStep(s: Step) {
+    const label = `${s.fromId === STORE_START ? 'Store' : name(s.fromId)} → ${name(s.toId)}`;
     if ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) {
       const ref = s.ref;
+      const forced = opt.include.includes(ref);
       opt.include = opt.include.filter((r) => r !== ref);
-      if (!opt.exclude.includes(ref)) opt.exclude = [...opt.exclude, ref];
+      if (!opt.exclude.includes(ref)) (opt.exclude = [...opt.exclude, ref]), (ignoredLog = [...ignoredLog, { kind: 'exclude', id: ref, label, forced }]);
     } else if (s.kind === 'future') {
-      if (!(opt.noWait ?? []).includes(s.toId)) opt.noWait = [...(opt.noWait ?? []), s.toId];
-    } else if (s.skuId != null && !(opt.skip ?? []).includes(s.skuId)) opt.skip = [...(opt.skip ?? []), s.skuId];
+      if (!(opt.noWait ?? []).includes(s.toId)) (opt.noWait = [...(opt.noWait ?? []), s.toId]), (ignoredLog = [...ignoredLog, { kind: 'noWait', id: s.toId, label, forced: false }]);
+    } else if (s.skuId != null && !(opt.skip ?? []).includes(s.skuId)) (opt.skip = [...(opt.skip ?? []), s.skuId]), (ignoredLog = [...ignoredLog, { kind: 'skip', id: s.skuId, label, forced: false }]);
+  }
+  /** Entries of the log that are still ignored (a chip may have brought one back already). */
+  const undoable = $derived(ignoredLog.filter((x) => (x.kind === 'exclude' ? opt.exclude.includes(x.id) : x.kind === 'noWait' ? (opt.noWait ?? []).includes(x.id) : (opt.skip ?? []).includes(x.id))));
+  function undoAll() {
+    for (let n = undoable.length; n > 0; n--) undoIgnore();
+  }
+  /** Bring back the step ignored last: the chain is planned with it again. */
+  function undoIgnore() {
+    const last = undoable.at(-1);
+    if (!last) return;
+    if (last.kind === 'exclude') (opt.exclude = opt.exclude.filter((r) => r !== last.id)), last.forced && (opt.include = [...opt.include, last.id]);
+    else if (last.kind === 'noWait') opt.noWait = (opt.noWait ?? []).filter((h) => h !== last.id);
+    else opt.skip = (opt.skip ?? []).filter((k) => k !== last.id);
+    ignoredLog = ignoredLog.filter((x) => x !== last);
   }
   /** Name of a store SKU ("600i Touring · Warbond Edition") for the ignored chips. */
   const skuLabel = $derived.by(() => {
@@ -695,6 +713,14 @@
         </fieldset>
       </div>
 
+      {#if undoable.length}
+        <div class="border-border bg-muted/30 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-1.5 text-xs" role="status">
+          <span>Ignored <strong>{undoable.at(-1)!.label}</strong>{undoable.length > 1 ? ` and ${undoable.length - 1} more` : ''}: the chain is planned without {undoable.length > 1 ? 'them' : 'it'}.</span>
+          <Button variant="outline" size="xs" onclick={undoIgnore}>Undo</Button>
+          {#if undoable.length > 1}<Button variant="ghost" size="xs" onclick={undoAll}>Undo all</Button>{/if}
+          <span class="text-muted-foreground">Everything ignored is listed under Options.</span>
+        </div>
+      {/if}
       {#if startId != null && toId != null}
         {#if !result}
           <Alert.Root variant="destructive">
@@ -783,7 +809,7 @@
                         />
                       {/if}
                       {#if canIgnore(s)}
-                        <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" onclick={() => ignoreStep(s)} tip={s.kind === 'future' ? 'Skip this step: plan the chain without waiting for this hull (undo under Options)' : 'Ignore this step: plan the chain without this CCU (undo under Options)'} aria-label={`Ignore ${name(s.fromId)} → ${name(s.toId)}`}><Ban class="size-3.5" /></TipButton>
+                        <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" onclick={() => ignoreStep(s)} tip={s.kind === 'future' ? 'Skip this step: plan the chain without waiting for this hull (Undo appears above the chain)' : 'Ignore this step: plan the chain without this CCU (Undo appears above the chain)'} aria-label={`Ignore ${name(s.fromId)} → ${name(s.toId)}`}><Ban class="size-3.5" /></TipButton>
                       {/if}
                       {#if link(s)}
                         <Button variant="ghost" size="xs" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' || s.kind === 'future' ? 'Store' : 'Upgrades'} <ExternalLink /></Button>
@@ -852,6 +878,7 @@
         keptByLabel={keepIds.size}
         lti={ltiHulls}
         owned={ccus.owned}
+        pledges={hangar?.pledges ?? []}
         {sales}
         {chains}
         {persist}
