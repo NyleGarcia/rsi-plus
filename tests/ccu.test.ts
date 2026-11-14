@@ -151,6 +151,35 @@ describe('ccu planner', () => {
     expect(farthestReachable(planGraph([A2, B, C, E], [], o({})), STORE_START, 5)).toBe(3);
   });
 
+  it('planAlternatives: two copies of one CCU are one route, and taking it out takes out both', () => {
+    const owned = [own(1, 3, 71), own(1, 3, 72)];
+    expect(plan(ships, owned, 1, 4)!.total).toBe(13000);
+    const alts = planAlternatives(ships, owned, 1, 4, o({}), 5);
+    expect(alts.length).toBeGreaterThan(0);
+    expect(alts[0]!.exclude.sort()).toEqual([71, 72]);
+    for (const a of alts) expect(a.plan.steps.some((s) => s.kind === 'owned' && s.fromId === 1 && s.toId === 3)).toBe(false);
+    expect(alts.every((a) => a.plan.total > 13000)).toBe(true);
+    // A copy another chain already reserved stays excluded and isn't listed again.
+    expect(planAlternatives(ships, owned, 1, 4, o({ exclude: [72] }))[0]!.exclude).toEqual([71]);
+  });
+
+  it('planAlternatives with more steps: the best chain minus a hop is not another route', () => {
+    const best = plan(ships, [], 1, 4, o({ warbond: false, steps: 'more' }))!;
+    expect(best.steps.map((s) => s.toId)).toEqual([2, 3, 4]);
+    const alts = planAlternatives(ships, [], 1, 4, o({ warbond: false, steps: 'more' }));
+    const hulls = new Set(best.steps.map((s) => s.toId));
+    for (const a of alts) expect(a.plan.steps.length >= best.steps.length || a.plan.steps.some((s) => !hulls.has(s.toId))).toBe(true);
+  });
+
+  it('farthestReachable: null when the graph reaches the target (a stop / forced CCU is the blocker)', () => {
+    const E = ship(5, 'Pricey stop', 30000, [sku('Standard Edition', 30000)]);
+    const all = [...ships, E];
+    expect(plan(all, [], 1, 4, o({ via: [5] }))).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({ via: [5] })), 1, 4)).toBeNull();
+    expect(plan(all, [], 1, 4, o({ include: [80] }))).not.toBeNull(); // an unknown forced ref is dropped
+    expect(farthestReachable(planGraph(all, [], o({})), 1, 4)).toBeNull();
+  });
+
   it('planAlternatives: future steps are never taken out', () => {
     const E = ship(5, 'Not on sale', 30000);
     const alts = planAlternatives([...ships, E], [], 1, 5, o({ planAhead: true }));

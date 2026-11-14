@@ -52,10 +52,18 @@ describe('linkToPlanner', () => {
       mode: 'hangar',
       fromId: 1,
       toId: 4,
-      opt: { via: [2], objective: 'longterm', steps: 'more', buyback: true },
+      opt: { via: [2], objective: 'longterm', steps: 'more', buyback: true, include: [], skip: [] },
     });
     expect(linkToPlanner(decodeCcuLink('#ccu?from=2&to=77')!, has, owns)).toEqual({ mode: 'any', fromId: 2, opt: {} });
     expect(linkToPlanner(decodeCcuLink('#ccu?from=store&to=3')!, has, owns)).toEqual({ mode: 'store', fromId: null, toId: 3, opt: {} });
     expect(linkToPlanner(decodeCcuLink('#ccu?from=55')!, has, owns)).toEqual({ opt: {} });
+  });
+  it('a full share link with no stops clears the planner\'s stops, forced CCUs and ignored SKUs', () => {
+    const hash = encodeCcuLink({ from: 1, to: 4, via: [], opt: { ...DEFAULT_PLAN_OPTIONS } });
+    expect(hash).not.toContain('via=');
+    expect(linkToPlanner(decodeCcuLink(hash)!, has, owns).opt).toMatchObject({ via: [], include: [], skip: [] });
+    expect(linkToPlanner(decodeCcuLink(hash)!, has, owns).opt).not.toHaveProperty('exclude');
+    // The short `#ccu?to=` link (Store, Ships pages) leaves the planner's stops and forced CCUs alone.
+    expect(linkToPlanner(decodeCcuLink('#ccu?to=4&ahead=1')!, has, owns)).toEqual({ toId: 4, opt: { planAhead: true } });
   });
 });

@@ -32,7 +32,6 @@
     const h = location.hash.slice(1).split('?')[0] ?? '';
     return isHubTab(h) ? pageOf(h).tab : 'feed'; // pageOf folds the legacy `ships` alias
   }
-  const hashParam = (k: string) => new URLSearchParams(location.hash.split('?')[1] ?? '').get(k);
 
   const TOUR: TourStep[] = [
     { icon: pageOf('hangar').icon, title: 'Load your hangar', description: 'Pledges reads every page of your RSI hangar into this browser — melt values, insurance, CCUs, items. Nothing leaves it.', href: '#hangar', linkLabel: 'Open Pledges' },
@@ -108,11 +107,9 @@
     const offs = [storeLogItem.watch((v) => (notices = tally(cleanLog(v)))), feedItem.watch((f) => (unseen = (f ?? []).filter((e) => !e.seen).length))];
     return () => offs.forEach((off) => off());
   });
-  let ccuTo = $state<number | null>(Number(hashParam('to')) || null);
-  let ccuAhead = $state(hashParam('ahead') === '1'); // `#ccu?to=&ahead=1`: the hull isn't on sale, start with Plan ahead on
-
+  // `#ccu?to=…&ahead=1` links are read by CcuPanel itself (lib/ccu-link.ts), which checks the ids against the catalog.
   $effect(() => {
-    const onHash = () => ((tab = fromHash()), (ccuTo = Number(hashParam('to')) || null), (ccuAhead = hashParam('ahead') === '1'));
+    const onHash = () => (tab = fromHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   });
@@ -135,7 +132,6 @@
   function select(it: Item) {
     const hash = `#${it.tab}`;
     tab = it.tab;
-    if (it.tab !== 'ccu') ccuTo = null;
     if (location.hash !== hash) history.replaceState(null, '', hash);
   }
 
@@ -328,8 +324,6 @@
           <Panel pane={paneTab === 'melt' ? 'melt' : 'pledges'} />
         {:else if panelKey === 'ships'}
           <Panel view={paneTab === 'fleet' ? 'ships' : paneTab === 'paint-rebuy' ? 'bundle' : 'paints'} />
-        {:else if panelKey === 'ccu'}
-          <Panel initialTo={ccuTo} initialAhead={ccuAhead} />
         {:else}
           <Panel />
         {/if}

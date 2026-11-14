@@ -381,7 +381,9 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
 
 /**
  * When no chain gets to `targetId`: the hull with the highest MSRP below the target's that a chain from `startId` does
- * reach on graph `g` (same MSRP: the lower id). Null when nothing below the target is reachable, or the target is unknown.
+ * reach on graph `g` (same MSRP: the lower id). Null when nothing below the target is reachable, the target is unknown,
+ * or the graph does reach the target — then the graph isn't what blocks the chain (a stop or a forced CCU is), and a
+ * lower target would hit the same wall. Walks the graph only: stops / forced CCUs are the caller's (`plan`) to check.
  */
 export function farthestReachable(g: PlanGraph, startId: number, targetId: number): number | null {
   const target = g.byId.get(targetId);
@@ -392,6 +394,7 @@ export function farthestReachable(g: PlanGraph, startId: number, targetId: numbe
   while (todo.length) {
     for (const e of g.edges(todo.pop()!)) {
       if (seen.has(e.toId)) continue;
+      if (e.toId === targetId) return null;
       seen.add(e.toId);
       todo.push(e.toId);
       const s = g.byId.get(e.toId);
@@ -410,27 +413,34 @@ export interface Alternative {
   exclude: number[];
 }
 
-/** Identity of a chain: its steps' targets, kinds and SKU / ref. */
-const chainKey = (p: Plan) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? s.ref ?? ''}`).join('|');
+/**
+ * Identity of a chain as the user sees it: its steps' targets, kinds, SKU and prices. Not the owned / buyback ref — two
+ * copies of the same CCU are the same route.
+ */
+const chainKey = (p: Plan) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? ''}:${s.cost}:${s.paid}`).join('|');
 
 /**
  * Up to `n` chains that differ from the best one and from each other, best first by the planner's order. Each one is
- * the best chain once one step of the best chain is taken out (a store SKU skipped, an owned / buyback CCU excluded);
- * `future` steps can't be taken out. Pure, like `plan`.
+ * the best chain once one step of the best chain is taken out (a store SKU skipped, an owned / buyback CCU excluded —
+ * with every other copy of that CCU, same hulls and source); `future` steps can't be taken out. With `steps: 'more'`,
+ * a chain that only drops hulls of the best one (same ships minus a stop) isn't a different route and is left out.
+ * Pure, like `plan`.
  */
 export function planAlternatives(ships: CatalogShip[], owned: OwnedCcu[], startId: number, targetId: number, opt: PlanOptions, n = 3): Alternative[] {
   const best = plan(ships, owned, startId, targetId, opt);
   if (!best || n <= 0) return [];
   const seen = new Set([chainKey(best)]);
+  const bestHulls = new Set(best.steps.map((s) => s.toId));
   const out: Alternative[] = [];
   for (const s of best.steps) {
     let alt: Alternative;
     if ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) {
-      const ref = s.ref;
-      if (opt.exclude.includes(ref)) continue;
-      const p = plan(ships, owned, startId, targetId, { ...opt, include: opt.include.filter((r) => r !== ref), exclude: [...opt.exclude, ref] });
+      if (opt.exclude.includes(s.ref)) continue;
+      const source = s.kind === 'owned' ? 'hangar' : 'buyback';
+      const refs = [...new Set([s.ref, ...owned.filter((c) => c.fromId === s.fromId && c.toId === s.toId && c.source === source && !opt.exclude.includes(c.ref)).map((c) => c.ref)])];
+      const p = plan(ships, owned, startId, targetId, { ...opt, include: opt.include.filter((r) => !refs.includes(r)), exclude: [...opt.exclude, ...refs] });
       if (!p) continue;
-      alt = { plan: p, skip: [], exclude: [ref] };
+      alt = { plan: p, skip: [], exclude: refs };
     } else if (s.kind !== 'future' && s.skuId != null) {
       if ((opt.skip ?? []).includes(s.skuId)) continue;
       const p = plan(ships, owned, startId, targetId, { ...opt, skip: [...(opt.skip ?? []), s.skuId] });
@@ -439,6 +449,7 @@ export function planAlternatives(ships: CatalogShip[], owned: OwnedCcu[], startI
     } else continue;
     const k = chainKey(alt.plan);
     if (seen.has(k)) continue;
+    if (opt.steps === 'more' && alt.plan.steps.length < best.steps.length && alt.plan.steps.every((x) => bestHulls.has(x.toId))) continue;
     seen.add(k);
     out.push(alt);
   }

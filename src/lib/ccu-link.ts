@@ -83,7 +83,10 @@ export function decodeCcuLink(hash: string): CcuLink | null {
 
 /**
  * What a decoded link changes in the single planner. `has`: the id is a catalog hull (unknown ids are dropped);
- * `owns`: the hull is in your hangar (source mode *Ship in my hangar*, else *Any ship*). Options not in the link stay.
+ * `owns`: the hull is in your hangar (source mode *Ship in my hangar*, else *Any ship*). Options not in the link stay —
+ * except for a full share link (one carrying `obj` / `steps`, from `encodeCcuLink`): it is a complete route, so it also
+ * clears the stops it doesn't list, forced-in CCUs and ignored SKUs, which would send the chain another way. Force
+ * excludes stay (your own CCUs, reserved by your saved chains).
  */
 export function linkToPlanner(
   l: CcuLink,
@@ -94,7 +97,10 @@ export function linkToPlanner(
   if (l.from === STORE_START) (out.mode = 'store'), (out.fromId = null);
   else if (l.from != null && has(l.from)) (out.mode = owns(l.from) ? 'hangar' : 'any'), (out.fromId = l.from);
   if (l.to != null && has(l.to)) out.toId = l.to;
+  const full = l.objective != null || l.steps != null;
   if (l.via) out.opt.via = l.via.filter(has);
+  else if (full) out.opt.via = [];
+  if (full) (out.opt.include = []), (out.opt.skip = []);
   if (l.objective) out.opt.objective = l.objective;
   if (l.steps) out.opt.steps = l.steps;
   for (const [k, v] of Object.entries(l.flags) as [LinkFlag, boolean][]) out.opt[k] = v;

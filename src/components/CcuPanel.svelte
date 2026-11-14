@@ -50,7 +50,6 @@
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Ban from '@lucide/svelte/icons/ban';
 
-  let { initialTo = null, initialAhead = false }: { initialTo?: number | null; initialAhead?: boolean } = $props();
 
   let cat = $state<Catalog | null>(null);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
@@ -63,7 +62,7 @@
   type Mode = 'store' | 'hangar' | 'any';
   let mode = $state<Mode>('hangar');
   let fromId = $state<number | null>(null);
-  let toId = $state<number | null>(null); // set from initialTo by the effect below
+  let toId = $state<number | null>(null); // set from the hash link (`#ccu?to=`, watchCcuLink below)
   let opt = $state<PlanOptions>({ ...DEFAULT_PLAN_OPTIONS, include: [], exclude: [], via: [], skip: [] });
   /** One chain (verify, cart) or a fleet plan (several goals at once, `CcuFleet`). */
   let planner = $state<'one' | 'fleet'>((() => {
@@ -113,10 +112,6 @@
       hangarLoading = null;
     }
   }
-  $effect(() => {
-    if (initialTo != null) toId = initialTo;
-    if (initialAhead) opt.planAhead = true;
-  });
 
   const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
@@ -169,8 +164,18 @@
     return { result: a, ahead: !!a };
   });
   const result = $derived(planned.result);
-  /** No chain: the priciest hull below the target that today's sales reach (else planning ahead). */
-  const reach = $derived(!result && startId != null && toId != null ? (farthestReachable(graphNow, startId, toId) ?? farthestReachable(graphAhead, startId, toId)) : null);
+  /**
+   * No chain: the priciest hull below the target that today's sales reach (else planning ahead). Only offered when the
+   * planner can actually plan to it with the stops / forced CCUs on screen (when those are the blocker, none is).
+   */
+  const reach = $derived.by(() => {
+    if (result || startId == null || toId == null) return null;
+    for (const [g, o] of [[graphNow, effective], [graphAhead, aheadOpt]] as const) {
+      const r = farthestReachable(g, startId, toId);
+      if (r != null) return plan(ships, ccus.owned, startId, r, o, g) ? r : null;
+    }
+    return null;
+  });
   /** The options the shown chain was planned with (saved with it). */
   const used = $derived<PlanOptions>(planned.ahead ? { ...effective, planAhead: true } : effective);
   /** Running spend after each step. */
