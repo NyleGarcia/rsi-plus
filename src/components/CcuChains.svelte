@@ -7,12 +7,16 @@
    * list whenever it changes, so the Feed, Pledges and CCUs pages know which CCUs a chain uses.
    */
   import { untrack } from 'svelte';
-  import { dropBakedExcludes, legExclude, mergeGoals, planChains, savedVsMsrp, STORE_START, withPlans, type FleetLeg, type OwnedCcu, type SavedChain, type Step } from '@/lib/ccu';
+  import { dropBakedExcludes, goneRefs, legExclude, mergeGoals, planChains, reconcileApplied, reconcileByTarget, savedVsMsrp, STORE_START, withPlans, type FleetLeg, type OwnedCcu, type SavedChain, type Step } from '@/lib/ccu';
+  import { consumedUpgrades, findInHangarLog, UpgradeGoneError, upgradeHulls, upgradeTargets, type UpgradeTarget } from '@/lib/hangar-log';
+  import { syncApplied } from '@/lib/hangar-sync';
+  import { hangarUrl, type Pledge } from '@/lib/hangar';
+  import { mergeEvents } from '@/lib/watch';
   import { ccuCodesText, encodeCcuLink, type CcuLink } from '@/lib/ccu-link';
   import type { CartLedger } from '@/lib/cart-ui.svelte';
   import type { WantedLine } from '@/lib/cart';
-  import { ccuGoalsItem } from '@/lib/settings';
-  import { usd, type CatalogShip, type SaleHistory } from '@/lib/store';
+  import { ccuGoalsItem, feedItem } from '@/lib/settings';
+  import { matchShip, usd, type CatalogShip, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
@@ -44,6 +48,9 @@
   import Copy from '@lucide/svelte/icons/copy';
   import Plus from '@lucide/svelte/icons/plus';
   import Settings2 from '@lucide/svelte/icons/settings-2';
+  import ListChecks from '@lucide/svelte/icons/list-checks';
+  import Check from '@lucide/svelte/icons/check';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import X from '@lucide/svelte/icons/x';
 
@@ -58,6 +65,7 @@
     labelPrefer = [],
     keptByLabel = 0,
     owned,
+    pledges = [],
     sales,
     chains,
     persist,
@@ -84,6 +92,8 @@
     /** Pledges labelled *Keep* (left out of `hulls`), for the note. */
     keptByLabel?: number;
     owned: OwnedCcu[];
+    /** The hangar as loaded: to tell which CCUs left it, and to point at the pledge a chain is applied to. */
+    pledges?: Pledge[];
     sales: SaleHistory;
     chains: SavedChain[];
     persist: (next: SavedChain[]) => Promise<void>;
@@ -135,14 +145,73 @@
     if (rulesLoaded) ccuGoalsItem.setValue(v);
   });
 
-  // ---- the plan ----
-  const fleet = $derived(planChains(ships, owned, chains, { hulls, keep, prefer: [...new Set([...prefer, ...labelPrefer])] }));
-  const payNow = $derived(fleet.total - fleet.later);
-  // Keep each chain's plan with it (Feed alerts, the Pledges badge and the CCUs page read it) — only once the hangar is in.
+  // ---- applied in the hangar: CCUs a chain was planned with that are gone → ask RSI's hangar log what happened ----
+  /** Chains still being worked on (planned, listed); the finished ones are kept below. */
+  const active = $derived(chains.filter((c) => !c.done));
+  const finished = $derived(chains.filter((c) => c.done));
+  const pledgeIds = $derived(new Set(pledges.map((p) => p.id)));
+  /** CCUs already looked up in the log this session (not applied = melted or gifted: nothing more to learn). */
+  let looked = $state(new Set<number>());
+  let checking = $state(false);
+  let logError = $state('');
+  const toCheck = $derived(ready && rulesLoaded ? goneRefs(chains, pledgeIds).filter((r) => !looked.has(r)) : []);
+  let logNote = $state('');
+  /**
+   * `manual` (*Check hangar log*): also closes chains whose CCUs were never recorded, from upgrades applied to their
+   * target ship since they were added (`reconcileByTarget`) — reads at least the two newest pages.
+   */
+  async function checkApplied(refs: number[], manual = false) {
+    checking = true;
+    logError = '';
+    logNote = '';
+    try {
+      const log = await findInHangarLog(refs, 6, undefined, manual ? 2 : 1);
+      const used = consumedUpgrades(log);
+      const before = $state.snapshot(chains) as SavedChain[];
+      let next = reconcileApplied(before, used);
+      if (manual) {
+        const hull = (n: string) => matchShip(n, ships)?.id ?? null;
+        const ups = log.flatMap((e) => {
+          if (e.kind !== 'consumed' || e.pledgeId == null) return [];
+          const h = upgradeHulls(e.name);
+          return [{ id: e.id, fromId: h ? hull(h[0]) : null, toId: h ? hull(h[1]) : null, pledgeId: e.pledgeId, at: e.at, value: e.value ?? 0 }];
+        });
+        next = reconcileByTarget(next, ups);
+        const closed = next.filter((c, i) => c.done && !before[i]?.done).length;
+        logNote = closed ? `${closed} chain${closed === 1 ? '' : 's'} applied: moved to Completed` : `Read ${log.length} log entries: no chain of yours was applied since it was added`;
+      }
+      looked = new Set([...looked, ...refs]);
+      if (next !== before) {
+        await persist(next);
+        const done = next.filter((c, i) => c.done && !before[i]?.done);
+        if (done.length) {
+          const at = Date.now();
+          const ev = done.map((c) => ({ key: `ccu-applied:${c.id}`, kind: 'hangar' as const, title: `${c.name}: chain applied, the ${name(c.targetId)} is in your hangar`, body: `${c.applied?.length ?? 0} CCU${c.applied?.length === 1 ? '' : 's'} used · worth ${usd(c.done!.spent)} · moved to Completed in My chains`, url: 'hub.html#ccu', at, seen: false }));
+          await feedItem.setValue(mergeEvents(await feedItem.getValue(), ev));
+        }
+      }
+    } catch (e) {
+      logError = (e as Error).message;
+      looked = new Set([...looked, ...refs]); // do not ask again and again; Check again retries
+    } finally {
+      checking = false;
+    }
+  }
   $effect(() => {
-    if (!ready || !rulesLoaded) return;
-    const next = withPlans(chains, fleet);
-    if (next !== chains) untrack(() => void persistPlans($state.snapshot(next) as SavedChain[]));
+    if (toCheck.length && !checking) untrack(() => void checkApplied(toCheck));
+  });
+
+  // ---- the plan ----
+  const fleet = $derived(planChains(ships, owned, active, { hulls, keep, prefer: [...new Set([...prefer, ...labelPrefer])] }));
+  const payNow = $derived(fleet.total - fleet.later);
+  // Keep each chain's plan with it (Feed alerts, the Pledges badge and the CCUs page read it) — only once the hangar is
+  // in, and not while a CCU that left the hangar is still being looked up (its chain's steps say which one it was).
+  $effect(() => {
+    if (!ready || !rulesLoaded || checking || toCheck.length) return;
+    const next = withPlans(active, fleet);
+    if (next === active) return;
+    const byId = new Map(next.map((c) => [c.id, c]));
+    untrack(() => void persistPlans(($state.snapshot(chains) as SavedChain[]).map((c) => (byId.has(c.id) ? ($state.snapshot(byId.get(c.id)!) as SavedChain) : c))));
   });
   const waiting = $derived(
     fleet.legs
@@ -158,11 +227,15 @@
 
   // ---- editing the list ----
   const update = (id: string, f: (c: SavedChain) => SavedChain) => persist(($state.snapshot(chains) as SavedChain[]).map((c) => (c.id === id ? f(c) : c)));
+  /** Swap two chains of the planned list (finished ones keep their place in storage). */
   function move(i: number, d: -1 | 1) {
-    const j = i + d;
-    if (j < 0 || j >= chains.length) return;
+    const a = active[i];
+    const b = active[i + d];
+    if (!a || !b) return;
     const next = [...($state.snapshot(chains) as SavedChain[])];
-    [next[i], next[j]] = [next[j]!, next[i]!];
+    const x = next.findIndex((c) => c.id === a.id);
+    const y = next.findIndex((c) => c.id === b.id);
+    [next[x], next[y]] = [next[y]!, next[x]!];
     void persist(next);
   }
   let addTo = $state<number | null>(null);
@@ -193,13 +266,55 @@
   const addKeep = (id: number) => ((keep = [...keep, id]), (prefer = prefer.filter((x) => x !== id)));
   const addPrefer = (ids: number[]) => ((prefer = [...new Set([...prefer, ...ids])]), (keep = keep.filter((x) => !ids.includes(x))));
   const ltiToAdd = $derived(lti.filter((id) => !prefer.includes(id) && mine.some((m) => m.id === id)));
-  const anyAuto = $derived(chains.some((c) => c.auto));
+  const anyAuto = $derived(active.some((c) => c.auto));
 
   // ---- cart: the store steps of the ticked chains ----
   let pick = $state(new Set<string>());
   const togglePick = (id: string, on: boolean) => (pick = new Set(on ? [...pick, id] : [...pick].filter((x) => x !== id)));
   const linesOf = (c: SavedChain, leg: FleetLeg | undefined) => (leg?.plan?.steps ?? []).map((s) => lineOf(s, `chain:${c.id}:`)).filter((l): l is BatchLine => !!l);
-  const rows = $derived(chains.map((c, i) => ({ c, i, leg: fleet.legs[i] })));
+  const rows = $derived(active.map((c, i) => ({ c, i, leg: fleet.legs[i] })));
+
+  // ---- applying a chain: which pledge, which CCUs, in which order ----
+  let guiding = $state(new Set<string>());
+  const toggleGuide = (id: string) => (guiding = new Set(guiding.has(id) ? [...guiding].filter((x) => x !== id) : [...guiding, id]));
+  /** What RSI answered for a CCU (*Check with RSI*): the pledges it can go onto right now. */
+  let fits = $state<Record<number, { st: 'checking' } | { st: 'ok'; targets: UpgradeTarget[] } | { st: 'applied'; pledgeId: number } | { st: 'lost' } | { st: 'error'; msg: string }>>({});
+  async function checkFits(ref: number) {
+    fits = { ...fits, [ref]: { st: 'checking' } };
+    try {
+      fits = { ...fits, [ref]: { st: 'ok', targets: await upgradeTargets(ref) } };
+    } catch (e) {
+      if (!(e instanceof UpgradeGoneError)) return void (fits = { ...fits, [ref]: { st: 'error', msg: (e as Error).message } });
+      // RSI no longer has the CCU: find out what became of it instead of sending the user to reload. Applied → the
+      // saved hangar is brought up to date (that pledge only) and the chain records the step; else it was melted or
+      // gifted and leaves the saved hangar, so the chain is planned without it.
+      try {
+        const r = await syncApplied({ ids: [ref] });
+        const hit = r?.used.find((u) => u.id === ref);
+        fits = { ...fits, [ref]: hit ? { st: 'applied', pledgeId: hit.pledgeId } : r ? { st: 'lost' } : { st: 'error', msg: 'RSI no longer has this CCU. Load your hangar in Pledges to bring your chains up to date.' } };
+      } catch (x) {
+        fits = { ...fits, [ref]: { st: 'error', msg: `RSI no longer has this CCU, and its hangar log could not be read (${(x as Error).message}). Reload your hangar.` } };
+      }
+    }
+  }
+  /** Answers that outlived their step (the chain was re-planned): shown under the guide so they are not lost. */
+  const fitNotes = (c: SavedChain, steps: Step[]) =>
+    Object.entries(fits).flatMap(([ref, f]) => {
+      const id = Number(ref);
+      if (steps.some((x) => x.ref === id)) return [];
+      const a = c.applied?.find((x) => x.ref === id);
+      if (f.st === 'applied' && a) return [`${name(a.fromId)} → ${name(a.toId)} was already applied (onto pledge #${f.pledgeId}): recorded, the chain carries on.`];
+      return [];
+    });
+  /** The pledges a chain can be applied to: the one already used, else those holding its source hull (LTI first when the chain wants it). */
+  const targetsOf = (c: SavedChain, leg: FleetLeg | undefined): Pledge[] => {
+    const usedOn = c.applied?.at(-1)?.pledgeId;
+    if (usedOn != null) return pledges.filter((p) => p.id === usedOn);
+    const start = leg?.startId ?? c.startId;
+    if (start === STORE_START) return [];
+    const list = pledges.filter((p) => !p.upgrade && p.ships.some((t) => matchShip(t, ships)?.id === start));
+    return c.lti === 'prefer' || c.lti === 'only' || leg?.lti ? [...list].sort((a, b) => Number(b.lti) - Number(a.lti)) : list;
+  };
   const pickedRows = $derived(rows.filter((r) => pick.has(r.c.id) && r.leg?.plan));
   const pickedLines = $derived(pickedRows.flatMap((r) => linesOf(r.c, r.leg)));
   let batchNote = $state('');
@@ -234,7 +349,7 @@
 
   // ---- export ----
   const codeOf = (c: SavedChain) => encodeCcuLink({ from: c.auto ? null : c.startId, to: c.targetId, via: c.opt.via, opt: c.opt, name: c.name });
-  const exportRows = $derived(pick.size ? chains.filter((c) => pick.has(c.id)) : chains);
+  const exportRows = $derived(pick.size ? active.filter((c) => pick.has(c.id)) : active);
   const exported = transient(2500);
   async function copyCodes(list: SavedChain[]) {
     try {
@@ -247,7 +362,7 @@
   const downloadCodes = () => downloadFile(`rsi-plus-ccu-chains-${dateStamp()}.txt`, ccuCodesText(exportRows.map(codeOf)), 'text/plain');
 </script>
 
-<Section id="ccu-my-chains" title="My chains" summary={chains.length ? `(${chains.length} · ${usd(payNow)} to pay now${fleet.later ? ` · ${usd(fleet.later)} later` : ''})` : '(none yet)'}>
+<Section id="ccu-my-chains" title="My chains" summary={active.length ? `(${active.length} · ${usd(payNow)} to pay now${fleet.later ? ` · ${usd(fleet.later)} later` : ''}${finished.length ? ` · ${finished.length} completed` : ''})` : finished.length ? `(${finished.length} completed)` : '(none yet)'}>
   <p class="text-muted-foreground m-0 text-sm">
     Every ship you are working towards, planned together on today's store and your hangar. Top first: a chain higher up gets first pick of your CCUs and hull copies, so move the one you care about most to the top. <em>Open</em> puts a chain in the planner above to verify it with RSI or change it.
   </p>
@@ -256,18 +371,26 @@
     <SwitchRow id="chains-want-owned" size="sm" class="text-xs" label="Include ships I own" hint="List the ships already in your hangar too (another copy)" checked={wantOwned} onchange={(v) => (wantOwned = v)} />
     <span class="flex-1"></span>
     {#if exported.text}<span class="text-success text-[11px]" role="status">{exported.text}</span>{/if}
-    {#if chains.length}
+    {#if active.length}
       <TipButton size="sm" disabled={cart.busy || !pickedLines.length} onclick={addPicked} tip="Adds the store steps of every ticked chain, as it prices today. Lines your cart already holds are skipped; buy-backs are left out.">
         <ShoppingCart />{cart.busy ? 'Adding…' : pickedRows.length ? `Add ${pickedRows.length} chain${pickedRows.length === 1 ? '' : 's'} to RSI cart (${pickedLines.length} line${pickedLines.length === 1 ? '' : 's'})` : 'Tick chains to add them to the RSI cart'}
       </TipButton>
-      <TipButton variant="outline" size="sm" onclick={() => copyCodes(exportRows)} tip="Copies the chains as text codes, one per line (the ticked chains, or all of them when none is ticked). A code holds the route and options, not your own CCUs."><Copy />Copy {pick.size ? `${exportRows.length} ticked` : `all ${chains.length}`}</TipButton>
+      <TipButton variant="outline" size="sm" onclick={() => copyCodes(exportRows)} tip="Copies the chains as text codes, one per line (the ticked chains, or all of them when none is ticked). A code holds the route and options, not your own CCUs."><Copy />Copy {pick.size ? `${exportRows.length} ticked` : `all ${active.length}`}</TipButton>
       <TipButton variant="outline" size="sm" onclick={downloadCodes} tip="The same codes as a text file">Download file</TipButton>
     {/if}
-    <CcuTransfer label="Import" code={null} saved={chains.map(codeOf)} onopen={onlink} onadd={onimport} />
+    {#if active.length}
+      <TipButton variant="outline" size="sm" disabled={checking || !ready} onclick={() => checkApplied(goneRefs(chains, pledgeIds), true)} tip="Reads RSI's hangar log (read-only) for upgrades you applied: a chain whose ship was reached moves to Completed. Runs by itself when a CCU of a chain leaves your hangar; use this for a chain you applied earlier.">{checking ? 'Reading the hangar log…' : 'Check hangar log'}</TipButton>
+    {/if}
+    <CcuTransfer label="Import" code={null} saved={active.map(codeOf)} onopen={onlink} onadd={onimport} />
     {#if batchNote}<span class="text-muted-foreground basis-full text-[11px]">{batchNote}</span>{/if}
   </div>
 
-  {#if !chains.length}
+  {#if checking}<span class="text-muted-foreground text-xs" role="status">Reading RSI's hangar log to see which CCUs were applied…</span>{/if}
+  {#if logNote && !checking}<span class="text-muted-foreground text-xs" role="status">{logNote}</span>{/if}
+  {#if logError}
+    <span class="text-destructive text-xs">Could not read RSI's hangar log ({logError}). Until it is read, a chain whose CCU you applied is planned as if the CCU were just gone. <Button variant="link" size="xs" class="h-auto p-0 text-xs" onclick={() => ((looked = new Set()), (logError = ''))}>Check again</Button></span>
+  {/if}
+  {#if !active.length}
     <Empty>No chains yet. Add a ship you want here (the planner picks which of your hulls to upgrade), or plan one above and press Save chain.</Empty>
   {:else}
     <StatGrid>
@@ -276,7 +399,7 @@
       <Stat value={usd(fleet.cash)} label="new money" />
       {#if fleet.paid}<Stat value={ownUsd(fleet.paid)} label="already paid (owned CCUs)" />{/if}
       <Stat value={usd(savedVsMsrp(fleet))} label="saved vs MSRP" valueTone={savedVsMsrp(fleet) > 0 ? 'ok' : savedVsMsrp(fleet) < 0 ? 'err' : null} />
-      {#if fleet.failed}<Stat value={`${fleet.failed} of ${chains.length}`} label={`chain${fleet.failed === 1 ? ' has' : 's have'} no route today`} valueTone="warn" />{/if}
+      {#if fleet.failed}<Stat value={`${fleet.failed} of ${active.length}`} label={`chain${fleet.failed === 1 ? ' has' : 's have'} no route today`} valueTone="warn" />{/if}
     </StatGrid>
 
     <Table.Root>
@@ -303,7 +426,7 @@
               <div class="flex items-center gap-0.5">
                 <span class="bg-background mr-1 grid size-6 place-items-center rounded-full border text-xs font-bold">{i + 1}</span>
                 <Button variant="ghost" size="icon-xs" aria-label={`Move ${c.name} up`} disabled={i === 0} onclick={() => move(i, -1)}><ArrowUp /></Button>
-                <Button variant="ghost" size="icon-xs" aria-label={`Move ${c.name} down`} disabled={i === chains.length - 1} onclick={() => move(i, 1)}><ArrowDown /></Button>
+                <Button variant="ghost" size="icon-xs" aria-label={`Move ${c.name} down`} disabled={i === active.length - 1} onclick={() => move(i, 1)}><ArrowDown /></Button>
               </div>
             </Table.Cell>
             <Table.Cell class="whitespace-normal">
@@ -312,6 +435,7 @@
                 {#if p}<span class="text-muted-foreground text-[11px]">{p.steps.length} step{p.steps.length === 1 ? '' : 's'} · {OBJECTIVE[c.opt.objective]}</span>{/if}
                 {#if leg?.auto && p}<Badge variant="info">auto: {name(leg.startId)}</Badge>{/if}
                 {#if leg?.lti}<Tag kind="insurance" value="LTI" hint="Upgrades a copy on an LTI pledge — the target keeps LTI" />{:else if c.lti === 'prefer' && p && leg?.startId !== STORE_START}<HintBadge variant="muted" hint="No free LTI copy gets there — a non-LTI copy is used">no LTI copy</HintBadge>{/if}
+                {#if c.applied?.length}<HintBadge variant="success-soft" hint={`Already applied in your hangar: ${c.applied.map((a) => `${name(a.fromId)} → ${name(a.toId)}`).join(', ')}. The chain carries on from the ${name(c.startId)}.`}>{c.applied.length} applied</HintBadge>{/if}
                 {#if p?.waits}<Badge variant="warning">{p.waits} waiting</Badge>{/if}
                 {#if leg?.ahead}<HintBadge variant="warning" hint="Nothing on sale today gets there: planned through CCUs bought when they return. The Feed tells you when one is in the store.">planned ahead</HintBadge>{/if}
               </div>
@@ -348,6 +472,7 @@
             <Table.Cell class="text-right">
               <div class="flex items-center justify-end gap-1">
                 <TipButton variant={open ? 'secondary' : 'ghost'} size="icon-xs" onclick={() => toggleEdit(c.id)} tip="Source, stops, insurance, name" aria-label={`Settings of ${c.name}`} aria-expanded={open}><Settings2 /></TipButton>
+                <TipButton variant={guiding.has(c.id) ? 'secondary' : 'ghost'} size="icon-xs" onclick={() => toggleGuide(c.id)} tip="Apply this chain: which pledge, which CCUs, in which order" aria-label={`How to apply ${c.name}`} aria-expanded={guiding.has(c.id)}><ListChecks /></TipButton>
                 <TipButton variant="ghost" size="icon-xs" onclick={() => copyCodes([c])} tip="Copy this chain as a text code" aria-label={`Copy ${c.name} as a code`}><Copy /></TipButton>
                 <TipButton variant="outline" size="xs" onclick={() => onopen(c, leg?.startId ?? c.startId, legExclude(fleet, i, []))} tip={p ? 'Open this chain in the planner above: verify it with RSI, add it to the cart, change it' : 'Open it in the planner above to see why there is no chain and change its options (buyback, warbond, stops), then Update chain'}>Open</TipButton>
                 <ConfirmButton onconfirm={() => persist(($state.snapshot(chains) as SavedChain[]).filter((x) => x.id !== c.id))}>Delete</ConfirmButton>
@@ -362,6 +487,8 @@
                     <span class="text-muted-foreground text-xs">Name</span>
                     <Input class="h-7 w-56 text-xs" value={c.name} aria-label="Chain name" onchange={(e) => update(c.id, (x) => ({ ...x, name: (e.currentTarget as HTMLInputElement).value.trim() || x.name }))} />
                     <span class="text-muted-foreground text-[11px]">added {fmtDate(c.at)}</span>
+                    <span class="flex-1"></span>
+                    <ConfirmButton variant="outline" onconfirm={() => update(c.id, (x) => ({ ...x, done: { at: Date.now(), pledgeId: 0, spent: (x.applied ?? []).reduce((n, a2) => n + a2.value, 0) }, steps: [], total: 0, cash: 0 }))}>Mark as completed</ConfirmButton>
                   </div>
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-muted-foreground text-xs">From</span>
@@ -420,6 +547,87 @@
               </Table.Cell>
             </Table.Row>
           {/if}
+          {#if guiding.has(c.id)}
+            {@const targets = targetsOf(c, leg)}
+            {@const steps = p?.steps ?? []}
+            {@const ready2 = steps.length > 0 && steps.every((x) => x.kind === 'owned')}
+            <Table.Row class="hover:bg-transparent">
+              <Table.Cell colspan={7} class="whitespace-normal">
+                <div class="bg-muted/30 grid gap-2 rounded-lg border p-2.5 text-sm">
+                  <strong>Apply this chain in your hangar</strong>
+                  <p class="text-muted-foreground m-0 text-xs">Apply the CCUs in this order, all onto the same pledge. The chain updates itself after each one.</p>
+                  {#if !p}
+                    <span class="text-destructive text-xs">This chain has no route today, so there is nothing to apply yet.</span>
+                  {:else}
+                    <div class="text-xs">
+                      <span class="text-muted-foreground">Onto:</span>
+                      {#if leg?.startId === STORE_START}
+                        the ship you buy from the store in step 1 (a new pledge).
+                      {:else if !targets.length}
+                        <span class="text-warning">no pledge with a {name(leg?.startId ?? c.startId)} found in your loaded hangar. Reload the hangar.</span>
+                      {:else}
+                        {#each targets as t, k (t.id)}
+                          {#if k}<span class="text-muted-foreground"> or </span>{/if}
+                          <a class="text-primary underline-offset-2 hover:underline" href={hangarUrl(pledges, t.id)} target="_blank" rel="noopener">{t.name} #{t.id}</a>
+                          {#if t.lti}<Tag kind="insurance" value="LTI" size="xs" />{:else if t.insurance}<Tag kind="insurance" value={t.insurance} size="xs" />{/if}
+                        {/each}
+                        {#if targets.length > 1}<span class="text-muted-foreground"> — you have {targets.length} with that ship: use the same one for every step{c.lti === 'prefer' || c.lti === 'only' ? ', the LTI one' : ''}.</span>{/if}
+                      {/if}
+                    </div>
+                    <ol class="m-0 grid list-none gap-1 p-0 text-xs">
+                      {#each c.applied ?? [] as a (a.ref)}
+                        <li class="text-success flex items-center gap-1.5"><Check class="size-3.5" /> {name(a.fromId)} → {name(a.toId)} <span class="text-muted-foreground">applied</span></li>
+                      {/each}
+                      {#each steps as x, k (k)}
+                        <li class="flex flex-wrap items-center gap-1.5">
+                          <span class="bg-background grid size-5 place-items-center rounded-full border text-[11px] font-bold">{(c.applied?.length ?? 0) + k + 1}</span>
+                          <span>{name(x.fromId)} → <strong>{name(x.toId)}</strong></span>
+                          {#if x.kind === 'owned' && x.ref != null}
+                            {@const next = k === 0}
+                            {@const onto = targets[0]?.id}
+                            {@const fit = fits[x.ref]}
+                            <Badge variant="success-soft">in your hangar</Badge>
+                            {#if next}
+                              <TipButton size="xs" href={hangarUrl(pledges, x.ref, 'apply', undefined, onto)} target="_blank" rel="noopener" tip="Opens RSI's Apply upgrade window for this CCU with the pledge to pick outlined">Apply on RSI <ExternalLink /></TipButton>
+                              <TipButton variant="outline" size="xs" disabled={fit?.st === 'checking'} onclick={() => checkFits(x.ref!)} tip="Asks RSI which of your pledges this CCU can be applied to right now. Read-only.">{fit?.st === 'checking' ? 'Asking RSI…' : 'Check with RSI'}</TipButton>
+                            {:else}
+                              <span class="text-muted-foreground">after step {(c.applied?.length ?? 0) + k}</span>
+                              <Button variant="ghost" size="xs" href={hangarUrl(pledges, x.ref)} target="_blank" rel="noopener">Open the CCU <ExternalLink /></Button>
+                            {/if}
+                            {#if fit?.st === 'ok'}
+                              {#if !fit.targets.length}
+                                <span class="text-destructive basis-full pl-6">RSI lists no pledge this CCU can go onto right now.</span>
+                              {:else if onto != null && fit.targets.some((t) => t.id === onto)}
+                                <span class="text-success basis-full pl-6">RSI confirms: it can go onto pledge #{onto}{fit.targets.length > 1 ? ` (and ${fit.targets.length - 1} other${fit.targets.length === 2 ? '' : 's'})` : ''}.</span>
+                              {:else}
+                                <span class="text-warning basis-full pl-6">RSI offers {fit.targets.map((t) => `${t.name} #${t.id}`).join(', ')}{onto != null ? `, not pledge #${onto}` : ''}.</span>
+                              {/if}
+                            {:else if fit?.st === 'applied'}
+                              <span class="text-success basis-full pl-6">Already applied onto pledge #{fit.pledgeId}. Updating the chain…</span>
+                            {:else if fit?.st === 'lost'}
+                              <span class="text-warning basis-full pl-6">This CCU is no longer in your hangar and was not applied (melted or gifted). The chain is planned without it.</span>
+                            {:else if fit?.st === 'error'}
+                              <span class="text-destructive basis-full pl-6">{fit.msg}</span>
+                            {/if}
+                          {:else if x.kind === 'future'}
+                            <Badge variant="warning">not on sale yet</Badge>
+                          {:else if x.kind === 'buyback'}
+                            <Badge variant="outline">buy it back first</Badge>
+                          {:else if x.kind === 'standalone'}
+                            <Badge variant="info">buy this ship first</Badge>
+                          {:else}
+                            <Badge variant="outline">buy this CCU first</Badge>
+                          {/if}
+                        </li>
+                      {/each}
+                    </ol>
+                    {#each fitNotes(c, steps) as n (n)}<span class="text-success text-xs">{n}</span>{/each}
+                    {#if !ready2}<span class="text-muted-foreground text-xs">You can apply the steps you hold now, in order, and stop at the first one you still have to buy: the chain carries on from there.</span>{/if}
+                  {/if}
+                </div>
+              </Table.Cell>
+            </Table.Row>
+          {/if}
         {/each}
       </Table.Body>
     </Table.Root>
@@ -465,7 +673,7 @@
             {#each waiting as w, k (k)}
               <Table.Row>
                 <Table.Cell><span class="text-muted-foreground">{name(w.s.fromId)} →</span> <strong>{name(w.s.toId)}</strong></Table.Cell>
-                <Table.Cell>#{w.i + 1} {chains[w.i]?.name ?? ''}</Table.Cell>
+                <Table.Cell>#{w.i + 1} {active[w.i]?.name ?? ''}</Table.Cell>
                 <Table.Cell class="text-right tabular-nums">{usd(w.s.cost)}{#if w.s.est}<span class="text-muted-foreground ml-1 text-[11px]">last {w.s.est.wb ? 'warbond ' : ''}price, {fmtDate(w.s.est.at)}</span>{/if}</Table.Cell>
                 <Table.Cell class="text-muted-foreground text-[11px]">{lastSaleLabel(sales, w.s.toId)}</Table.Cell>
               </Table.Row>
@@ -474,5 +682,32 @@
         </Table.Root>
       </div>
     {/if}
+  {/if}
+
+  {#if finished.length}
+    <div class="grid gap-1.5">
+      <span class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Completed · applied in your hangar</span>
+      <Table.Root>
+        <Table.Header>
+          <Table.Row><Table.Head>Chain</Table.Head><Table.Head>Applied</Table.Head><Table.Head class="text-right">CCUs used</Table.Head><Table.Head class="text-right"><span class="sr-only">Actions</span></Table.Head></Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {#each finished as c (c.id)}
+            <Table.Row>
+              <Table.Cell class="whitespace-normal">
+                <span class="text-success inline-flex items-center gap-1"><Check class="size-3.5" /><strong>{c.name}</strong></span>
+                <div class="text-muted-foreground text-xs">{c.applied?.length ? [...c.applied.slice(0, 1).map((a) => name(a.fromId)), ...c.applied.map((a) => name(a.toId))].join(' → ') : `to the ${name(c.targetId)} · marked completed by you`}</div>
+              </Table.Cell>
+              <Table.Cell class="text-xs">
+                {Number.isFinite(c.done!.at) && c.done!.at > 0 ? fmtDate(c.done!.at) : ''}
+                {#if pledgeIds.has(c.done!.pledgeId)}<Button variant="ghost" size="xs" href={hangarUrl(pledges, c.done!.pledgeId)} target="_blank" rel="noopener">Pledge <ExternalLink /></Button>{/if}
+              </Table.Cell>
+              <Table.Cell class="text-right tabular-nums">{c.applied?.length ?? 0}<br /><span class="text-muted-foreground text-[11px]">worth {ownUsd(c.done!.spent)}</span></Table.Cell>
+              <Table.Cell class="text-right"><ConfirmButton onconfirm={() => persist(($state.snapshot(chains) as SavedChain[]).filter((x) => x.id !== c.id))}>Remove</ConfirmButton></Table.Cell>
+            </Table.Row>
+          {/each}
+        </Table.Body>
+      </Table.Root>
+    </div>
   {/if}
 </Section>

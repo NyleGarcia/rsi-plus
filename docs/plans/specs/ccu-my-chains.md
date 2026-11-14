@@ -25,5 +25,8 @@ One stored list, `local:ccuChains` (`SavedChain[]`), shown as **My chains**. The
 2. `dropBakedExcludes`: old saves kept the CCUs other chains held in their own `opt.exclude`; those go, a CCU forced out by hand stays.
 3. Existing saved chains keep their id, name, order, route and options. *Never auto-upgrade* and *Prefer to upgrade* stay in `local:ccuGoals`.
 
+## Applying a chain (added after 0.16.0)
+A chain's kept steps name the CCUs it uses. When one of them is no longer in a complete hangar, `CcuChains` asks RSI's hangar log (`lib/hangar-log.ts`) before writing any plan back. Applied → `SavedChain.applied`; the CCU reaching the target → `done` (shown under *Completed*, no longer planned); part-way → the chain is pinned to the hull reached. Melted or gifted → nothing recorded, the chain is planned without it. The apply guide per chain lists the pledge and the CCUs in order; applying itself stays on RSI (password, permanent).
+
 ## Out of scope
 Drag and drop reordering; a marker for "this chain changed since you last looked"; per-chain option editing in the row (use *Open* → *Update chain*).

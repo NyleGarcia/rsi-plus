@@ -561,6 +561,23 @@ export interface SavedChain {
   auto?: boolean;
   storeStart?: boolean;
   lti?: Goal['lti'];
+  /** CCUs of this chain you have applied in the hangar (from RSI's hangar log), in the order they were found. */
+  applied?: AppliedStep[];
+  /** The chain is finished: its last CCU was applied, the target is in your hangar. No longer planned. */
+  done?: { at: number; pledgeId: number; spent: number };
+}
+
+/** One CCU of a chain applied in the hangar. */
+export interface AppliedStep {
+  /** The CCU's pledge id (gone from the hangar now). */
+  ref: number;
+  fromId: number;
+  toId: number;
+  /** The pledge it went onto. */
+  pledgeId: number;
+  at: number;
+  /** What the CCU was worth (cents). */
+  value: number;
 }
 
 // ---- fleet plan: several goals at once ----
@@ -801,6 +818,94 @@ export function dropBakedExcludes(chains: SavedChain[]): SavedChain[] {
     const exclude = c.opt.exclude.filter((r) => !others.has(r));
     return exclude.length === c.opt.exclude.length ? c : { ...c, opt: { ...c.opt, exclude } };
   });
+}
+
+// ---- applying a chain in the hangar ----
+
+/**
+ * CCUs the chains were planned with that are no longer in the hangar: applied, melted or gifted since. Only owned
+ * steps of chains still being planned; `known` = pledge ids in the hangar now.
+ */
+export function goneRefs(chains: SavedChain[], known: ReadonlySet<number>): number[] {
+  const out = new Set<number>();
+  for (const c of chains) {
+    if (c.done) continue;
+    const seen = new Set((c.applied ?? []).map((a) => a.ref));
+    for (const s of c.steps) if (s.kind === 'owned' && s.ref != null && !known.has(s.ref) && !seen.has(s.ref)) out.add(s.ref);
+  }
+  return [...out];
+}
+
+/**
+ * The chains after a look at RSI's hangar log (`consumed`: upgrade id → the pledge it was applied to). A chain whose
+ * CCU was applied records it; when that CCU was the one reaching the target the chain is `done` (nothing left to
+ * plan, nothing held back). Otherwise it carries on from the hull the pledge has become — pinned to it, so an auto
+ * chain does not start over from another ship. A CCU that is gone without being applied (melted, gifted) changes
+ * nothing here: the chain is simply planned again without it. Returns the same array when nothing changed.
+ */
+export function reconcileApplied(chains: SavedChain[], consumed: ReadonlyMap<number, { pledgeId: number; at: number; value: number }>): SavedChain[] {
+  let changed = false;
+  const out = chains.map((c) => {
+    if (c.done) return c;
+    const had = new Set((c.applied ?? []).map((a) => a.ref));
+    const fresh: AppliedStep[] = [];
+    for (const s of c.steps) {
+      if (s.kind !== 'owned' || s.ref == null || had.has(s.ref)) continue;
+      const hit = consumed.get(s.ref);
+      if (hit) fresh.push({ ref: s.ref, fromId: s.fromId, toId: s.toId, pledgeId: hit.pledgeId, at: hit.at, value: hit.value });
+    }
+    if (!fresh.length) return c;
+    changed = true;
+    const applied = [...(c.applied ?? []), ...fresh];
+    const used = new Set(applied.map((a) => a.ref));
+    const opt = { ...c.opt, include: c.opt.include.filter((r) => !used.has(r)), exclude: c.opt.exclude.filter((r) => !used.has(r)) };
+    const last = applied.find((a) => a.toId === c.targetId);
+    if (last) {
+      const at = Math.max(...applied.map((a) => a.at).filter((t) => Number.isFinite(t)), 0) || last.at;
+      return { ...c, opt, applied, done: { at, pledgeId: last.pledgeId, spent: applied.reduce((n, a) => n + a.value, 0) }, steps: [], total: 0, cash: 0 };
+    }
+    // the furthest hull reached: the applied step whose target no other applied step starts from
+    const reached = applied.filter((a) => !applied.some((b) => b.fromId === a.toId)).at(-1) ?? applied.at(-1)!;
+    return { ...c, opt, applied, auto: false, startId: reached.toId };
+  });
+  return changed ? out : chains;
+}
+
+/** An upgrade the hangar log says was applied: its hulls (catalog ids, null when the name matched none) and where it went. */
+export interface AppliedUpgrade {
+  id: number;
+  fromId: number | null;
+  toId: number | null;
+  pledgeId: number;
+  at: number;
+  value: number;
+}
+
+/**
+ * Chains finished without RSI+ having seen which CCUs they used (applied before the chain kept its plan, or after a
+ * re-plan): a chain is taken as done when, since about when it was added, an upgrade *to its target* was applied on a
+ * pledge. Every upgrade applied on that pledge since then counts as the chain's. Only for chains with nothing recorded
+ * yet, one chain per pledge, in list order. Asked for by the user (*Check hangar log*), never on its own: an upgrade
+ * to the same ship for another purpose would close the chain too. Returns the same array when nothing changed.
+ */
+export function reconcileByTarget(chains: SavedChain[], applied: readonly AppliedUpgrade[], slackMs = 86_400_000): SavedChain[] {
+  const usedPledges = new Set(chains.filter((c) => c.done).map((c) => c.done!.pledgeId));
+  let changed = false;
+  const out = chains.map((c) => {
+    if (c.done || c.applied?.length) return c;
+    const since = c.at - slackMs;
+    const last = applied.filter((u) => u.toId === c.targetId && !usedPledges.has(u.pledgeId) && !(u.at < since)).sort((a, b) => b.at - a.at)[0];
+    if (!last) return c;
+    usedPledges.add(last.pledgeId);
+    changed = true;
+    const steps: AppliedStep[] = applied
+      .filter((u) => u.pledgeId === last.pledgeId && !(u.at < since) && u.fromId != null && u.toId != null)
+      .sort((a, b) => a.at - b.at)
+      .map((u) => ({ ref: u.id, fromId: u.fromId!, toId: u.toId!, pledgeId: u.pledgeId, at: u.at, value: u.value }));
+    const used = new Set(steps.map((a) => a.ref));
+    return { ...c, opt: { ...c.opt, include: c.opt.include.filter((r) => !used.has(r)), exclude: c.opt.exclude.filter((r) => !used.has(r)) }, applied: steps, done: { at: last.at, pledgeId: last.pledgeId, spent: steps.reduce((n, a) => n + a.value, 0) }, steps: [], total: 0, cash: 0 };
+  });
+  return changed ? out : chains;
 }
 
 /** Refs of owned / buyback CCUs a set of chains already uses (to keep them out of new plans). */

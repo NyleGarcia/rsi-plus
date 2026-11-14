@@ -458,9 +458,11 @@ const rowOf = new WeakMap<Pledge[], Map<number, number>>();
 /**
  * Hangar page a pledge sits on (gift / melt / reclaim happen there). Page = the one it was read from, else from its
  * index in the saved list. `rsiplus=<id>` makes the RSI content script scroll to and highlight that pledge;
- * `rsiplus_do=melt|gift` also opens RSI's own melt / gift dialog for it (the password is typed there, never in RSI+).
+ * `rsiplus_do=melt|gift|apply` also opens RSI's own melt / gift / apply-upgrade dialog for it (the password is typed
+ * there, never in RSI+). With `apply`, `onto` = the pledge the upgrade is meant for: the content script points at its
+ * row in RSI's list (`rsiplus_on`) — it selects nothing.
  */
-export function hangarUrl(all: Pledge[], id: number, action?: 'melt' | 'gift', gone?: ReadonlySet<number>): string {
+export function hangarUrl(all: Pledge[], id: number, action?: 'melt' | 'gift' | 'apply', gone?: ReadonlySet<number>, onto?: number): string {
   // One id → row map per list: a table builds a link for each of its 500 rows.
   let rows = rowOf.get(all);
   if (!rows || rows.size !== all.length) rowOf.set(all, (rows = new Map(all.map((p, i) => [p.id, i]))));
@@ -472,7 +474,32 @@ export function hangarUrl(all: Pledge[], id: number, action?: 'melt' | 'gift', g
   // RSI serves 10 a page whatever `pagesize` says: go by how many pledges were actually read from page 1.
   const per = before ? all.filter((p) => p.page === 1).length || HANGAR_PAGE : HANGAR_PAGE;
   const page = before ? Math.floor((idx - before) / per) + 1 : (all[idx]?.page ?? (idx >= 0 ? Math.floor(idx / HANGAR_PAGE) + 1 : 1));
-  return `https://robertsspaceindustries.com/account/pledges?page=${page}&pagesize=${HANGAR_PAGE}&rsiplus=${id}${action ? `&rsiplus_do=${action}` : ''}`;
+  return `https://robertsspaceindustries.com/account/pledges?page=${page}&pagesize=${HANGAR_PAGE}&rsiplus=${id}${action ? `&rsiplus_do=${action}` : ''}${action === 'apply' && onto ? `&rsiplus_on=${onto}` : ''}`;
+}
+
+/**
+ * A saved hangar brought up to date without reading it all again: the pledges in `gone` taken out (an upgrade that was
+ * applied), and each pledge in `fresh` put in place of the saved one with that id (the pledge it was applied to, as it
+ * reads now). Order and the other pledges are untouched; a fresh pledge the hangar does not have is ignored — a new
+ * pledge needs a real reload to land in the right place. Returns the same array when nothing changes.
+ */
+export function patchHangar(saved: Pledge[], gone: readonly number[], fresh: readonly Pledge[]): Pledge[] {
+  const out = new Set(gone);
+  const byId = new Map(fresh.map((p) => [p.id, p]));
+  let changed = false;
+  const next: Pledge[] = [];
+  for (const p of saved) {
+    if (out.has(p.id)) {
+      changed = true;
+      continue;
+    }
+    const f = byId.get(p.id);
+    if (f && JSON.stringify({ ...f, page: 0 }) !== JSON.stringify({ ...p, page: 0 })) {
+      changed = true;
+      next.push({ ...f, page: f.page ?? p.page });
+    } else next.push(p);
+  }
+  return changed ? next : saved;
 }
 
 /** Identical pledges stacked into one row: same name, type, value, contents, LTI / warbond / upgrade. */
