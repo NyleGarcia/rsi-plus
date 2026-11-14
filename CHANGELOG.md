@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.16.0...v0.17.0) (2026-11-14)
+
+
+### Features
+
+* **ccu:** apply on RSI with the pledge pointed out, hangar updates itself after an apply, undo for ignored steps ([0b21af2](https://github.com/NyleGarcia/rsi-plus/commit/0b21af28f2e98e5b6b316113a36e4203d38f8d5c))
+* **ccu:** chains know when they were applied — RSI hangar log, Completed list, apply guide ([c4b072e](https://github.com/NyleGarcia/rsi-plus/commit/c4b072e9cead9c9db2c6c7694d8b9f50190636e8))
+
+
+### Bug Fixes
+
+* **ccu:** quieter apply guide — no bottom note in RSI's window, no password wording ([ed19697](https://github.com/NyleGarcia/rsi-plus/commit/ed1969773b46e0f0dcd3a88e3e758164ca1c0df8))
+
 ## [0.16.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.15.0...v0.16.0) (2026-11-14)
 
 
