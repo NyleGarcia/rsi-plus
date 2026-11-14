@@ -3,7 +3,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { applyAlternative, DEFAULT_PLAN_OPTIONS, farthestReachable, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem } from '@/lib/settings';
@@ -17,6 +17,10 @@
   import ShipSelect from './ShipSelect.svelte';
   import Stat from './Stat.svelte';
   import CcuFleet from './CcuFleet.svelte';
+  import CcuAlternatives from './CcuAlternatives.svelte';
+  import CcuShareLink from './CcuShareLink.svelte';
+  import { encodeCcuLink, linkToPlanner, watchCcuLink } from '@/lib/ccu-link';
+  import { untrack } from 'svelte';
   import StatGrid from './StatGrid.svelte';
   import Section from './Section.svelte';
   import Chip from './Chip.svelte';
@@ -47,7 +51,6 @@
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Ban from '@lucide/svelte/icons/ban';
 
-  let { initialTo = null, initialAhead = false }: { initialTo?: number | null; initialAhead?: boolean } = $props();
 
   let cat = $state<Catalog | null>(null);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
@@ -61,7 +64,7 @@
   type Mode = 'store' | 'hangar' | 'any';
   let mode = $state<Mode>('hangar');
   let fromId = $state<number | null>(null);
-  let toId = $state<number | null>(null); // set from initialTo by the effect below
+  let toId = $state<number | null>(null); // set from the hash link (`#ccu?to=`, watchCcuLink below)
   let opt = $state<PlanOptions>({ ...DEFAULT_PLAN_OPTIONS, include: [], exclude: [], via: [], skip: [] });
   /** One chain (verify, cart) or a fleet plan (several goals at once, `CcuFleet`). */
   let planner = $state<'one' | 'fleet'>((() => {
@@ -112,15 +115,22 @@
       hangarLoading = null;
     }
   }
-  $effect(() => {
-    if (initialTo != null) toId = initialTo;
-    if (initialAhead) opt.planAhead = true;
-  });
 
   // `expect` = the last sale price seen per hull, for steps that wait for a sale (today's store always wins over it)
   const ships = $derived(withExpected((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp), prices));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
+  // A shared route in the hash (`#ccu?from=…&to=…`, `lib/ccu-link.ts`): applied once the catalog is in, and on every hash change.
+  const catalogReady = $derived(ships.length > 0);
+  $effect(() => {
+    if (!catalogReady) return;
+    return watchCcuLink((l) => untrack(() => {
+      const r = linkToPlanner(l, (id) => byId.has(id), (id) => mine.some((m) => m.id === id));
+      if (r.mode) (mode = r.mode), (fromId = r.fromId ?? null);
+      if (r.toId != null) (toId = r.toId), (planner = 'one');
+      Object.assign(opt, r.opt);
+    }));
+  });
   /** Hull copies a fleet plan may upgrade: pledges labelled *Keep* are left out (`lib/labels.ts`). */
   const keepIds = $derived(idsWith(labels, KEEP));
   const hulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => !keepIds.has(p.id)), ships));
@@ -158,6 +168,18 @@
     return { result: a, ahead: !!a };
   });
   const result = $derived(planned.result);
+  /**
+   * No chain: the priciest hull below the target that today's sales reach (else planning ahead). Only offered when the
+   * planner can actually plan to it with the stops / forced CCUs on screen (when those are the blocker, none is).
+   */
+  const reach = $derived.by(() => {
+    if (result || startId == null || toId == null) return null;
+    for (const [g, o] of [[graphNow, effective], [graphAhead, aheadOpt]] as const) {
+      const r = farthestReachable(g, startId, toId);
+      if (r != null) return plan(ships, ccus.owned, startId, r, o, g) ? r : null;
+    }
+    return null;
+  });
   /** The options the shown chain was planned with (saved with it). */
   const used = $derived<PlanOptions>(planned.ahead ? { ...effective, planAhead: true } : effective);
   /** Running spend after each step. */
@@ -566,6 +588,7 @@
           {#each OPTIONS as o (o.key)}
             <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' ? opt.lastSeen !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
           {/each}
+          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps: each extra step is a ship you can stop at and fly. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Exclude saved chains${chains.length ? ` (${reservedBy.size} CCUs)` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
         </div>
         <span class="text-muted-foreground text-[11px]">
@@ -631,6 +654,9 @@
               No chain found — {mode === 'store' ? 'no standalone ship on sale leads there, ' : ''}the target isn't sold as a CCU right now and you own no CCU leading to it, a forced CCU can't be reached, or
               it's not pricier than the start.
               Ships not on sale were tried too (Plan ahead) — pick a cheaper source or allow buyback / warbond CCUs.
+              {#if reach != null}
+                <span class="mt-1.5 flex flex-wrap items-center gap-2">The chain can reach {name(reach)} ({usd(byId.get(reach)?.msrp ?? 0)}). <Button variant="outline" size="xs" onclick={() => (toId = reach)}>Plan to {name(reach)} instead</Button></span>
+              {/if}
             </Alert.Description>
           </Alert.Root>
         {:else}
@@ -729,6 +755,7 @@
               </li>
             {/each}
           </ol>
+          <CcuAlternatives {ships} owned={ccus.owned} {startId} targetId={toId} opt={used} best={result} onuse={(a) => Object.assign(opt, applyAlternative(opt, a))} />
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
               <TipButton variant="outline" size="sm" disabled={verifying || cart.busy} onclick={verifyChain} tip="Asks RSI, step by step, whether it sells each CCU from that ship and at what price. Read-only.">
@@ -749,6 +776,7 @@
             <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
               <Input class="w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
               <Button variant="outline" size="sm" type="submit">Save chain</Button>
+              <CcuShareLink hash={encodeCcuLink({ from: startId, to: toId, via: opt.via, opt })} />
               <TipButton variant="outline" size="sm" type="button" onclick={addToFleet} tip="Add this source → target (with its stops) as a goal at the end of your fleet plan">Add to fleet plan</TipButton>
               {#if saved.text}<span class="text-success text-[11px]">Saved “{saved.text}”</span>{/if}
               {#if addedToFleet.text}<span class="text-success text-[11px]">{addedToFleet.text} — <Button variant="link" size="xs" class="h-auto p-0 text-[11px]" onclick={() => (planner = 'fleet')}>open Fleet plan</Button></span>{/if}

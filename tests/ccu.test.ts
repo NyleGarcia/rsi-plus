@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -84,6 +84,107 @@ describe('ccu planner', () => {
     expect(matchShip('Kruger Wolf', wolves)?.id).toBe(90); // a word no catalog name uses (the maker) is ignored
     expect(matchShip('Hornet', wolves)?.id).toBe(92);
     expect(matchShip('Nothing Here', wolves)).toBeNull();
+  });
+
+  it('steps preference: same cost, fewer steps by default, more steps on request', () => {
+    // Without warbond every standard route Aurora → Connie costs 21500.
+    const fewer = plan(ships, [], 1, 4, o({ warbond: false }))!;
+    expect(fewer.steps.map((s) => s.toId)).toEqual([4]);
+    expect(plan(ships, [], 1, 4, o({ warbond: false, steps: undefined }))!.steps.map((s) => s.toId)).toEqual([4]);
+    const more = plan(ships, [], 1, 4, o({ warbond: false, steps: 'more' }))!;
+    expect(more.steps.map((s) => s.toId)).toEqual([2, 3, 4]);
+    expect(more.total).toBe(fewer.total);
+    // Cost stays primary: the cheaper warbond chain wins whatever the preference.
+    expect(plan(ships, [], 1, 4, o({ steps: 'more' }))).toMatchObject({ total: 20500 });
+    for (const objective of ['cash', 'longterm'] as const) expect(plan(ships, [], 1, 4, o({ warbond: false, steps: 'more', objective }))!.total).toBe(21500);
+  });
+
+  it('steps preference more: free owned CCUs are chained, and a free cycle through an unpriced hull ends', () => {
+    // Owned Aurora → Titan → Cutlass and Aurora → Cutlass, all free: same cost, more steps takes the long way.
+    const owned = [own(1, 2, 51), own(2, 3, 52), own(1, 3, 53)];
+    expect(plan(ships, owned, 1, 4)!.steps.map((s) => s.ref ?? s.toId)).toEqual([53, 4]);
+    expect(plan(ships, owned, 1, 4, o({ steps: 'more' }))!.steps.map((s) => s.ref ?? s.toId)).toEqual([51, 52, 4]);
+    // Unpriced hull U: owned Aurora → U and U → Aurora are both free edges, a zero-cost loop.
+    const U = ship(9, 'Unpriced', 0);
+    const loop = [own(1, 9, 61), own(9, 1, 62)];
+    const p = plan([...ships, U], loop, 1, 4, o({ steps: 'more' }))!;
+    expect(p.total).toBe(20500);
+    expect(new Set(p.steps.map((s) => s.toId)).size).toBe(p.steps.length);
+  });
+
+  it('planAlternatives: other chains, each with the step it takes out, best first', () => {
+    // Best Aurora → Connie: Cutlass warbond (sku 10000) → Connie standard (sku 24000) = 20500.
+    const alts = planAlternatives(ships, [], 1, 4, o({}));
+    // Without the warbond: the direct standard (21500). Without the Connie CCU: no chain at all.
+    expect(alts).toEqual([{ plan: expect.objectContaining({ total: 21500 }), skip: [10000], exclude: [] }]);
+    expect(alts[0]!.plan.steps.map((s) => s.toId)).toEqual([4]);
+    // An owned CCU taken out goes to exclude; results are ranked and differ from the best and from each other.
+    const owned = [own(1, 3, 99, { value: 7500 })];
+    const best = plan(ships, owned, 1, 4)!;
+    const a2 = planAlternatives(ships, owned, 1, 4, o({}), 5);
+    expect(a2[0]).toMatchObject({ skip: [], exclude: [99], plan: { total: 20500 } });
+    const keys = [best, ...a2.map((a) => a.plan)].map((p) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? s.ref}`).join('|'));
+    expect(new Set(keys).size).toBe(keys.length);
+    for (let i = 1; i < a2.length; i++) expect(a2[i]!.plan.total).toBeGreaterThanOrEqual(a2[i - 1]!.plan.total);
+    // Applying what an alternative removed gives that alternative.
+    expect(plan(ships, owned, 1, 4, o({ exclude: a2[0]!.exclude, skip: a2[0]!.skip }))).toEqual(a2[0]!.plan);
+    expect(planAlternatives(ships, owned, 1, 4, o({}), 1)).toHaveLength(1);
+    expect(planAlternatives(ships, [], 1, 2, o({ skip: [5500] }))).toEqual([]);
+    // applyAlternative adds the removals once and un-forces an excluded CCU.
+    expect(applyAlternative({ skip: [1], exclude: [99], include: [99, 98] }, { skip: [1, 2], exclude: [99] })).toEqual({ skip: [1, 2], exclude: [99], include: [98] });
+  });
+
+  it('farthestReachable: the priciest hull below the target a chain gets to', () => {
+    const E = ship(5, 'Not on sale', 30000);
+    const all = [...ships, E];
+    expect(plan(all, [], 1, 5)).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({})), 1, 5)).toBe(4);
+    // The Connie CCU ignored: the chain stops at the Cutlass.
+    expect(farthestReachable(planGraph(all, [], o({ skip: [24000] })), 1, 5)).toBe(3);
+    // An owned CCU counts; the start itself does not; nothing below a cheap target; unknown target.
+    expect(farthestReachable(planGraph(all, [own(1, 4, 7)], o({ skip: [24000] })), 1, 5)).toBe(4);
+    expect(farthestReachable(planGraph(all, [], o({})), 4, 5)).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({})), 3, 2)).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({})), 1, 999)).toBeNull();
+    // Store start: from the standalone ships on sale.
+    const A2 = { ...A, standalone: [sku('Aurora MR - Standalone', 2500)] };
+    expect(farthestReachable(planGraph([A2, B, C, E], [], o({})), STORE_START, 5)).toBe(3);
+  });
+
+  it('planAlternatives: two copies of one CCU are one route, and taking it out takes out both', () => {
+    const owned = [own(1, 3, 71), own(1, 3, 72)];
+    expect(plan(ships, owned, 1, 4)!.total).toBe(13000);
+    const alts = planAlternatives(ships, owned, 1, 4, o({}), 5);
+    expect(alts.length).toBeGreaterThan(0);
+    expect(alts[0]!.exclude.sort()).toEqual([71, 72]);
+    for (const a of alts) expect(a.plan.steps.some((s) => s.kind === 'owned' && s.fromId === 1 && s.toId === 3)).toBe(false);
+    expect(alts.every((a) => a.plan.total > 13000)).toBe(true);
+    // A copy another chain already reserved stays excluded and isn't listed again.
+    expect(planAlternatives(ships, owned, 1, 4, o({ exclude: [72] }))[0]!.exclude).toEqual([71]);
+  });
+
+  it('planAlternatives with more steps: the best chain minus a hop is not another route', () => {
+    const best = plan(ships, [], 1, 4, o({ warbond: false, steps: 'more' }))!;
+    expect(best.steps.map((s) => s.toId)).toEqual([2, 3, 4]);
+    const alts = planAlternatives(ships, [], 1, 4, o({ warbond: false, steps: 'more' }));
+    const hulls = new Set(best.steps.map((s) => s.toId));
+    for (const a of alts) expect(a.plan.steps.length >= best.steps.length || a.plan.steps.some((s) => !hulls.has(s.toId))).toBe(true);
+  });
+
+  it('farthestReachable: null when the graph reaches the target (a stop / forced CCU is the blocker)', () => {
+    const E = ship(5, 'Pricey stop', 30000, [sku('Standard Edition', 30000)]);
+    const all = [...ships, E];
+    expect(plan(all, [], 1, 4, o({ via: [5] }))).toBeNull();
+    expect(farthestReachable(planGraph(all, [], o({ via: [5] })), 1, 4)).toBeNull();
+    expect(plan(all, [], 1, 4, o({ include: [80] }))).not.toBeNull(); // an unknown forced ref is dropped
+    expect(farthestReachable(planGraph(all, [], o({})), 1, 4)).toBeNull();
+  });
+
+  it('planAlternatives: future steps are never taken out', () => {
+    const E = ship(5, 'Not on sale', 30000);
+    const alts = planAlternatives([...ships, E], [], 1, 5, o({ planAhead: true }));
+    for (const a of alts) expect(a.skip.length + a.exclude.length).toBe(1);
+    expect(alts.every((a) => a.plan.steps.at(-1)!.kind === 'future')).toBe(true);
   });
 
   it('objective cash: avoids warbond new money when credit can pay a standard chain', () => {
