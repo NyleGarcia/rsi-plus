@@ -6,7 +6,8 @@
   import type { GameShip } from '@/lib/items';
   import { ownedHulls } from '@/lib/owned-counts';
   import { useDeepLink } from '@/lib/deep-link.svelte';
-  import { catalogItem, gameShipsItem, hangarItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
+  import { catalogItem, gameShipsItem, hangarItem, priceHistoryItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
+  import { lastSeen, PRICE_KIND_LABEL, runsOf, withArchive, type PriceHistory } from '@/lib/price-history';
   import { isLimitedSku, isLimitedTime, isWarbondSku, lastSale, lowestOffer, matchShip, usd, type Catalog, type CatalogShip, type SaleHistory, type StoreItem } from '@/lib/store';
   import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
   import { applyFacets, SIZE_OPTIONS, STAGE_OPTIONS, stageOf, type Facet, type FacetValues, type RangeFacet } from '@/lib/facets';
@@ -37,6 +38,7 @@
   let wish = $state<WishShip[]>([]);
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let sales = $state<SaleHistory>({});
+  let prices = $state<PriceHistory>({});
   let game = $state<GameShip[]>([]);
   /** Ships you own (from the hangar) → copies + insurance, keyed by catalog id. */
   const owned = $derived(ownedHulls(hangar?.pledges, game, cat?.ships ?? []));
@@ -103,6 +105,7 @@
     gameShipsItem.getValue().then((g) => (game = g));
     hangarItem.getValue().then((h) => (hangar = h));
     saleHistoryItem.getValue().then((h) => (sales = h));
+    priceHistoryItem.getValue().then(async (h) => (prices = await withArchive(h)));
     storeItemsItem.getValue().then((v) => (shipListings = shipsOf(v)));
     refresh(false);
     const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), gameShipsItem.watch((g) => (game = g ?? [])), hangarItem.watch((h) => (hangar = h)), saleHistoryItem.watch((h) => (sales = h ?? {})), storeItemsItem.watch((v) => (shipListings = shipsOf(v)))];
@@ -274,9 +277,15 @@
                 {#if limitedIds.has(s.id)}<Tag kind="limited" size="xs" class="self-center" hint="RSI marks the standalone listing time-limited (from Browse)" />{/if}
                 {#if !onSale(s)}
                   {@const t = lastSale(sales, s.id)}
+                  {@const was = lastSeen(prices, s.id, ['ccu-wb', 'ccu', 'ship-wb', 'ship'])}
                   <LazyTip tip={t ? 'Last seen on sale by RSI+ (history starts when it was installed)' : "Not seen on sale since RSI+ was installed — ships come back at IAE (November), Invictus (May) or the maker's showcase"}>
                     {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-default text-[11px]">not on sale{t ? ` · last ${fmtDate(t)}` : ''}</button>{/snippet}
                   </LazyTip>
+                  {#if was}
+                    <LazyTip tip={runsOf(prices, s.id).slice(0, 12).map((r) => `${PRICE_KIND_LABEL[r.kind]} ${usd(r.p)} · ${fmtDate(r.from)}${r.to - r.from > 86_400_000 ? ` to ${fmtDate(r.to)}` : ''}${r.src ? ` · ${r.src}` : ''}`).join('\n')}>
+                      {#snippet trigger({ props })}<button type="button" {...props} class="text-muted-foreground cursor-help text-[11px]">· was {PRICE_KIND_LABEL[was.kind]} {usd(was.p)}</button>{/snippet}
+                    </LazyTip>
+                  {/if}
                 {/if}
               </div>
             </Table.Cell>

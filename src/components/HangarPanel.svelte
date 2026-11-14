@@ -10,7 +10,8 @@
   import { isGifted, pledgeFacets, pledgeRanges, PLEDGE_PRIMARY, PLEDGE_TYPES as TYPES } from '@/lib/pledge-facets';
   import FacetBar from './FacetBar.svelte';
   import { bg } from '@/lib/messages';
-  import { catalogItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
+  import { catalogItem, ccuChainsItem, gameShipsItem, hangarItem, paintCatalogItem, pledgeLabelsItem } from '@/lib/settings';
+  import { STORE_START, type SavedChain } from '@/lib/ccu';
   import { cleanLabels, idsWith, KEEP, labelsOf, MELT, type Labels } from '@/lib/labels';
   import LabelEdit from './LabelEdit.svelte';
   import { matchShip, type Catalog, type StorePaint } from '@/lib/store';
@@ -70,6 +71,24 @@
   let q = $state('');
   /** Your labels (`lib/labels.ts`); the Labels facet filters by them. */
   let labels = $state<Labels>({});
+  /** Saved CCU chains (planner): a CCU pledge one of them uses says so, and where that chain goes. */
+  let chains = $state<SavedChain[]>([]);
+  const chainByRef = $derived.by(() => {
+    const m = new Map<number, SavedChain>();
+    for (const c of chains) for (const st of c.steps) if (st.kind === 'owned' && st.ref != null && !m.has(st.ref)) m.set(st.ref, c);
+    return m;
+  });
+  const chainsUsing = (entries: { id: number }[]): { chain: SavedChain; count: number }[] => {
+    if (!chainByRef.size) return [];
+    const m = new Map<string, { chain: SavedChain; count: number }>();
+    for (const e of entries) {
+      const c = chainByRef.get(e.id);
+      if (c) m.set(c.id, { chain: c, count: (m.get(c.id)?.count ?? 0) + 1 });
+    }
+    return [...m.values()];
+  };
+  const shipNameOf = (id: number) => (id === STORE_START ? 'the store' : (cat?.ships.find((x) => x.id === id)?.name ?? `#${id}`));
+  const chainRoute = (c: SavedChain) => [shipNameOf(c.startId), ...c.steps.map((st) => shipNameOf(st.toId))].join(' → ');
   /** Store paint listings (loaded by Paints / Buyback / the background) — for the "In store" facet. */
   let storePaints = $state<StorePaint[] | null>(null);
   /** Store a plain copy: a Svelte state proxy put in chrome.storage turned label arrays into `{"0": …}` objects. */
@@ -87,11 +106,12 @@
     catalogItem.getValue().then((c) => (cat = c));
     gameShipsItem.getValue().then((g) => (game = g));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
+    ccuChainsItem.getValue().then((c) => (chains = c)).catch(() => {});
     paintCatalogItem.getValue().then((p) => (storePaints = p?.paints ?? null)).catch(() => {});
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch(() => {}); // only needed to know which hulls a paint fits
-    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l))), paintCatalogItem.watch((p) => (storePaints = p?.paints ?? null))];
+    const offs = [catalogItem.watch((c) => (cat = c)), gameShipsItem.watch((g) => (game = g ?? [])), pledgeLabelsItem.watch((l) => (labels = cleanLabels(l))), paintCatalogItem.watch((p) => (storePaints = p?.paints ?? null)), ccuChainsItem.watch((c) => (chains = c ?? []))];
     return () => (ctrl?.abort(), offs.forEach((o) => o()));
   });
 
@@ -923,6 +943,9 @@
                       {#if isGifted(p)}<Tag kind="gifted" />{/if}
                       {#if p.upgraded}<Tag kind="upgraded" />{/if}
                       {#if p.hasGame}<Tag kind="game" />{/if}
+                      {#each chainsUsing(s.entries) as u (u.chain.id)}
+                        <HintBadge variant="info" size="xs" hint={`Saved CCU chain “${u.chain.name}”: ${chainRoute(u.chain)}.${n > 1 ? ` Uses ${u.count} of these ${n}.` : ''} Melting or gifting it breaks that chain.`}>chain → {shipNameOf(u.chain.targetId)}</HintBadge>
+                      {/each}
                       {#if !p.meltable}<Badge variant="muted">no melt</Badge>{/if}
                       {#if p.noBuyback}<HintBadge variant="warning" hint="RSI marks this pledge as not buy-backable: melting it is final">no buyback</HintBadge>{/if}
                       {#if p.configValue}<HintBadge variant="muted" hint="Paid customization on top of the pledge">+{money(p.configValue)} config</HintBadge>{/if}

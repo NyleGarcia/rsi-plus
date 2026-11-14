@@ -53,6 +53,8 @@ export interface Step {
   ref?: number;
   /** Store SKU to add to the cart (store CCU / standalone steps; none on `future` steps). */
   skuId?: number;
+  /** `future` step priced at the last sale price seen (not MSRP): when it was seen, and whether it was a warbond CCU. */
+  est?: { at: number; wb: boolean };
 }
 
 export interface Plan {
@@ -93,6 +95,11 @@ export interface PlanOptions {
   via?: number[];
   /** Store SKUs (CCU / standalone) never used: steps ignored from a chain, so the planner routes around that offer. */
   skip?: number[];
+  /**
+   * Price a "wait for a sale" step at the last CCU price seen below MSRP (`CatalogShip.expect`) instead of MSRP.
+   * Default on; a CCU on sale today is always used at today's price, history only fills in for what is not sold now.
+   */
+  lastSeen?: boolean;
 }
 
 export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
@@ -154,7 +161,7 @@ export interface PlanGraph {
 
 export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions): PlanGraph {
   const byId = new Map(ships.map((s) => [s.id, s]));
-  const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId?: number }[] = [];
+  const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId?: number; est?: { at: number; wb: boolean } }[] = [];
   const starts: Step[] = [];
   const skip = new Set(opt.skip ?? []);
   for (const s of ships) {
@@ -172,7 +179,14 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
       onSale = true;
     }
     // Nothing sells a CCU to this hull today: with planAhead, assume a standard CCU at MSRP when it next returns.
-    if (opt.planAhead && !onSale && s.msrp > 0) offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
+    if (opt.planAhead && !onSale && s.msrp > 0) {
+      // Last sale price seen, when there is one below MSRP (the cheaper of standard and — if allowed — warbond).
+      const e = opt.lastSeen === false ? undefined : s.expect;
+      const wb = opt.warbond ? e?.wb : undefined;
+      const pick = wb && (!e?.std || wb.price < e.std.price) ? { ...wb, wb: true } : e?.std ? { ...e.std, wb: false } : null;
+      if (pick && pick.price < s.msrp) offers.push({ to: s, price: pick.price, kind: 'future', title: pick.wb ? 'Last seen warbond price' : 'Last seen sale price', est: { at: pick.at, wb: pick.wb } });
+      else offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
+    }
     for (const k of s.standalone) {
       if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id)) continue;
       const wb = isWarbondSku(k);
@@ -198,7 +212,7 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
       // RSI only sells CCUs up: the target must be worth more than the hull it starts from.
       if (o.to.id === a.id || o.price <= a.msrp || o.to.msrp <= a.msrp) continue;
       const cost = o.price - a.msrp;
-      out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, ...(o.skuId != null ? { skuId: o.skuId } : {}) });
+      out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || o.est?.wb || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, ...(o.skuId != null ? { skuId: o.skuId } : {}), ...(o.est ? { est: o.est } : {}) });
     }
     for (const o of ownedFrom.get(a.id) ?? []) {
       const to = byId.get(o.toId);
@@ -437,7 +451,7 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
   // reserves more CCUs.
   const graphs = new Map<string, PlanGraph>();
   const graphOf = (o: PlanOptions) => {
-    const k = `${!!o.planAhead}|${[...o.exclude].sort((a, b) => a - b).join(',')}|${[...(o.skip ?? [])].sort((a, b) => a - b).join(',')}`;
+    const k = `${!!o.planAhead}|${o.lastSeen !== false}|${[...o.exclude].sort((a, b) => a - b).join(',')}|${[...(o.skip ?? [])].sort((a, b) => a - b).join(',')}`;
     return graphs.get(k) ?? graphs.set(k, planGraph(ships, owned, o)).get(k)!;
   };
   for (const goal of goals) {

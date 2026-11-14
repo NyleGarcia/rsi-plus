@@ -20,6 +20,7 @@ import {
   ccuChainsItem,
   paintCatalogItem,
   saleHistoryItem,
+  priceHistoryItem,
   storeItemsItem,
   wishlistItem,
   settingsItem,
@@ -37,6 +38,7 @@ import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents
 import { sleep } from '@/lib/utils';
 import { catalogEntries, listingEntries } from '@/lib/storelog';
 import { saveStoreCopy } from '@/lib/storelog-save';
+import { recordPrices } from '@/lib/price-history';
 import { threadUrl } from '@/lib/types';
 import { channelEvents, friendEvents, keywordsFor, mergeEvents, threadEvents, type FeedEvent } from '@/lib/watch';
 import { IC_HOSTS } from '@/lib/issue-council';
@@ -475,6 +477,7 @@ async function catalog(fresh: boolean): Promise<Catalog> {
     .then(async (c) => {
       await catalogItem.setValue(c);
       await saleHistoryItem.setValue(recordSales(await saleHistoryItem.getValue(), c.ships, c.at));
+      await priceHistoryItem.setValue(recordPrices(await priceHistoryItem.getValue(), c.ships, c.at)).catch((e) => console.warn('[RSI+] price history', e));
       await saveStoreCopy('catalog', catalogEntries(c), c.at).catch((e) => console.warn('[RSI+] store log', e));
       return c;
     })

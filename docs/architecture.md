@@ -1,7 +1,7 @@
 ---
 title: Architecture
 tags: [architecture]
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 # Architecture
 
@@ -80,6 +80,7 @@ Manifest `incognito: 'split'`: incognito windows get their own background worker
 - Background refreshes every 30 min with a wishlist, else 6 h (`local:catalog`); `wishlistEvents` alerts on the first offer or a lower one (`sync:wishlist.lowest`).
 - Verified live 2026-10: 240 ships, 53 CCU targets on sale, warbond detection. 2026-10-16: 241 hulls, every one with an MSRP, 89 with a standalone SKU on sale.
 - Sale history (`local:saleHistory`, `SaleHistory` = per ship id `{ ccu?, standalone? }` ms): `recordSales` stamps what is on sale on every catalog refresh (`background.catalog()`), `lastSale` reads the latest. Starts empty at install — RSI publishes no sale calendar — and feeds "not on sale · last <date>" in the Ship catalog and the planner's `future` rows.
+- Price history (`src/lib/price-history.ts`, `local:priceHistory`, `PriceHistory` = ship id → kind (`msrp`, `ccu`, `ccu-wb`, `ship`, `ship-wb`) → runs `{ p, from, to, src? }`): `recordPrices` stamps the cheapest SKU of each kind on every catalog refresh; the same price within 7 days stretches the run, anything else starts one (40 runs kept per kind). The years before install come from the archive shipped with the extension (`src/lib/data/price-seed.json`, compact `[cents, first day, last day]`, loaded on demand by `archivePrices`); `withArchive(own)` merges it at read time, never into storage, and drops an archived run that overlaps one RSI+ read itself. Order of trust: the live catalog, then the most recent run, then own over archive. `withExpected(ships, history)` puts the last CCU price seen below MSRP on each hull (`CatalogShip.expect`); the planner prices a `future` step at it (`PlanOptions.lastSeen`, default on; `Step.est` marks it) only when nothing sells a CCU to that hull today. Shown on the Ship catalog (*was … $x* with the runs in the tooltip) and on planner steps that wait for a sale.
 - Hub page *Ship catalog* (`#store`, `StorePanel`): defaults to what the store sells now — an *On sale · N / Not on sale · M / All hulls* segmented control (on sale = a CCU to the hull or a standalone), header counts on-sale ones; filters add *Concept ships*, owned / not owned, maker; *Plan CCU* on a not-on-sale hull links `#ccu?to=<id>&ahead=1`.
 
 ## Hub navigation (`hub/Hub.svelte`, `src/lib/hub-hash.ts`)

@@ -66,6 +66,11 @@ export interface CatalogShip {
   ccu: Sku[];
   /** `wiki`: a hull RSI's upgrade catalog doesn't list (Kraken, Javelin…), MSRP from starcitizen.tools (`EXTRA_SHIPS`). */
   msrpSource?: 'wiki';
+  /**
+   * Last CCU price seen below MSRP (`lib/price-history.ts` `withExpected`): what a "wait for a sale" step is priced
+   * at. Never saved with the catalog — set on the copy the planner works with.
+   */
+  expect?: { std?: { price: number; at: number }; wb?: { price: number; at: number } };
 }
 
 export interface Catalog {

@@ -6,7 +6,8 @@
   import { DEFAULT_PLAN_OPTIONS, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, saleHistoryItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem } from '@/lib/settings';
+  import { withArchive, withExpected, type PriceHistory } from '@/lib/price-history';
   import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
   import { matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
@@ -53,6 +54,7 @@
   let buyback = $state<Awaited<ReturnType<typeof buybackItem.getValue>>>(null);
   let chains = $state<SavedChain[]>([]);
   let sales = $state<SaleHistory>({});
+  let prices = $state<PriceHistory>({});
   let labels = $state<Labels>({});
   let error = $state('');
 
@@ -89,6 +91,7 @@
     catalogItem.getValue().then((c) => (cat = c));
     ccuChainsItem.getValue().then((c) => (chains = c));
     saleHistoryItem.getValue().then((h) => (sales = h));
+    priceHistoryItem.getValue().then(async (h) => (prices = await withArchive(h)));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
@@ -114,7 +117,8 @@
     if (initialAhead) opt.planAhead = true;
   });
 
-  const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
+  // `expect` = the last sale price seen per hull, for steps that wait for a sale (today's store always wins over it)
+  const ships = $derived(withExpected((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp), prices));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
   /** Hull copies a fleet plan may upgrade: pledges labelled *Keep* are left out (`lib/labels.ts`). */
@@ -446,13 +450,14 @@
     opt.include = opt.include.filter((r) => !refs.has(r));
     opt.exclude = to === 'exclude' ? [...new Set([...opt.exclude, ...refs])] : opt.exclude.filter((r) => !refs.has(r));
   }
-  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted' | 'planAhead'; label: string; hint?: string }[] = [
+  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted' | 'planAhead' | 'lastSeen'; label: string; hint?: string }[] = [
     { key: 'warbond', label: 'Warbond CCUs' },
     { key: 'buyback', label: 'Buyback CCUs' },
     { key: 'inStockOnly', label: 'Skip sold-out limited' },
     { key: 'storeCredit', label: 'Pay with store credit' },
     { key: 'excludeGifted', label: 'Exclude gifted CCUs' },
     { key: 'planAhead', label: 'Plan ahead (ships not on sale)', hint: 'Route through hulls nobody sells a CCU to today, at MSRP, to buy when they return (IAE, Invictus, the maker\'s showcase). Save the chain and the Feed tells you when such a CCU is in the store.' },
+    { key: 'lastSeen', label: 'Last seen sale prices', hint: 'A step that waits for a sale is priced at the last CCU price RSI+ saw for that hull (warbond included when warbond CCUs are on) instead of MSRP. What the store sells today is always taken at today\'s price.' },
   ];
   const payNow = $derived(result ? result.total - result.later : 0);
   const storeSteps = $derived(addableSteps.filter((s) => s.kind !== 'buyback').length);
@@ -559,7 +564,7 @@
         <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
           {#each OPTIONS as o (o.key)}
-            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={!!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
+            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' ? opt.lastSeen !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
           {/each}
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Exclude saved chains${chains.length ? ` (${reservedBy.size} CCUs)` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
         </div>
@@ -677,7 +682,7 @@
                       {#if s.fromId !== STORE_START}<span class="text-muted-foreground">{name(s.fromId)}</span> <span class="text-muted-foreground">→</span> {/if}<strong>{name(s.toId)}</strong>
                       <Badge variant={kindVariant(s.kind)}>{KIND[s.kind]}</Badge>
                       {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback' && s.kind !== 'future'}<span class="text-muted-foreground text-[11px]">{s.label}</span>{/if}
-                      {#if s.kind === 'future'}<span class="text-muted-foreground text-[11px]">{seen(s.toId)}</span>{/if}
+                      {#if s.kind === 'future'}<span class="text-muted-foreground text-[11px]">{s.est ? `priced at the last ${s.est.wb ? 'warbond ' : ''}sale price seen, ${fmtDate(s.est.at)}` : seen(s.toId)}</span>{/if}
                       {#if v?.st === 'checking'}<Badge variant="secondary" class="text-muted-foreground">checking…</Badge>
                       {:else if v?.st === 'wait'}<Badge variant="warning-soft">waits for a sale</Badge>
                       {:else if v?.st === 'ok'}<Badge variant="success-soft"><Check />RSI confirmed{v.note ? ` · ${v.note}` : ''}</Badge>

@@ -21,7 +21,7 @@ const PROFILES = /^(incognito\.)?profiles$/;
 /** Parked account data per saved login (`profileData.<id>`): the key carries the handle. */
 const PROFILE_DATA = /^((?:incognito\.)?profileData\.).+$/;
 /** Public store data (catalog, paints, listings, store log): most of the file and nothing of yours — summarized unless asked for. */
-const STORE = /^(incognito\.)?(catalog|paints|storeItems|storeSnapshot|storeLog|saleHistory|funding|impoundCache|intelCache)$/;
+const STORE = /^(incognito\.)?(catalog|paints|storeItems|storeSnapshot|storeLog|saleHistory|priceHistory|funding|impoundCache|intelCache)$/;
 /** A JWT-looking value is a token whatever its key. */
 const JWT = /^eyJ[\w-]+\.[\w-]+\./;
 
