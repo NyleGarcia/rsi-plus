@@ -35,8 +35,9 @@ export interface HubPage {
   /** Shorter label for the popup grid (a third of 300 px); `label` when absent. */
   short?: string;
   /**
-   * Parts of the page listed under it in the sidebar: each opens `#<tab>?<query>`. A view (`show=` / `view=` / `cat=` /
-   * `who=`: the page filters itself) or a place on the page (`at=<element id>`: the hub scrolls to it).
+   * Views of the page listed under it in the sidebar: each opens `#<tab>?<query>` and the page shows that view
+   * (`show=` / `view=` / `cat=` / `who=`). Only for real views — the tabs of a page. Sections further down one page
+   * are not listed: scrolling is not navigation.
    */
   children?: HubSub[];
   /** List the parts all the time, not only while the page is open (the Feed: its parts are places to go straight to). */
@@ -79,32 +80,9 @@ export const HUB_GROUPS: HubGroup[] = [
   {
     label: 'Spectrum',
     items: [
-      {
-        tab: 'watching',
-        label: 'Watching',
-        sub: 'Threads, channels, authors, bells',
-        icon: Eye,
-        children: [
-          { id: 'threads', label: 'Threads', sub: 'Threads you watch', query: 'at=watching-threads' },
-          { id: 'channels', label: 'Channels', sub: 'Channels you watch for new threads and dev posts', query: 'at=watching-channels' },
-          { id: 'keywords', label: 'Keywords', sub: 'Words that flag a thread', query: 'at=watching-keywords' },
-          { id: 'authors', label: 'Authors', sub: 'People whose posts you follow', query: 'at=watching-authors' },
-        ],
-      },
+      { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
       { tab: 'issues', label: 'Issue Council', sub: 'Issues you track, notes, trends', icon: Bug },
-      {
-        tab: 'friends',
-        label: 'Friends',
-        sub: 'List, requests, orgs, party mode',
-        icon: Users,
-        popup: true,
-        short: 'Friends',
-        children: [
-          { id: 'party', label: 'Party mode', sub: 'Auto-accept friend requests for a while', query: 'at=friends-party' },
-          { id: 'requests', label: 'Requests', sub: 'Incoming and sent friend requests', query: 'at=friends-requests' },
-          { id: 'list', label: 'Friend list', sub: 'Everyone, by name or by org', query: 'at=friends-list' },
-        ],
-      },
+      { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true, short: 'Friends' },
       { tab: 'intel', label: 'Org lookup', sub: 'Players & orgs, your threat tags', icon: ShieldAlert },
       { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
     ],
@@ -118,20 +96,7 @@ export const HUB_GROUPS: HubGroup[] = [
       { tab: 'items', label: 'Items', sub: 'Gear, paints, flair in your pledges', icon: Package },
       { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
       { tab: 'buyback', label: 'Buyback', sub: 'What you melted', icon: Undo2 },
-      {
-        tab: 'wallet',
-        label: 'Wallet',
-        sub: "Credits, spend, Chairman's Club, funding",
-        icon: Wallet,
-        popup: true,
-        short: 'Wallet',
-        children: [
-          { id: 'credits', label: 'Credits', sub: 'Store credit and UEC', query: 'at=wallet-credits' },
-          { id: 'spend', label: 'Your spend', sub: 'Where the money went', query: 'at=wallet-spend' },
-          { id: 'fleet', label: 'Fleet value', sub: "Your ships at today's prices, CCU portfolio", query: 'at=wallet-fleet-value' },
-          { id: 'funding', label: 'Funding', sub: 'Star Citizen crowdfunding', query: 'at=wallet-funding' },
-        ],
-      },
+      { tab: 'wallet', label: 'Wallet', sub: "Credits, spend, Chairman's Club, funding", icon: Wallet, popup: true, short: 'Wallet' },
     ],
   },
   {
@@ -161,20 +126,7 @@ export const HUB_GROUPS: HubGroup[] = [
   {
     label: 'Plan',
     items: [
-      {
-        tab: 'ccu',
-        label: 'CCU planner',
-        sub: 'Upgrade chains, cart',
-        icon: Route,
-        popup: true,
-        short: 'Planner',
-        children: [
-          { id: 'plan', label: 'Plan a chain', sub: 'One source, one target: verify, cart', query: 'at=ccu-plan' },
-          { id: 'cart', label: 'RSI cart', sub: 'What is in your cart now', query: 'at=ccu-cart-card' },
-          { id: 'chains', label: 'My chains', sub: 'Every ship you are working towards, by priority', query: 'at=ccu-chains-card' },
-          { id: 'owned', label: 'Your CCUs', sub: 'Force a CCU in or out', query: 'at=ccu-owned-card' },
-        ],
-      },
+      { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true, short: 'Planner' },
       { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
       { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
     ],

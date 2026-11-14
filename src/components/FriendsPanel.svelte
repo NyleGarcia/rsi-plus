@@ -486,7 +486,7 @@
   </div>
 {/snippet}
   <div class="grid gap-4">
-    <Card.Root id="friends-party" class={cn(partyOn && 'ring-warning/50 inset-ring inset-ring-warning/25')}>
+    <Card.Root class={cn(partyOn && 'ring-warning/50 inset-ring inset-ring-warning/25')}>
       <Card.Header>
         <Card.Title class="flex items-center gap-2">Party mode {#if partyOn}<Badge variant="warning">ON</Badge>{/if}</Card.Title>
         <Card.Description>
@@ -545,7 +545,7 @@
     {/if}
 
     {#if data}
-      <Card.Root id="friends-requests">
+      <Card.Root>
         <Card.Header>
           <Card.Title class="flex flex-wrap items-center gap-2">Friend requests <Badge variant="secondary">{requests.incoming.length} incoming · {requests.outgoing.length} sent</Badge></Card.Title>
           <Card.Action><Button variant="outline" onclick={load} disabled={loading || !!busyReq}>Refresh</Button></Card.Action>
@@ -620,7 +620,7 @@
       </Card.Root>
     {/if}
 
-    <Card.Root id="friends-list">
+    <Card.Root>
       <Card.Header>
         <Card.Title>Friend list</Card.Title>
         <Card.Description class="grid gap-1">

@@ -126,34 +126,6 @@
 
   const current = $derived(pageOf(tab));
 
-  /**
-   * A part of a page that is a place on it (`#wallet?at=wallet-spend`): scroll there once the page has rendered it
-   * (pages load on demand, so the element may not exist yet). `goPart` also covers a second click on the same part,
-   * which changes no hash.
-   */
-  let scrollTimer: ReturnType<typeof setInterval> | undefined;
-  function scrollToPart(q: string) {
-    clearInterval(scrollTimer);
-    const at = new URLSearchParams(q).get('at');
-    if (!at) return;
-    let tries = 0;
-    const go = () => {
-      const el = document.getElementById(at);
-      if (!el && ++tries < 30) return false;
-      clearInterval(scrollTimer);
-      if (el) {
-        el.style.scrollMarginTop = '4.5rem'; // clear the sticky header
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-      return true;
-    };
-    if (!go()) scrollTimer = setInterval(go, 100);
-  }
-  $effect(() => {
-    scrollToPart(query);
-    return () => clearInterval(scrollTimer);
-  });
-  const goPart = (href: string) => href === location.hash && scrollToPart(href.split('?')[1] ?? '');
 
   /** Settings → Spectrum tools off: Watching and Mutes leave the nav (still reachable by link); Feed and Friends stay. */
   const SPECTRUM_ONLY = new Set<Item['tab']>(['watching', 'mutes']);
@@ -300,7 +272,7 @@
               <Sidebar.GroupContent>
                 <Sidebar.Menu>
                   {#each g.items as it (it.tab)}
-                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'feed' ? unseen + notices.add + notices.remove : 0} badge={it.tab === 'feed' ? [unseen ? { text: String(unseen), tone: 'info' as const } : null, notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} children={(it.pinned || it === current ? (it.children ?? []) : []).map((c) => ({ id: c.id, label: c.label, sub: c.sub, href: `#${it.tab}?${c.query}`, active: it === current && new URLSearchParams(query).get(c.query.split('=')[0]!) === c.query.split('=')[1], count: it.tab === 'feed' ? (c.id === 'changes' ? (notices.add + notices.remove ? `+${notices.add} −${notices.remove}` : '') : unseenBy[c.id] ? String(unseenBy[c.id]) : '') : '' }))} onselect={() => select(it)} onpart={(href) => goPart(href)} />
+                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'feed' ? unseen + notices.add + notices.remove : 0} badge={it.tab === 'feed' ? [unseen ? { text: String(unseen), tone: 'info' as const } : null, notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} children={(it.pinned || it === current ? (it.children ?? []) : []).map((c) => ({ id: c.id, label: c.label, sub: c.sub, href: `#${it.tab}?${c.query}`, active: it === current && new URLSearchParams(query).get(c.query.split('=')[0]!) === c.query.split('=')[1], count: it.tab === 'feed' ? (c.id === 'changes' ? (notices.add + notices.remove ? `+${notices.add} −${notices.remove}` : '') : unseenBy[c.id] ? String(unseenBy[c.id]) : '') : '' }))} onselect={() => select(it)} />
                   {/each}
                 </Sidebar.Menu>
               </Sidebar.GroupContent>

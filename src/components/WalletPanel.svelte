@@ -616,7 +616,7 @@
 {/snippet}
 
 <div class="grid gap-4">
-  <Card.Root id="wallet-credits">
+  <Card.Root>
     <Card.Header>
       <Card.Title>Credits</Card.Title>
       <Card.Description>
@@ -647,7 +647,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root id="wallet-spend">
+  <Card.Root>
     <Card.Header>
       <Card.Title>Your spend</Card.Title>
       {#if all.length}
@@ -724,7 +724,7 @@
   </Card.Root>
 
   {#if all.length && ships.length}
-    <Card.Root id="wallet-fleet-value">
+    <Card.Root>
       <Card.Header>
         <Card.Title>Fleet at today's prices</Card.Title>
         <Card.Description class="text-xs">
@@ -808,7 +808,7 @@
     {/if}
   {/if}
 
-  <Card.Root id="wallet-funding">
+  <Card.Root>
     <Card.Header>
       <Card.Title>Star Citizen funding</Card.Title>
       <Card.Description class="text-xs">
