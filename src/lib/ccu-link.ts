@@ -105,7 +105,7 @@ export function linkToPlanner(
   const full = l.objective != null || l.steps != null;
   if (l.via) out.opt.via = l.via.filter(has);
   else if (full) out.opt.via = [];
-  if (full) (out.opt.include = []), (out.opt.skip = []);
+  if (full) (out.opt.include = []), (out.opt.skip = []), (out.opt.noWait = []);
   if (l.objective) out.opt.objective = l.objective;
   if (l.steps) out.opt.steps = l.steps;
   for (const [k, v] of Object.entries(l.flags) as [LinkFlag, boolean][]) out.opt[k] = v;

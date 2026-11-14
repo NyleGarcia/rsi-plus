@@ -17,6 +17,7 @@
   import type { HubTab } from '@/lib/messages';
   import { HUB_GROUPS, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
   import { INCOGNITO, feedItem, getSettings, settingsItem, storeLogItem } from '@/lib/settings';
+  import { FEED_SECTIONS, type FeedEvent } from '@/lib/watch';
   import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
 
@@ -101,20 +102,30 @@
   /** Feed entry badges: unseen events, and store changes not yet dismissed ("+32 −5"). */
   let notices = $state({ add: 0, remove: 0 });
   let unseen = $state(0);
+  /** Unseen feed events per sidebar part of the Feed (`FEED_SECTIONS`). */
+  let unseenBy = $state<Record<string, number>>({});
+  const countUnseen = (f: FeedEvent[] | null | undefined) => {
+    const fresh = (f ?? []).filter((e) => !e.seen);
+    unseen = fresh.length;
+    unseenBy = Object.fromEntries(Object.entries(FEED_SECTIONS).map(([id, kinds]) => [id, fresh.filter((e) => (kinds as readonly string[]).includes(e.kind)).length]));
+  };
+  /** What follows `?` in the hash: which view of a page is open (the Feed's parts in the sidebar). */
+  let query = $state(location.hash.split('?')[1] ?? '');
   $effect(() => {
     storeLogItem.getValue().then((v) => (notices = tally(cleanLog(v))));
-    feedItem.getValue().then((f) => (unseen = (f ?? []).filter((e) => !e.seen).length));
-    const offs = [storeLogItem.watch((v) => (notices = tally(cleanLog(v)))), feedItem.watch((f) => (unseen = (f ?? []).filter((e) => !e.seen).length))];
+    feedItem.getValue().then(countUnseen);
+    const offs = [storeLogItem.watch((v) => (notices = tally(cleanLog(v)))), feedItem.watch(countUnseen)];
     return () => offs.forEach((off) => off());
   });
   // `#ccu?to=…&ahead=1` links are read by CcuPanel itself (lib/ccu-link.ts), which checks the ids against the catalog.
   $effect(() => {
-    const onHash = () => (tab = fromHash());
+    const onHash = () => ((tab = fromHash()), (query = location.hash.split('?')[1] ?? ''));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   });
 
   const current = $derived(pageOf(tab));
+
 
   /** Settings → Spectrum tools off: Watching and Mutes leave the nav (still reachable by link); Feed and Friends stay. */
   const SPECTRUM_ONLY = new Set<Item['tab']>(['watching', 'mutes']);
@@ -132,7 +143,11 @@
   function select(it: Item) {
     const hash = `#${it.tab}`;
     tab = it.tab;
-    if (location.hash !== hash) history.replaceState(null, '', hash);
+    query = '';
+    if (location.hash !== hash) {
+      history.replaceState(null, '', hash);
+      window.dispatchEvent(new HashChangeEvent('hashchange')); // the page follows (the Feed back to everything)
+    }
   }
 
   /** Up/Down/Home/End move between the nav entries (and select, like the old tab strip did). */
@@ -257,7 +272,7 @@
               <Sidebar.GroupContent>
                 <Sidebar.Menu>
                   {#each g.items as it (it.tab)}
-                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'feed' ? unseen + notices.add + notices.remove : 0} badge={it.tab === 'feed' ? [unseen ? { text: String(unseen), tone: 'info' as const } : null, notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} onselect={() => select(it)} />
+                    <NavItem id={`nav-${it.tab}`} label={it.label} sub={it.sub} icon={it.icon} active={it === current} count={it.tab === 'feed' ? unseen + notices.add + notices.remove : 0} badge={it.tab === 'feed' ? [unseen ? { text: String(unseen), tone: 'info' as const } : null, notices.add ? { text: `+${notices.add}`, tone: 'success' as const } : null, notices.remove ? { text: `−${notices.remove}`, tone: 'destructive' as const } : null].filter((b) => !!b) : []} children={(it.pinned || it === current ? (it.children ?? []) : []).map((c) => ({ id: c.id, label: c.label, sub: c.sub, href: `#${it.tab}?${c.query}`, active: it === current && new URLSearchParams(query).get(c.query.split('=')[0]!) === c.query.split('=')[1], count: it.tab === 'feed' ? (c.id === 'changes' ? (notices.add + notices.remove ? `+${notices.add} −${notices.remove}` : '') : unseenBy[c.id] ? String(unseenBy[c.id]) : '') : '' }))} onselect={() => select(it)} />
                   {/each}
                 </Sidebar.Menu>
               </Sidebar.GroupContent>

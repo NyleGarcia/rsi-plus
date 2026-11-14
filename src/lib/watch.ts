@@ -65,6 +65,15 @@ export const EVENT_KINDS: { id: EventKind; label: string; hint: string }[] = [
   { id: 'issue', label: 'Issue Council', hint: 'Status changes and new contributions on issues you track, seen when you open the Issue Council' },
 ];
 
+/** The Feed's parts, as the sidebar lists them under *Feed* (`#feed?show=<id>`): which kinds each shows. */
+export const FEED_SECTIONS = {
+  spectrum: ['replies', 'thread', 'dev', 'author', 'keyword', 'issue'],
+  friends: ['friend', 'request', 'party'],
+  store: ['store', 'hangar'],
+} as const satisfies Record<string, readonly EventKind[]>;
+export type FeedSection = keyof typeof FEED_SECTIONS;
+export const isFeedSection = (s: string | null | undefined): s is FeedSection => !!s && Object.hasOwn(FEED_SECTIONS, s);
+
 export interface FeedEvent {
   /** Stable id so re-polls don't duplicate (kind + entity + count/time). */
   key: string;

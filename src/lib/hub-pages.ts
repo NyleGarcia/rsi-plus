@@ -34,6 +34,21 @@ export interface HubPage {
   popup?: boolean;
   /** Shorter label for the popup grid (a third of 300 px); `label` when absent. */
   short?: string;
+  /**
+   * Views of the page listed under it in the sidebar: each opens `#<tab>?<query>` and the page shows that view
+   * (`show=` / `view=` / `cat=` / `who=`). Only for real views — the tabs of a page. Sections further down one page
+   * are not listed: scrolling is not navigation.
+   */
+  children?: HubSub[];
+  /** List the parts all the time, not only while the page is open (the Feed: its parts are places to go straight to). */
+  pinned?: boolean;
+}
+export interface HubSub {
+  id: string;
+  label: string;
+  sub: string;
+  /** `key=value` after the `?` of the hash. */
+  query: string;
 }
 export interface HubGroup {
   label: string;
@@ -42,9 +57,29 @@ export interface HubGroup {
 
 export const HUB_GROUPS: HubGroup[] = [
   {
+    // The Feed gathers everything RSI+ noticed — Spectrum, friends, the store, your hangar — so it sits above the sections.
+    label: 'Activity',
+    items: [
+      {
+        tab: 'feed',
+        label: 'Feed',
+        sub: 'Everything new: Spectrum, friends, store, hangar',
+        icon: Rss,
+        popup: true,
+        short: 'Feed',
+        pinned: true,
+        children: [
+          { id: 'spectrum', label: 'Spectrum', sub: 'Watched threads, channels, authors, keywords, Issue Council', query: 'show=spectrum' },
+          { id: 'friends', label: 'Friends', sub: 'Online, added or gone, requests, party mode', query: 'show=friends' },
+          { id: 'store', label: 'Store alerts', sub: 'Wishlist and CCU chain alerts, hangar changes', query: 'show=store' },
+          { id: 'changes', label: 'Store changes', sub: 'What the pledge store added and removed', query: 'view=store' },
+        ],
+      },
+    ],
+  },
+  {
     label: 'Spectrum',
     items: [
-      { tab: 'feed', label: 'Feed', sub: 'Watches, friends, store alerts, store changes', icon: Rss, popup: true, short: 'Feed' },
       { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
       { tab: 'issues', label: 'Issue Council', sub: 'Issues you track, notes, trends', icon: Bug },
       { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true, short: 'Friends' },
@@ -68,7 +103,24 @@ export const HUB_GROUPS: HubGroup[] = [
     label: 'Store',
     items: [
       { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, size, stage', icon: Store, popup: true, short: 'Catalog' },
-      { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · limited time, new, special', icon: LayoutGrid, popup: true, short: 'Browse' },
+      {
+        tab: 'browse',
+        label: 'Browse',
+        sub: 'Paints, packs, gear · limited time, new, special',
+        icon: LayoutGrid,
+        popup: true,
+        short: 'Browse',
+        children: [
+          { id: 'ships', label: 'Standalone ships', sub: 'Ships the store sells on their own', query: 'cat=ships' },
+          { id: 'paints', label: 'Paints', sub: 'Paints and paint packs', query: 'cat=paints' },
+          { id: 'packs', label: 'Packs', sub: 'Ship packs', query: 'cat=packs' },
+          { id: 'packages', label: 'Game packages', sub: 'Packages with the game', query: 'cat=packages' },
+          { id: 'gear', label: 'Gear', sub: 'Armour, weapons, flair', query: 'cat=gear' },
+          { id: 'addons', label: 'Add-ons', sub: 'Add-ons and extras', query: 'cat=addons' },
+          { id: 'concierge', label: 'Concierge', sub: 'Concierge-only listings', query: 'who=concierge' },
+          { id: 'subscribers', label: 'Subscribers', sub: 'The Subscribers Store', query: 'who=subscribers' },
+        ],
+      },
     ],
   },
   {

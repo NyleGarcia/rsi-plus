@@ -1,17 +1,17 @@
 /**
  * Your own labels on pledges ("LTI token", "Keep", …), stored per account in `local:pledgeLabels`
  * (pledge id → labels). A few preset labels drive the planners:
- * - `Keep`: never picked by the melt planners (dedupe / target) and its hull copy is never auto-upgraded by a fleet plan;
- * - `LTI token`, `CCU fodder`: a fleet plan's Auto upgrades these hulls first (like *Prefer to upgrade*);
+ * - `Keep`: never picked by the melt planners (dedupe / target) and its hull copy is never auto-upgraded by an auto chain (My chains);
+ * - `LTI token`, `CCU fodder`: an auto chain upgrades these hulls first (like *Prefer to upgrade*);
  * - `Melt`: one click picks them in the melt calculator.
  * Any other text is a plain label for filtering. Comparison is case-insensitive; the first spelling used is kept.
  */
 export type Labels = Record<string, string[]>;
 
 export const PRESET_LABELS: { name: string; hint: string }[] = [
-  { name: 'LTI token', hint: 'Cheap LTI hull to CCU up — fleet plans upgrade it first' },
-  { name: 'CCU fodder', hint: 'A hull you don\'t mind upgrading — fleet plans upgrade it first' },
-  { name: 'Keep', hint: 'Never melted by the planners, never auto-upgraded by a fleet plan' },
+  { name: 'LTI token', hint: 'Cheap LTI hull to CCU up — auto chains upgrade it first' },
+  { name: 'CCU fodder', hint: 'A hull you don\'t mind upgrading — auto chains upgrade it first' },
+  { name: 'Keep', hint: 'Never melted by the planners, never auto-upgraded by a chain' },
   { name: 'Melt', hint: 'Meant to be melted — one click picks them in the melt calculator' },
   { name: 'Gift', hint: 'Meant for someone else' },
 ];

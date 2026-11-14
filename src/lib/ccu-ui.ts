@@ -1,5 +1,5 @@
 /**
- * Small view helpers shared by the CCU planner (CcuPanel) and the fleet plan (CcuFleet): ship names by id, the
+ * Small view helpers shared by the CCU planner (CcuPanel) and My chains (CcuChains): ship names by id, the
  * "last on sale …" note for hulls nobody sells a CCU to today, and ids for saved chains / goals.
  */
 import { STORE_START } from './ccu';
@@ -16,5 +16,5 @@ export function lastSaleLabel(sales: SaleHistory, id: number): string {
   return t ? `last on sale ${fmtDate(t)}` : 'not seen on sale since RSI+ was installed';
 }
 
-/** Short unique id for saved chains and fleet goals (time base-36 + random tail). */
+/** Short unique id for saved chains (time base-36 + random tail). */
 export const uid = (): string => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

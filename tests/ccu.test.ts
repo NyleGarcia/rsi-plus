@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, savedVsMsrp, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { WAIT_RISK, chainEvents, chainGoal, dropBakedExcludes, mergeGoals, planChains, withPlans, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, savedVsMsrp, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -130,22 +130,22 @@ describe('ccu planner', () => {
     // Best Aurora → Connie: Cutlass warbond (sku 10000) → Connie standard (sku 24000) = 20500.
     const alts = planAlternatives(ships, [], 1, 4, o({}));
     // Without the warbond: the direct standard (21500). Without the Connie CCU: no chain at all.
-    expect(alts).toEqual([{ plan: expect.objectContaining({ total: 21500 }), skip: [10000], exclude: [] }]);
+    expect(alts).toEqual([{ plan: expect.objectContaining({ total: 21500 }), skip: [10000], exclude: [], noWait: [] }]);
     expect(alts[0]!.plan.steps.map((s) => s.toId)).toEqual([4]);
     // An owned CCU taken out goes to exclude; results are ranked and differ from the best and from each other.
     const owned = [own(1, 3, 99, { value: 7500 })];
     const best = plan(ships, owned, 1, 4)!;
     const a2 = planAlternatives(ships, owned, 1, 4, o({}), 5);
-    expect(a2[0]).toMatchObject({ skip: [], exclude: [99], plan: { total: 20500 } });
+    expect(a2[0]).toMatchObject({ skip: [], exclude: [99], plan: { total: 20500 }, tag: 'without-owned' }); // listed once, marked as the route without my CCUs
     const keys = [best, ...a2.map((a) => a.plan)].map((p) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? s.ref}`).join('|'));
     expect(new Set(keys).size).toBe(keys.length);
     for (let i = 1; i < a2.length; i++) expect(a2[i]!.plan.total).toBeGreaterThanOrEqual(a2[i - 1]!.plan.total);
     // Applying what an alternative removed gives that alternative.
-    expect(plan(ships, owned, 1, 4, o({ exclude: a2[0]!.exclude, skip: a2[0]!.skip }))).toEqual(a2[0]!.plan);
+    expect(plan(ships, owned, 1, 4, o(applyAlternative(o({}), a2[0]!)))).toEqual(a2[0]!.plan);
     expect(planAlternatives(ships, owned, 1, 4, o({}), 1)).toHaveLength(1);
     expect(planAlternatives(ships, [], 1, 2, o({ skip: [5500] }))).toEqual([]);
     // applyAlternative adds the removals once and un-forces an excluded CCU.
-    expect(applyAlternative({ skip: [1], exclude: [99], include: [99, 98] }, { skip: [1, 2], exclude: [99] })).toEqual({ skip: [1, 2], exclude: [99], include: [98] });
+    expect(applyAlternative({ skip: [1], exclude: [99], include: [99, 98] }, { skip: [1, 2], exclude: [99] })).toEqual({ skip: [1, 2], exclude: [99], include: [98], noWait: [], useOwned: undefined });
   });
 
   it('farthestReachable: the priciest hull below the target a chain gets to', () => {
@@ -512,5 +512,153 @@ describe('plan ahead (long-term goals)', () => {
     // planFleet shares graphs across candidates: same pick as planning each source alone
     const f = planFleet(all, owned, [{ id: 'g', fromId: 1, targetId: 5, via: [] }], o({ buyback: true }), { hulls: [{ id: 1, count: 1 }] });
     expect(f.legs[0]!.plan).toEqual(plan(all, owned, 1, 5, o({ buyback: true })));
+  });
+});
+
+describe('my chains: the saved list planned together', () => {
+  const chain = (id: string, startId: number, targetId: number, extra: Partial<SavedChain> = {}): SavedChain => ({ id, name: id, at: 0, startId, targetId, steps: [], total: 0, cash: 0, opt: o({}), ...extra });
+  const fo = { hulls: [{ id: 1, count: 2 }] };
+
+  it('order is priority: the chain on top gets the owned CCU, the next one buys', () => {
+    const owned = [own(1, 3, 99, { value: 7000 })];
+    const list = [chain('a', 1, 3), chain('b', 1, 3)];
+    const f = planChains(ships, owned, list, fo);
+    expect(f.legs[0]!.plan!.steps[0]).toMatchObject({ kind: 'owned', ref: 99 });
+    expect(f.legs[1]!.plan!.steps[0]).toMatchObject({ kind: 'warbond', cost: 7500 });
+    const flipped = planChains(ships, owned, [list[1]!, list[0]!], fo);
+    expect(flipped.legs[0]!.goal.id).toBe('b');
+    expect(flipped.legs[0]!.plan!.steps[0]).toMatchObject({ kind: 'owned' });
+  });
+
+  it('each chain plans with its own options; a CCU nobody may use stays out', () => {
+    const list = [chain('wb', 1, 4), chain('std', 1, 4, { opt: o({ warbond: false }) })];
+    const f = planChains(ships, [], list, fo);
+    expect(f.legs[0]!.plan!.steps.map((s) => s.kind)).toEqual(['warbond', 'standard']);
+    expect(f.legs[1]!.plan!.steps.map((s) => s.kind)).toEqual(['standard']);
+    const owned = [own(1, 3, 99)];
+    expect(planChains(ships, owned, [chain('a', 1, 3)], fo, [99]).legs[0]!.plan!.steps[0]!.kind).toBe('warbond');
+    // a chain's own forced-out CCU counts for that chain only
+    const g = planChains(ships, owned, [chain('a', 1, 3, { opt: o({ exclude: [99] }) }), chain('b', 1, 3)], fo);
+    expect(g.legs.map((l) => l.plan!.steps[0]!.kind)).toEqual(['warbond', 'owned']);
+  });
+
+  it('an auto chain picks its source; the kept plan follows, and only a real change makes a new list', () => {
+    const list = [chain('auto', 0, 4, { auto: true })];
+    expect(chainGoal(list[0]!).fromId).toBeNull();
+    const f = planChains(ships, [], list, { hulls: [{ id: 2, count: 1 }, { id: 1, count: 1 }] });
+    const kept = withPlans(list, f);
+    expect(kept).not.toBe(list);
+    expect(kept[0]!.startId).toBe(f.legs[0]!.startId);
+    expect(kept[0]!.steps).toEqual(f.legs[0]!.plan!.steps);
+    expect(kept[0]!.total).toBe(f.legs[0]!.plan!.total);
+    expect(withPlans(kept, f)).toBe(kept);
+    // no chain today: nothing kept, so it holds no CCU back
+    const broken = withPlans([chain('x', 4, 1, { steps: [{ fromId: 1, toId: 3, kind: 'owned', cost: 0, cash: 0, paid: 0, label: '', ref: 9 }], total: 5 })], planChains(ships, [], [chain('x', 4, 1)], fo));
+    expect(broken[0]).toMatchObject({ steps: [], total: 0, startId: 4 });
+  });
+
+  it('old fleet goals fold in once: a goal Save plan already saved marks its chain, the rest are appended', () => {
+    const saved = [chain('s1', 1, 4, { group: 'Fleet plan', opt: o({ exclude: [5, 6] }) })];
+    const goals = [
+      { id: 'g1', fromId: null, targetId: 4, via: [], lti: 'prefer' as const, storeStart: true },
+      { id: 'g2', fromId: 1, targetId: 3, via: [2] },
+    ];
+    const out = mergeGoals(saved, goals, (id) => `#${id}`, 7);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ id: 's1', auto: true, lti: 'prefer', storeStart: true });
+    expect(out[1]).toMatchObject({ name: '#1 → #3', startId: 1, targetId: 3, steps: [], at: 7 });
+    expect(out[1]!.opt.via).toEqual([2]);
+    expect(out[1]!.auto).toBeUndefined();
+    expect(saved[0]!.auto).toBeUndefined(); // the input is left alone
+    // an auto goal never swallows a chain saved by hand to the same ship (no group): both stay
+    const hand = [chain('h', 3, 4)];
+    const both = mergeGoals(hand, [{ id: 'g', fromId: null, targetId: 4, via: [] }], (id) => `#${id}`, 7);
+    expect(both.map((c) => [c.id, !!c.auto, c.startId])).toEqual([['h', false, 3], ['g0', true, 0]]);
+  });
+
+  it('existing saved chains convert as they are: same order, same routes, other chains\' CCUs no longer baked in', () => {
+    const step = (ref: number): SavedChain['steps'][number] => ({ fromId: 1, toId: 3, kind: 'owned', cost: 0, cash: 0, paid: 0, label: '', ref });
+    // two chains saved the old way: b was saved while a held CCU 99, so 99 sits in b's excludes; 55 was forced out by hand
+    const before = [chain('a', 1, 4, { steps: [step(99)], total: 13000 }), chain('b', 1, 3, { opt: o({ exclude: [99, 55], include: [], via: [2] }), steps: [step(98)] })];
+    const after = dropBakedExcludes(mergeGoals(before, [], (id) => `#${id}`, 1));
+    expect(after.map((c) => [c.id, c.startId, c.targetId, c.name])).toEqual(before.map((c) => [c.id, c.startId, c.targetId, c.name]));
+    expect(after[0]).toEqual(before[0]); // nothing to change
+    expect(after[1]!.opt.exclude).toEqual([55]);
+    expect(after[1]!.opt.via).toEqual([2]);
+    expect(after[1]!.auto).toBeUndefined();
+    // converting again changes nothing
+    expect(dropBakedExcludes(mergeGoals(after, [], (id) => `#${id}`, 2))).toEqual(after);
+    // and the list plans: a (on top) keeps its owned CCU, b plans around it
+    const f = planChains(ships, [own(1, 3, 99)], after, fo);
+    expect(f.legs[0]!.plan!.steps[0]).toMatchObject({ kind: 'owned', ref: 99 });
+    expect(f.legs[1]!.plan).not.toBeNull();
+    expect(f.legs[1]!.plan!.steps.some((s) => s.ref === 99)).toBe(false);
+  });
+
+  it('an auto chain with two equally good sources leaves alone the hull another chain starts from', () => {
+    // two cheap hulls (same price), each with an owned CCU to the Cutlass; chain b names hull 1 as its source
+    const P = ship(1, 'Pulse', 3000);
+    const H = ship(9, 'HoverQuad', 3000);
+    const cat = [P, H, ...ships.slice(1)];
+    const owned = [own(1, 3, 71, { value: 5000 }), own(9, 3, 72, { value: 5000 })];
+    const hulls = { hulls: [{ id: 1, count: 1 }, { id: 9, count: 1 }] };
+    const list = [chain('auto', 0, 3, { auto: true }), chain('b', 1, 3)];
+    const f = planChains(cat, owned, list, hulls);
+    expect(f.legs[0]!.startId).toBe(9); // not the Pulse
+    expect(f.legs[0]!.plan!.steps[0]).toMatchObject({ kind: 'owned', ref: 72 });
+    expect(f.legs[1]!.plan!.steps[0]).toMatchObject({ kind: 'owned', ref: 71 }); // b keeps its own CCU
+    // the same whichever hull comes first in the hangar
+    expect(planChains(cat, owned, list, { hulls: [...hulls.hulls].reverse() }).legs[0]!.startId).toBe(9);
+  });
+
+  it('a step that waits for a sale must beat buying today by WAIT_RISK', () => {
+    const A1 = ship(1, 'A', 2500);
+    const mid = (seen: number) => ({ ...ship(2, 'Mid', 6000), expect: { wb: { price: seen, at: 1 } } }); // not on sale; last warbond seen
+    const T = ship(3, 'T', 10000, [sku('Standard Edition', 10000)]); // on sale: A → T today costs 7500
+    const ahead = o({ planAhead: true });
+    // via Mid: wait for A → Mid at (seen − 2500), then Mid → T today 4000
+    const cheap = plan([A1, mid(3500), T], [], 1, 3, ahead)!; // 1000 + 4000 = 5000: saves 2500 = WAIT_RISK → not worth a wait
+    expect(cheap.steps.map((s) => s.kind)).toEqual(['standard']);
+    expect(WAIT_RISK).toBe(2500);
+    const worth = plan([A1, mid(3000), T], [], 1, 3, ahead)!; // 500 + 4000 = 4500: saves 3000 > WAIT_RISK → waits
+    expect(worth.steps.map((s) => s.kind)).toEqual(['future', 'standard']);
+    expect(worth.total).toBe(4500); // the total is the real money, without the risk margin
+  });
+
+  it('a waiting step can be skipped: the chain stops waiting for that hull and goes another way', () => {
+    const A1 = ship(1, 'A', 2500);
+    const mid = { ...ship(2, 'Mid', 6000), expect: { wb: { price: 3000, at: 1 } } }; // not on sale, cheap last time
+    const T = ship(3, 'T', 10000, [sku('Standard Edition', 10000)]);
+    const ahead = o({ planAhead: true });
+    const best = plan([A1, mid, T], [], 1, 3, ahead)!;
+    expect(best.steps.map((s) => s.kind)).toEqual(['future', 'standard']);
+    const skipped = plan([A1, mid, T], [], 1, 3, { ...ahead, noWait: [2] })!;
+    expect(skipped.steps.map((s) => [s.toId, s.kind])).toEqual([[3, 'standard']]);
+    // Show other routes offers it, marked with the hull no longer waited for
+    const alts = planAlternatives([A1, mid, T], [], 1, 3, ahead);
+    expect(alts.some((a) => a.noWait.includes(2) && a.plan.total === skipped.total)).toBe(true);
+    expect(applyAlternative(ahead, alts.find((a) => a.noWait.length)!).noWait).toEqual([2]);
+  });
+
+  it('own vs not: the same route planned without the CCUs in the hangar, and back', () => {
+    const owned = [own(1, 3, 99, { value: 7000 })];
+    const withMine = plan(ships, owned, 1, 4)!;
+    expect(withMine.steps[0]!.kind).toBe('owned');
+    const fresh = plan(ships, owned, 1, 4, o({ useOwned: false }))!;
+    expect(fresh.steps.some((s) => s.kind === 'owned')).toBe(false);
+    expect(fresh.total).toBe(20500);
+    // offered next to the other routes, either way round
+    const a = planAlternatives(ships, owned, 1, 4, o({})).find((x) => x.tag === 'without-owned')!;
+    expect(a.plan).toEqual(fresh);
+    // two CCUs of mine in the chain: taking one out is not the fresh route, so that one is its own row and switches the option
+    const two = [own(1, 2, 98), own(2, 3, 99)];
+    const v = planAlternatives(ships, two, 1, 4, o({})).find((x) => x.useOwned === false)!;
+    expect(v.tag).toBe('without-owned');
+    expect(v.plan.steps.some((s) => s.kind === 'owned')).toBe(false);
+    expect(applyAlternative(o({ include: [99] }), v)).toMatchObject({ useOwned: false, include: [] });
+    const b = planAlternatives(ships, owned, 1, 4, o({ useOwned: false })).find((x) => x.tag === 'with-owned')!;
+    expect(b.plan).toEqual(withMine);
+    // a buyback CCU is not "owned": its own switch decides
+    expect(plan(ships, [own(1, 3, 5, { source: 'buyback', price: 1000 })], 1, 3, o({ useOwned: false, buyback: true }))!.steps[0]!.kind).toBe('buyback');
   });
 });
