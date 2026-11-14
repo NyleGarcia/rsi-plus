@@ -52,7 +52,7 @@ describe('linkToPlanner', () => {
       mode: 'hangar',
       fromId: 1,
       toId: 4,
-      opt: { via: [2], objective: 'longterm', steps: 'more', buyback: true, include: [], skip: [] },
+      opt: { via: [2], objective: 'longterm', steps: 'more', buyback: true, include: [], skip: [], noWait: [] },
     });
     expect(linkToPlanner(decodeCcuLink('#ccu?from=2&to=77')!, has, owns)).toEqual({ mode: 'any', fromId: 2, opt: {} });
     expect(linkToPlanner(decodeCcuLink('#ccu?from=store&to=3')!, has, owns)).toEqual({ mode: 'store', fromId: null, toId: 3, opt: {} });

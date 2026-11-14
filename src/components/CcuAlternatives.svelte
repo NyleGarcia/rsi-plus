@@ -8,6 +8,7 @@
   import { shipName } from '@/lib/ccu-ui';
   import { usd, type CatalogShip } from '@/lib/store';
   import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
   import TipButton from './TipButton.svelte';
   import Route from '@lucide/svelte/icons/route';
 
@@ -40,7 +41,7 @@
 <div class="grid gap-2">
   {#if !open}
     <div>
-      <TipButton variant="outline" size="sm" onclick={() => (open = true)} tip="Plans up to three other chains to the same target, each one without one step of this chain"><Route />Show other routes</TipButton>
+      <TipButton variant="outline" size="sm" onclick={() => (open = true)} tip="Other chains to the same target: each without one step of this chain (a waiting step included), plus the route without the CCUs you own"><Route />Show other routes</TipButton>
     </div>
   {:else}
     <div class="flex items-center gap-2">
@@ -54,13 +55,17 @@
         {#each alts as a, i (i)}
           <li class="border-border flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-1.5">
             <div class="grid min-w-0 gap-0.5">
-              <span class="text-sm"><span class="text-muted-foreground tabular-nums">{i + 1}.</span> {route(a.plan)}</span>
+              <span class="text-sm">
+                <span class="text-muted-foreground tabular-nums">{i + 1}.</span>
+                {#if a.tag === 'without-owned'}<Badge variant="info" class="mr-1">without my CCUs</Badge>{:else if a.tag === 'with-owned'}<Badge variant="success" class="mr-1">with my CCUs</Badge>{:else if a.noWait.length}<Badge variant="warning" class="mr-1">no wait</Badge>{/if}
+                {route(a.plan)}
+              </span>
               <span class="text-muted-foreground text-[11px] tabular-nums">
-                {usd(a.plan.total)} total · {usd(a.plan.cash)} new money ·
+                {usd(a.plan.total)} total · {usd(a.plan.cash)} new money{a.plan.paid ? ` · ${usd(a.plan.paid)} of your CCUs used` : ''}{a.plan.waits ? ` · ${a.plan.waits} waiting` : ''} ·
                 {#if diff(a.plan) > 0}<span class="text-warning">+{usd(diff(a.plan))} more than this chain</span>{:else if diff(a.plan) < 0}<span class="text-success">{usd(-diff(a.plan))} less than this chain</span>{:else}same price{/if}
               </span>
             </div>
-            <TipButton variant="outline" size="xs" onclick={() => onuse(a)} tip="Plan this route instead: the step it leaves out is ignored (undo under Options)">Use this route</TipButton>
+            <TipButton variant="outline" size="xs" onclick={() => onuse(a)} tip={a.useOwned === false ? "Plan this route instead: switches off Use CCUs I own (under Options)" : a.useOwned ? "Plan this route instead: switches Use CCUs I own back on" : "Plan this route instead: the step it leaves out is ignored (undo under Options)"}>Use this route</TipButton>
           </li>
         {/each}
       </ol>

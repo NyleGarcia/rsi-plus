@@ -284,12 +284,15 @@
   const addAll = () => addLines(addableSteps.map((s) => lineOf(s)).filter((l): l is BatchLine => !!l));
 
   // ---- ignore a step: the planner routes around that CCU (owned / buyback: its ref; store: that SKU) ----
-  const canIgnore = (s: Step) => ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) || (s.kind !== 'future' && s.kind !== 'owned' && s.kind !== 'buyback' && s.skuId != null);
+  // a waiting step can be skipped too (the chain then never waits for that hull) — except the target itself
+  const canIgnore = (s: Step) => ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) || (s.kind === 'future' && s.toId !== toId) || (s.kind !== 'future' && s.kind !== 'owned' && s.kind !== 'buyback' && s.skuId != null);
   function ignoreStep(s: Step) {
     if ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) {
       const ref = s.ref;
       opt.include = opt.include.filter((r) => r !== ref);
       if (!opt.exclude.includes(ref)) opt.exclude = [...opt.exclude, ref];
+    } else if (s.kind === 'future') {
+      if (!(opt.noWait ?? []).includes(s.toId)) opt.noWait = [...(opt.noWait ?? []), s.toId];
     } else if (s.skuId != null && !(opt.skip ?? []).includes(s.skuId)) opt.skip = [...(opt.skip ?? []), s.skuId];
   }
   /** Name of a store SKU ("600i Touring · Warbond Edition") for the ignored chips. */
@@ -447,10 +450,12 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   // ---- Your CCUs: show hangar / buyback, sort by any column, exclude or reset everything shown ----
-  type OwnedCol = 'from' | 'to' | 'source' | 'paid' | 'gain' | 'reserved' | 'force';
+  type OwnedCol = 'from' | 'to' | 'qty' | 'source' | 'paid' | 'gain' | 'reserved' | 'force';
   let ownedSort = $state<SortState<OwnedCol>>({ key: 'from', dir: 'asc' });
   let ownedShow = $state<'all' | 'hangar' | 'buyback'>('all');
   const gainOf = (o: { fromId: number; toId: number }) => (byId.get(o.toId)?.msrp ?? 0) - (byId.get(o.fromId)?.msrp ?? 0);
+  const copyKey = (o: { source: string; fromId: number; toId: number; value: number; price?: number; gifted: boolean }) => `${o.source}:${o.fromId}>${o.toId}:${o.value}:${o.price ?? ''}:${o.gifted}`;
+  const copies = $derived(ccus.owned.reduce((m, o) => m.set(copyKey(o), (m.get(copyKey(o)) ?? 0) + 1), new Map<string, number>()));
   const ownedCount = (src: 'hangar' | 'buyback') => ccus.owned.filter((o) => o.source === src).length;
   /** Melt value of the cheapest pledge holding each hull: the source-ship part of a chain's *Already spent*. */
   const sourceValue = $derived.by(() => {
@@ -473,6 +478,7 @@
       {
         from: (o) => byId.get(o.fromId)?.msrp ?? 0, // hull price, the order a chain climbs in
         to: (o) => name(o.toId),
+        qty: (o) => copies.get(copyKey(o)) ?? 1,
         source: (o) => `${o.source}${o.gifted ? ' gift' : ''}`,
         paid: (o) => (o.source === 'hangar' ? o.value : (o.price ?? null)),
         gain: (o) => gainOf(o),
@@ -481,6 +487,38 @@
       },
     ),
   );
+  /** Copies of the same CCU (same hulls, place and price) are one row with a quantity. */
+  const ownedGroups = $derived.by(() => {
+    const m = new Map<string, { key: string; first: (typeof ownedSorted)[number]; refs: number[] }>();
+    for (const o of ownedSorted) {
+      const key = copyKey(o);
+      const g = m.get(key);
+      if (g) g.refs.push(o.ref);
+      else m.set(key, { key, first: o, refs: [o.ref] });
+    }
+    return [...m.values()];
+  });
+  /** A row's force state: `mixed` when its copies differ. */
+  const groupForce = (refs: number[]): 'include' | 'exclude' | '' | 'mixed' => {
+    const st = new Set(refs.map(forceOf));
+    return st.size > 1 ? 'mixed' : [...st][0]!;
+  };
+  /** auto → require one copy → keep every copy out → auto (a chain uses a CCU once, so one copy is what "require" means). */
+  function cycleGroup(refs: number[]) {
+    const f = groupForce(refs);
+    const mine = new Set(refs);
+    opt.include = opt.include.filter((r) => !mine.has(r));
+    opt.exclude = opt.exclude.filter((r) => !mine.has(r));
+    if (f === '') opt.include = [...opt.include, refs[0]!];
+    else if (f === 'include' || f === 'mixed') opt.exclude = [...opt.exclude, ...refs];
+  }
+  /** Which chains hold copies of a row, and how many are free: "Arrastra, liby · 1 free". */
+  const heldBy = (refs: number[]): string => {
+    const names = [...new Set(refs.map((r) => reservedBy.get(r)?.name).filter((n): n is string => !!n))];
+    const free = refs.filter((r) => !reservedBy.has(r)).length;
+    if (!names.length) return '';
+    return refs.length > 1 ? `${names.join(', ')} · ${free} free` : names[0]!;
+  };
   const shownExcluded = $derived(ownedSorted.filter((o) => opt.exclude.includes(o.ref)).length);
   const shownForced = $derived(ownedSorted.filter((o) => forceOf(o.ref) !== '').length);
   /** Keep every CCU shown out of the chain / back to auto. */
@@ -489,7 +527,8 @@
     opt.include = opt.include.filter((r) => !refs.has(r));
     opt.exclude = to === 'exclude' ? [...new Set([...opt.exclude, ...refs])] : opt.exclude.filter((r) => !refs.has(r));
   }
-  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted' | 'planAhead' | 'lastSeen'; label: string; hint?: string }[] = [
+  const OPTIONS: { key: 'warbond' | 'buyback' | 'inStockOnly' | 'storeCredit' | 'excludeGifted' | 'planAhead' | 'lastSeen' | 'useOwned'; label: string; hint?: string }[] = [
+    { key: 'useOwned', label: 'Use CCUs I own', hint: 'Off: the route as if you owned no CCU — what it costs bought fresh today, leaving your own CCUs free for other chains. Show other routes always compares the two.' },
     { key: 'warbond', label: 'Warbond CCUs' },
     { key: 'buyback', label: 'Buyback CCUs' },
     { key: 'inStockOnly', label: 'Skip sold-out limited' },
@@ -573,7 +612,7 @@
 </script>
 
 <div class="grid gap-4">
-  <Card.Root id="ccu-plan">
+  <Card.Root>
     <Card.Header>
       <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money. <em>Plan ahead</em> adds hulls nobody sells a CCU to today (at MSRP, bought when they return) for long-term goals. <em>My chains</em> below holds every ship you are working towards, planned together so no CCU or hull is used twice.</Card.Description>
       <Card.Action class="flex flex-wrap items-center gap-2">
@@ -595,7 +634,7 @@
         <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
           {#each OPTIONS as o (o.key)}
-            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' ? opt.lastSeen !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
+            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' || o.key === 'useOwned' ? opt[o.key] !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
           {/each}
           <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps: each extra step is a ship you can stop at and fly. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Leave my chains' CCUs alone${chains.length ? ` (${reservedBy.size})` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
@@ -605,16 +644,19 @@
           {buyback ? ` · ${ccus.owned.filter((o) => o.source === 'buyback').length} buyback CCUs` : ''}
           {creditCents != null ? ` · store credit ${ownUsd(creditCents)}` : ''}
         </span>
-        {#if (opt.skip ?? []).length || opt.exclude.length}
+        {#if (opt.skip ?? []).length || opt.exclude.length || (opt.noWait ?? []).length}
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <span class="text-muted-foreground">Ignored</span>
             {#each opt.skip ?? [] as k (k)}
               <Chip removeLabel="Use this offer again" onremove={() => (opt.skip = (opt.skip ?? []).filter((x) => x !== k))}>{skuLabel.get(k) ?? `SKU ${k}`}</Chip>
             {/each}
+            {#each opt.noWait ?? [] as h (h)}
+              <Chip removeLabel="Wait for this hull again" onremove={() => (opt.noWait = (opt.noWait ?? []).filter((x) => x !== h))}>waiting for {name(h)}</Chip>
+            {/each}
             {#each opt.exclude as r (r)}
               <Chip removeLabel="Use this CCU again" onremove={() => (opt.exclude = opt.exclude.filter((x) => x !== r))}>{ownedLabelOf(r)}</Chip>
             {/each}
-            <Button variant="link" size="xs" class="h-auto p-0 text-[11px]" onclick={() => ((opt.skip = []), (opt.exclude = []))}>clear</Button>
+            <Button variant="link" size="xs" class="h-auto p-0 text-[11px]" onclick={() => ((opt.skip = []), (opt.exclude = []), (opt.noWait = []))}>clear</Button>
           </div>
         {/if}
       </fieldset>
@@ -741,7 +783,7 @@
                         />
                       {/if}
                       {#if canIgnore(s)}
-                        <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" onclick={() => ignoreStep(s)} tip="Ignore this step: plan the chain without this CCU (undo under Options)" aria-label={`Ignore ${name(s.fromId)} → ${name(s.toId)}`}><Ban class="size-3.5" /></TipButton>
+                        <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-6" onclick={() => ignoreStep(s)} tip={s.kind === 'future' ? 'Skip this step: plan the chain without waiting for this hull (undo under Options)' : 'Ignore this step: plan the chain without this CCU (undo under Options)'} aria-label={`Ignore ${name(s.fromId)} → ${name(s.toId)}`}><Ban class="size-3.5" /></TipButton>
                       {/if}
                       {#if link(s)}
                         <Button variant="ghost" size="xs" href={link(s)} target="_blank" rel="noopener">{s.kind === 'owned' ? 'Hangar' : s.kind === 'buyback' ? 'Buy back' : s.kind === 'standalone' || s.kind === 'future' ? 'Store' : 'Upgrades'} <ExternalLink /></Button>
@@ -792,7 +834,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root id="ccu-cart-card">
+  <Card.Root>
     <Card.Content>
       <Section id="ccu-cart" title="RSI cart" summary={cart.snapshot ? `(${cart.snapshot.qty} item${cart.snapshot.qty === 1 ? '' : 's'} · ${usd(cart.snapshot.total)})` : '(not read)'} defaultOpen={false}>
         <CartView {cart} />
@@ -800,7 +842,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root id="ccu-chains-card">
+  <Card.Root>
     <Card.Content>
       <CcuChains
         {ships}
@@ -828,10 +870,10 @@
   </Card.Root>
 
   {#if ccus.owned.length}
-    <Card.Root id="ccu-owned-card">
+    <Card.Root>
       <Card.Content>
         <Section id="ccu-owned" title="Your CCUs" summary={`(${ccus.owned.length})`}>
-            <p class="text-muted-foreground m-0 text-sm">Click <em>Force</em> to require a CCU in the chain (include), click again to keep it out (exclude), again to reset. Click a column to sort.</p>
+            <p class="text-muted-foreground m-0 text-sm">Copies of the same CCU share a row. Click <em>Force</em> to require a CCU in the chain (include), click again to keep it out (exclude), again to reset. Click a column to sort.</p>
             <div class="flex flex-wrap items-center gap-2">
               <Segmented
                 options={[
@@ -853,6 +895,7 @@
                 <Table.Row>
                   <SortTh key="from" bind:sort={ownedSort}>From</SortTh>
                   <SortTh key="to" bind:sort={ownedSort}>→ To</SortTh>
+                  <SortTh key="qty" bind:sort={ownedSort} firstDir="desc" numeric>Qty</SortTh>
                   <SortTh key="source" bind:sort={ownedSort}>Source</SortTh>
                   <SortTh key="paid" bind:sort={ownedSort} firstDir="desc" numeric>Paid / buy-back</SortTh>
                   <SortTh key="gain" bind:sort={ownedSort} firstDir="desc" numeric>Upgrade value</SortTh>
@@ -861,23 +904,25 @@
                 </Table.Row>
               </Table.Header>
               <Table.Body>
-                {#each ownedSorted as o (o.source + o.ref)}
+                {#each ownedGroups as g (g.key)}
+                  {@const o = g.first}
                   {@const gain = gainOf(o)}
-                  {@const f = forceOf(o.ref)}
+                  {@const f = groupForce(g.refs)}
+                  {@const cost = o.source === 'hangar' ? o.value : (o.price ?? 0)}
                   <Table.Row>
                     <Table.Cell class="text-muted-foreground">{name(o.fromId)}</Table.Cell>
                     <Table.Cell><strong>{name(o.toId)}</strong></Table.Cell>
+                    <Table.Cell class="text-right tabular-nums">{#if g.refs.length > 1}<strong>×{g.refs.length}</strong>{:else}<span class="text-muted-foreground">1</span>{/if}</Table.Cell>
                     <Table.Cell>{o.source}{o.gifted ? ' · gift' : ''}</Table.Cell>
                     <Table.Cell class="text-right tabular-nums">
-                      {#if o.source === 'hangar'}{o.value ? ownUsd(o.value) : '—'}
+                      {#if o.source === 'hangar'}{o.value ? ownUsd(o.value) : '—'}{#if g.refs.length > 1 && o.value}<span class="text-muted-foreground ml-1 text-[11px]">each</span>{/if}
                       {:else if o.price != null}{usd(o.price)}<span class="text-muted-foreground ml-1 text-[11px]">to buy back</span>
                       {:else}<HintBadge variant="muted" size="xs" hint="RSI shows a buy-back's price only on its own page. Open the Buyback page and use “Load contents & prices”; until then the planner assumes the MSRP difference.">?</HintBadge>{/if}
                     </Table.Cell>
-                    {@const cost = o.source === 'hangar' ? o.value : (o.price ?? 0)}
                     <Table.Cell class={cn('text-right tabular-nums', cost > 0 && gain > cost && 'text-success')}>{usd(gain)}</Table.Cell>
-                    <Table.Cell class="text-[11px]">{reservedBy.get(o.ref)?.name ?? ''}</Table.Cell>
+                    <Table.Cell class="text-[11px] whitespace-normal">{heldBy(g.refs)}</Table.Cell>
                     <Table.Cell>
-                      <Button variant="outline" size="xs" class={cn('min-w-16', f === 'include' && 'text-success', f === 'exclude' && 'text-destructive')} onclick={() => cycleForce(o.ref)}>{f || 'auto'}</Button>
+                      <TipButton variant="outline" size="xs" class={cn('min-w-16', f === 'include' && 'text-success', f === 'exclude' && 'text-destructive')} onclick={() => cycleGroup(g.refs)} tip={g.refs.length > 1 ? 'auto → require one copy in the chain → keep every copy out → auto' : 'auto → require it in the chain → keep it out → auto'}>{f === 'include' && g.refs.length > 1 ? 'include 1' : f || 'auto'}</TipButton>
                     </Table.Cell>
                   </Table.Row>
                 {/each}
