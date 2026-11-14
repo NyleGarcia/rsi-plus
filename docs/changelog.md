@@ -6,6 +6,7 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+- **CCU planner: copy a link to a chain.** *Copy link* next to *Save chain* copies a link to the planner with this route in it: source, target, stops, what to optimise for and the options. Opening the link sets the planner up the same way. Your own CCUs, forced ones and ignored steps are not in the link. The old *Plan CCU* links to a target keep working.
 - **CCU planner: other routes.** Under the chain, *Show other routes* lists up to three other chains to the same target, each one without one step of the chain shown: the route, its total and new money, and how much more it costs. *Use this route* plans it, and the step it leaves out shows under *Ignored*, where you can bring it back.
 - **CCU planner: prefer more steps.** When two chains cost the same, the planner shows the one with fewer steps. The new *Prefer more steps* switch under *Options* shows the one with more steps instead: each extra step is a ship you can stop at and fly. The price of the chain never changes.
 - **CCU planner: see your RSI cart, and add several chains at once.** A new *RSI cart* block lists what is in your cart (lines, quantity, RSI's discounts, total) with *Check cart* to read it again. In *Saved chains*, tick the chains you want and *Add n chains to RSI cart* puts in the store steps of all of them, as they price today. The cart is read first, so lines it already holds are skipped (the single chain's *Add store steps* does the same). Buy-backs are left out: each checks out alone.

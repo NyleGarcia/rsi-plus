@@ -17,6 +17,9 @@
   import Stat from './Stat.svelte';
   import CcuFleet from './CcuFleet.svelte';
   import CcuAlternatives from './CcuAlternatives.svelte';
+  import CcuShareLink from './CcuShareLink.svelte';
+  import { encodeCcuLink, linkToPlanner, watchCcuLink } from '@/lib/ccu-link';
+  import { untrack } from 'svelte';
   import StatGrid from './StatGrid.svelte';
   import Section from './Section.svelte';
   import Chip from './Chip.svelte';
@@ -118,6 +121,17 @@
   const ships = $derived((cat?.ships ?? []).filter((s) => s.msrp > 0).sort((a, b) => a.msrp - b.msrp));
   const byId = $derived(new Map(ships.map((s) => [s.id, s])));
   const mine = $derived(ownedShips(hangar?.pledges ?? [], ships));
+  // A shared route in the hash (`#ccu?from=…&to=…`, `lib/ccu-link.ts`): applied once the catalog is in, and on every hash change.
+  const catalogReady = $derived(ships.length > 0);
+  $effect(() => {
+    if (!catalogReady) return;
+    return watchCcuLink((l) => untrack(() => {
+      const r = linkToPlanner(l, (id) => byId.has(id), (id) => mine.some((m) => m.id === id));
+      if (r.mode) (mode = r.mode), (fromId = r.fromId ?? null);
+      if (r.toId != null) (toId = r.toId), (planner = 'one');
+      Object.assign(opt, r.opt);
+    }));
+  });
   /** Hull copies a fleet plan may upgrade: pledges labelled *Keep* are left out (`lib/labels.ts`). */
   const keepIds = $derived(idsWith(labels, KEEP));
   const hulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => !keepIds.has(p.id)), ships));
@@ -747,6 +761,7 @@
             <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
               <Input class="w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
               <Button variant="outline" size="sm" type="submit">Save chain</Button>
+              <CcuShareLink hash={encodeCcuLink({ from: startId, to: toId, via: opt.via, opt })} />
               <TipButton variant="outline" size="sm" type="button" onclick={addToFleet} tip="Add this source → target (with its stops) as a goal at the end of your fleet plan">Add to fleet plan</TipButton>
               {#if saved.text}<span class="text-success text-[11px]">Saved “{saved.text}”</span>{/if}
               {#if addedToFleet.text}<span class="text-success text-[11px]">{addedToFleet.text} — <Button variant="link" size="xs" class="h-auto p-0 text-[11px]" onclick={() => (planner = 'fleet')}>open Fleet plan</Button></span>{/if}
