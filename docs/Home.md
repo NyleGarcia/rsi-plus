@@ -15,6 +15,7 @@ updated: 2026-10-22
 - [[plans/specs/ccu-planner-v2]] · [spec: CCU planner v2](plans/specs/ccu-planner-v2.md)
 - [[plans/specs/ccu-long-term]] · [spec: CCU planner long-term goals](plans/specs/ccu-long-term.md)
 - [[plans/specs/ccu-fleet-plan]] · [spec: CCU fleet plan](plans/specs/ccu-fleet-plan.md)
+- [[plans/specs/ccu-my-chains]] · [spec: CCU planner — My chains](plans/specs/ccu-my-chains.md)
 - [[plans/specs/shadcn-migration]] · [spec: shadcn-svelte + LayerChart migration](plans/specs/shadcn-migration.md)
 - [[plans/specs/filters-and-labels]] · [spec: facets, labels and the sidebar](plans/specs/filters-and-labels.md)
 - [[plans/specs/rsi-verification-tiers]] · [spec: RSI handle verification tiers](plans/specs/rsi-verification-tiers.md)

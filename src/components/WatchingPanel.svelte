@@ -95,7 +95,7 @@
 </script>
 
 <div class="grid gap-4">
-  <Card.Root>
+  <Card.Root id="watching-threads">
     <Card.Header>
       <Card.Title>Threads</Card.Title>
       <Card.Description>Notified when a watched thread gets new replies. Add with ☆ on a thread row or the bar on a thread page.</Card.Description>
@@ -146,7 +146,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root>
+  <Card.Root id="watching-channels">
     <Card.Header>
       <Card.Title>Channels</Card.Title>
       <Card.Description>New dev threads, dev replies and watched-author posts in these channels notify you. "All new threads" notifies for every new thread.</Card.Description>
@@ -189,7 +189,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root>
+  <Card.Root id="watching-keywords">
     <Card.Header>
       <Card.Title>Keywords</Card.Title>
       <Card.Description>Follow a topic: a new thread whose subject matches notifies you, in every watched channel or one channel. Plain text matches anywhere in the subject; <code>/regex/</code> is a regex (case-insensitive). Matching rows get a purple edge on Spectrum. Same syntax as Mutes.</Card.Description>
@@ -227,7 +227,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root>
+  <Card.Root id="watching-authors">
     <Card.Header>
       <Card.Title>Authors</Card.Title>
       <Card.Description>Their new threads and latest replies in your watched channels notify you. Add from any reply ("Watch author") or by handle.</Card.Description>

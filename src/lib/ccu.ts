@@ -488,19 +488,30 @@ export function applyAlternative(opt: Pick<PlanOptions, 'skip' | 'exclude' | 'in
   };
 }
 
+/**
+ * One entry of *My chains*: a ship you want and how to get there. The list is planned together, top first (`planChains`):
+ * an earlier chain gets first pick of your CCUs and hull copies. `steps` / `total` / `cash` / `startId` are the last
+ * plan, kept so the Feed, the Pledges page and the CCUs page can say which CCUs a chain uses without planning.
+ */
 export interface SavedChain {
   id: string;
   name: string;
-  /** Fleet plan the chain was saved from (its name) — chains of one plan list together. */
+  /** Old saves: the fleet plan the chain was saved from. No longer written. */
   group?: string;
   /** Saved at (ms). */
   at: number;
+  /** The source hull — for an `auto` chain, the one the last plan picked. */
   startId: number;
   targetId: number;
   steps: Step[];
   total: number;
   cash: number;
+  /** This chain's options: objective, warbond / buyback…, stops (`via`), the CCUs you forced in or out. */
   opt: PlanOptions;
+  /** The planner picks the source each time: the best free hull copy (or a store ship, with `storeStart`). */
+  auto?: boolean;
+  storeStart?: boolean;
+  lti?: Goal['lti'];
 }
 
 // ---- fleet plan: several goals at once ----
@@ -518,6 +529,8 @@ export interface Goal {
    * start — a new ship has no LTI). A CCU keeps the pledge's insurance, so LTI goals should start from LTI tokens.
    */
   lti?: 'any' | 'prefer' | 'only';
+  /** This goal's own options (a chain of *My chains*); unset = the plan-wide ones. Its `via` is `via` above. */
+  opt?: PlanOptions;
 }
 export interface FleetLeg {
   goal: Goal;
@@ -563,7 +576,8 @@ const better = (a: Plan, b: Plan) => a.savings !== b.savings ? a.savings > b.sav
  * its `storeStart`, buying from the store, and keeps the one that saves most. Candidates are tried in groups — LTI
  * copies first for an `lti: 'prefer'` goal (only those for `only`), then `prefer` hulls — and the first group with a
  * chain wins. A goal that doesn't ask for LTI uses a non-LTI copy when the hull has one, leaving LTI copies for the
- * goals that want them. `opt.include` / `opt.via` are ignored — stops are per goal.
+ * goals that want them. `opt.include` / `opt.via` are ignored — stops are per goal. A goal carrying its own `opt`
+ * plans with those options (objective, warbond, forced CCUs…); `opt.exclude` still applies to every goal.
  */
 export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[], opt: PlanOptions, fo: FleetOptions): FleetPlan {
   const byId = new Map(ships.map((s) => [s.id, s]));
@@ -592,11 +606,13 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
   // reserves more CCUs.
   const graphs = new Map<string, PlanGraph>();
   const graphOf = (o: PlanOptions) => {
-    const k = `${!!o.planAhead}|${o.lastSeen !== false}|${[...o.exclude].sort((a, b) => a - b).join(',')}|${[...(o.skip ?? [])].sort((a, b) => a - b).join(',')}`;
+    const k = `${!!o.planAhead}|${o.lastSeen !== false}|${+o.warbond}${+o.buyback}${+o.inStockOnly}${+o.storeCredit}${+o.excludeGifted}|${[...o.exclude].sort((a, b) => a - b).join(',')}|${[...(o.skip ?? [])].sort((a, b) => a - b).join(',')}`;
     return graphs.get(k) ?? graphs.set(k, planGraph(ships, owned, o)).get(k)!;
   };
   for (const goal of goals) {
-    const o: PlanOptions = { ...opt, include: [], via: goal.via, exclude: [...new Set([...opt.exclude, ...used])] };
+    // A goal with its own options plans with them (and may force CCUs in, unless an earlier goal took them).
+    const base = goal.opt ?? opt;
+    const o: PlanOptions = { ...base, include: goal.opt ? base.include.filter((r) => !used.has(r)) : [], via: goal.via, exclude: [...new Set([...opt.exclude, ...(goal.opt ? base.exclude : []), ...used])] };
     let startId = goal.fromId;
     let best: Plan | null = null;
     let ahead = false;
@@ -635,6 +651,98 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
   return { legs, total: sum((p) => p.total), cash: sum((p) => p.cash), paid: sum((p) => p.paid), later: sum((p) => p.later), waits: sum((p) => p.waits), msrpDiff: sum((p) => p.msrpDiff), savings: sum((p) => p.savings), failed: legs.filter((l) => !l.plan).length };
 }
 
+// ---- My chains: the saved list, planned together ----
+
+/** A saved chain as a goal: its source (none for an auto chain), stops and own options. */
+export const chainGoal = (c: SavedChain): Goal => ({
+  id: c.id,
+  fromId: c.auto ? null : c.startId,
+  targetId: c.targetId,
+  via: c.opt.via ?? [],
+  ...(c.storeStart !== undefined ? { storeStart: c.storeStart } : {}),
+  ...(c.lti ? { lti: c.lti } : {}),
+  opt: c.opt,
+});
+
+/** Every saved chain planned together, in list order (leg `i` is chain `i`). `exclude`: CCUs no chain may use. */
+export function planChains(ships: CatalogShip[], owned: OwnedCcu[], chains: SavedChain[], fo: FleetOptions, exclude: number[] = []): FleetPlan {
+  return planFleet(ships, owned, chains.map(chainGoal), { ...DEFAULT_PLAN_OPTIONS, exclude }, fo);
+}
+
+const sameSteps = (a: Step[], b: Step[]) => a.length === b.length && a.every((s, i) => s.fromId === b[i]!.fromId && s.toId === b[i]!.toId && s.kind === b[i]!.kind && s.cost === b[i]!.cost && s.cash === b[i]!.cash && s.paid === b[i]!.paid && s.ref === b[i]!.ref && s.skuId === b[i]!.skuId && s.est?.at === b[i]!.est?.at);
+
+/**
+ * The chains with their kept plan brought up to date from `fleet` (`planChains` of the same list). A chain with no
+ * chain today keeps nothing: it uses no CCU, so it holds none back. Returns the same array when nothing changed, so a
+ * caller can write only on a real change.
+ */
+export function withPlans(chains: SavedChain[], fleet: FleetPlan): SavedChain[] {
+  let changed = false;
+  const out = chains.map((c, i) => {
+    const leg = fleet.legs[i];
+    if (!leg || leg.goal.id !== c.id) return c;
+    const steps = leg.plan?.steps ?? [];
+    const startId = leg.plan && leg.startId != null ? leg.startId : c.startId;
+    const total = leg.plan?.total ?? 0;
+    const cash = leg.plan?.cash ?? 0;
+    if (startId === c.startId && total === c.total && cash === c.cash && sameSteps(steps, c.steps)) return c;
+    changed = true;
+    return { ...c, startId, steps, total, cash };
+  });
+  return changed ? out : chains;
+}
+
+/**
+ * Goals of the old fleet plan folded into the saved chains (once). A goal that *Save plan* already turned into a chain
+ * (same target, same source or an auto goal) marks that chain instead of adding a second one; the rest are appended in
+ * their order, to be planned on the next pass.
+ */
+export function mergeGoals(chains: SavedChain[], goals: Goal[], name: (id: number | null) => string, now: number): SavedChain[] {
+  const out = chains.map((c) => ({ ...c }));
+  const taken = new Set<string>();
+  goals.forEach((g, i) => {
+    // An auto goal only matches a chain Save plan made (it has a `group`): a chain you saved by hand with a source of
+    // your choosing is another chain to the same ship, not this goal.
+    const hit = out.find((c) => !taken.has(c.id) && c.targetId === g.targetId && (g.fromId == null ? !!c.group : g.fromId === c.startId));
+    if (hit) {
+      taken.add(hit.id);
+      if (g.fromId == null) hit.auto = true;
+      if (g.storeStart !== undefined) hit.storeStart = g.storeStart;
+      if (g.lti) hit.lti = g.lti;
+      return;
+    }
+    out.push({
+      id: `${g.id}${i}`,
+      name: g.fromId == null ? name(g.targetId) : `${name(g.fromId)} → ${name(g.targetId)}`,
+      at: now,
+      startId: g.fromId ?? STORE_START,
+      targetId: g.targetId,
+      steps: [],
+      total: 0,
+      cash: 0,
+      opt: { ...DEFAULT_PLAN_OPTIONS, include: [], exclude: [], skip: [], via: [...g.via] },
+      ...(g.fromId == null ? { auto: true } : {}),
+      ...(g.storeStart !== undefined ? { storeStart: g.storeStart } : {}),
+      ...(g.lti ? { lti: g.lti } : {}),
+    });
+  });
+  return out;
+}
+
+/**
+ * Chains saved before *My chains* kept the CCUs other chains held in their own `opt.exclude` (that is how a chain was
+ * kept off them). The order of the list decides that now, so those go; a CCU you forced out yourself — one no other
+ * chain uses — stays forced out.
+ */
+export function dropBakedExcludes(chains: SavedChain[]): SavedChain[] {
+  return chains.map((c) => {
+    if (!c.opt.exclude.length) return c;
+    const others = new Set(reservedRefs(chains.filter((x) => x.id !== c.id)));
+    const exclude = c.opt.exclude.filter((r) => !others.has(r));
+    return exclude.length === c.opt.exclude.length ? c : { ...c, opt: { ...c.opt, exclude } };
+  });
+}
+
 /** Refs of owned / buyback CCUs a set of chains already uses (to keep them out of new plans). */
 export function reservedRefs(chains: { steps: Step[] }[]): number[] {
   return [...new Set(chains.flatMap((c) => c.steps.map((s) => s.ref).filter((r): r is number => r != null)))];
@@ -658,6 +766,8 @@ export interface OpenedLeg {
   startId: number;
   targetId: number;
   exclude: number[];
+  /** The chain of *My chains* it is (saving then updates that chain). */
+  chainId?: string;
 }
 
 /**

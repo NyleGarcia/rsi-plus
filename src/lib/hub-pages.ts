@@ -34,6 +34,20 @@ export interface HubPage {
   popup?: boolean;
   /** Shorter label for the popup grid (a third of 300 px); `label` when absent. */
   short?: string;
+  /**
+   * Parts of the page listed under it in the sidebar: each opens `#<tab>?<query>`. A view (`show=` / `view=` / `cat=` /
+   * `who=`: the page filters itself) or a place on the page (`at=<element id>`: the hub scrolls to it).
+   */
+  children?: HubSub[];
+  /** List the parts all the time, not only while the page is open (the Feed: its parts are places to go straight to). */
+  pinned?: boolean;
+}
+export interface HubSub {
+  id: string;
+  label: string;
+  sub: string;
+  /** `key=value` after the `?` of the hash. */
+  query: string;
 }
 export interface HubGroup {
   label: string;
@@ -42,12 +56,55 @@ export interface HubGroup {
 
 export const HUB_GROUPS: HubGroup[] = [
   {
+    // The Feed gathers everything RSI+ noticed — Spectrum, friends, the store, your hangar — so it sits above the sections.
+    label: 'Activity',
+    items: [
+      {
+        tab: 'feed',
+        label: 'Feed',
+        sub: 'Everything new: Spectrum, friends, store, hangar',
+        icon: Rss,
+        popup: true,
+        short: 'Feed',
+        pinned: true,
+        children: [
+          { id: 'spectrum', label: 'Spectrum', sub: 'Watched threads, channels, authors, keywords, Issue Council', query: 'show=spectrum' },
+          { id: 'friends', label: 'Friends', sub: 'Online, added or gone, requests, party mode', query: 'show=friends' },
+          { id: 'store', label: 'Store alerts', sub: 'Wishlist and CCU chain alerts, hangar changes', query: 'show=store' },
+          { id: 'changes', label: 'Store changes', sub: 'What the pledge store added and removed', query: 'view=store' },
+        ],
+      },
+    ],
+  },
+  {
     label: 'Spectrum',
     items: [
-      { tab: 'feed', label: 'Feed', sub: 'Watches, friends, store alerts, store changes', icon: Rss, popup: true, short: 'Feed' },
-      { tab: 'watching', label: 'Watching', sub: 'Threads, channels, authors, bells', icon: Eye },
+      {
+        tab: 'watching',
+        label: 'Watching',
+        sub: 'Threads, channels, authors, bells',
+        icon: Eye,
+        children: [
+          { id: 'threads', label: 'Threads', sub: 'Threads you watch', query: 'at=watching-threads' },
+          { id: 'channels', label: 'Channels', sub: 'Channels you watch for new threads and dev posts', query: 'at=watching-channels' },
+          { id: 'keywords', label: 'Keywords', sub: 'Words that flag a thread', query: 'at=watching-keywords' },
+          { id: 'authors', label: 'Authors', sub: 'People whose posts you follow', query: 'at=watching-authors' },
+        ],
+      },
       { tab: 'issues', label: 'Issue Council', sub: 'Issues you track, notes, trends', icon: Bug },
-      { tab: 'friends', label: 'Friends', sub: 'List, requests, orgs, party mode', icon: Users, popup: true, short: 'Friends' },
+      {
+        tab: 'friends',
+        label: 'Friends',
+        sub: 'List, requests, orgs, party mode',
+        icon: Users,
+        popup: true,
+        short: 'Friends',
+        children: [
+          { id: 'party', label: 'Party mode', sub: 'Auto-accept friend requests for a while', query: 'at=friends-party' },
+          { id: 'requests', label: 'Requests', sub: 'Incoming and sent friend requests', query: 'at=friends-requests' },
+          { id: 'list', label: 'Friend list', sub: 'Everyone, by name or by org', query: 'at=friends-list' },
+        ],
+      },
       { tab: 'intel', label: 'Org lookup', sub: 'Players & orgs, your threat tags', icon: ShieldAlert },
       { tab: 'mutes', label: 'Mutes', sub: 'Authors, keywords, labels', icon: VolumeX },
     ],
@@ -61,20 +118,63 @@ export const HUB_GROUPS: HubGroup[] = [
       { tab: 'items', label: 'Items', sub: 'Gear, paints, flair in your pledges', icon: Package },
       { tab: 'paints', label: 'Paints by ship', sub: 'Owned vs missing paints per hull', icon: Palette },
       { tab: 'buyback', label: 'Buyback', sub: 'What you melted', icon: Undo2 },
-      { tab: 'wallet', label: 'Wallet', sub: "Credits, spend, Chairman's Club, funding", icon: Wallet, popup: true, short: 'Wallet' },
+      {
+        tab: 'wallet',
+        label: 'Wallet',
+        sub: "Credits, spend, Chairman's Club, funding",
+        icon: Wallet,
+        popup: true,
+        short: 'Wallet',
+        children: [
+          { id: 'credits', label: 'Credits', sub: 'Store credit and UEC', query: 'at=wallet-credits' },
+          { id: 'spend', label: 'Your spend', sub: 'Where the money went', query: 'at=wallet-spend' },
+          { id: 'fleet', label: 'Fleet value', sub: "Your ships at today's prices, CCU portfolio", query: 'at=wallet-fleet-value' },
+          { id: 'funding', label: 'Funding', sub: 'Star Citizen crowdfunding', query: 'at=wallet-funding' },
+        ],
+      },
     ],
   },
   {
     label: 'Store',
     items: [
       { tab: 'store', label: 'Ship catalog', sub: 'Every hull · MSRP, CCUs, warbond, size, stage', icon: Store, popup: true, short: 'Catalog' },
-      { tab: 'browse', label: 'Browse', sub: 'Paints, packs, gear · limited time, new, special', icon: LayoutGrid, popup: true, short: 'Browse' },
+      {
+        tab: 'browse',
+        label: 'Browse',
+        sub: 'Paints, packs, gear · limited time, new, special',
+        icon: LayoutGrid,
+        popup: true,
+        short: 'Browse',
+        children: [
+          { id: 'ships', label: 'Standalone ships', sub: 'Ships the store sells on their own', query: 'cat=ships' },
+          { id: 'paints', label: 'Paints', sub: 'Paints and paint packs', query: 'cat=paints' },
+          { id: 'packs', label: 'Packs', sub: 'Ship packs', query: 'cat=packs' },
+          { id: 'packages', label: 'Game packages', sub: 'Packages with the game', query: 'cat=packages' },
+          { id: 'gear', label: 'Gear', sub: 'Armour, weapons, flair', query: 'cat=gear' },
+          { id: 'addons', label: 'Add-ons', sub: 'Add-ons and extras', query: 'cat=addons' },
+          { id: 'concierge', label: 'Concierge', sub: 'Concierge-only listings', query: 'who=concierge' },
+          { id: 'subscribers', label: 'Subscribers', sub: 'The Subscribers Store', query: 'who=subscribers' },
+        ],
+      },
     ],
   },
   {
     label: 'Plan',
     items: [
-      { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true, short: 'Planner' },
+      {
+        tab: 'ccu',
+        label: 'CCU planner',
+        sub: 'Upgrade chains, cart',
+        icon: Route,
+        popup: true,
+        short: 'Planner',
+        children: [
+          { id: 'plan', label: 'Plan a chain', sub: 'One source, one target: verify, cart', query: 'at=ccu-plan' },
+          { id: 'cart', label: 'RSI cart', sub: 'What is in your cart now', query: 'at=ccu-cart-card' },
+          { id: 'chains', label: 'My chains', sub: 'Every ship you are working towards, by priority', query: 'at=ccu-chains-card' },
+          { id: 'owned', label: 'Your CCUs', sub: 'Force a CCU in or out', query: 'at=ccu-owned-card' },
+        ],
+      },
       { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
       { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
     ],

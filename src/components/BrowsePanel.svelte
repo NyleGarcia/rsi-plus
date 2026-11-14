@@ -66,6 +66,29 @@
   let who = $state<Audience>(isAudience(whoParam) ? whoParam : 'all');
   let cat = $state<Cat>(isCat(catParam) ? catParam : 'all');
   let q = $state('');
+  // The sidebar lists the categories under Browse (`#browse?cat=paints`, `?who=concierge`): follow the hash, and keep
+  // it in step when a category is picked here, so the sidebar marks the one that is open.
+  $effect(() => {
+    const on = () => {
+      if (!location.hash.startsWith('#browse')) return;
+      const c = hashParam('cat');
+      const w = hashParam('who');
+      if (c == null && w == null && location.hash.includes('?')) return; // another kind of link (`item=` …)
+      cat = isCat(c) ? c : 'all';
+      who = isAudience(w) ? w : 'all';
+    };
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  });
+  $effect(() => {
+    const params = [cat !== 'all' ? `cat=${cat}` : '', who !== 'all' ? `who=${who}` : ''].filter(Boolean).join('&');
+    const want = `#browse${params ? `?${params}` : ''}`;
+    if (!location.hash.startsWith('#browse')) return;
+    const has = location.hash.includes('item=') || location.hash.includes('q=');
+    if (has || location.hash === want) return;
+    history.replaceState(null, '', want);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
   /** Facet picks (edition, special, hangar, stock, bundles, price), kept across visits. */
   const readPrefs = (): string | null => {
     try {

@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Export / import CCU chains as text (`lib/ccu-link.ts`): the route on screen and the saved chains as codes to copy
+   * Export / import CCU chains as text (`lib/ccu-link.ts`): the route on screen and My chains as codes to copy
    * or download, and a box to paste codes (or pick a file) into — open one in the planner, or add them all to the
-   * saved chains. A code holds the route and options, not your own CCUs.
+   * list. A code holds the route and options, not your own CCUs.
    */
   import { transient } from '@/lib/flash.svelte';
   import { ccuCodesText, parseCcuCodes, type CcuLink } from '@/lib/ccu-link';
@@ -56,7 +56,7 @@
   }
   async function add() {
     const r = await onadd(found);
-    msg = `${r.added} added to your saved chains${r.failed ? `, ${r.failed} could not be planned today (ship unknown, or no chain from that source)` : ''}`;
+    msg = `${r.added} added to My chains${r.failed ? `, ${r.failed} could not be planned today (ship unknown, or no chain from that source)` : ''}`;
     if (r.added) text = '';
   }
   function openFirst() {
@@ -87,7 +87,7 @@
           <span class="text-muted-foreground text-xs">Pick a source and a target to export the chain on screen.</span>
         {/if}
         <div class="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" disabled={!saved.length} onclick={() => copy(ccuCodesText(saved), `Copied ${saved.length} saved chains`)}>Copy saved chains ({saved.length})</Button>
+          <Button variant="outline" size="sm" disabled={!saved.length} onclick={() => copy(ccuCodesText(saved), `Copied ${saved.length} chains`)}>Copy My chains ({saved.length})</Button>
           <Button variant="outline" size="sm" disabled={!saved.length} onclick={() => downloadFile(`rsi-plus-ccu-chains-${dateStamp()}.txt`, ccuCodesText(saved), 'text/plain')}>Download as a file</Button>
           {#if copied.text}<span class="text-success text-xs" role="status">{copied.text}</span>{/if}
         </div>
@@ -101,7 +101,7 @@
             <input type="file" accept="text/plain,.txt" class="sr-only" onchange={pickFile} />
           </label>
           <Button size="sm" disabled={!found.length} onclick={openFirst}>{found.length > 1 ? 'Open the first in the planner' : 'Open in the planner'}</Button>
-          <Button variant="outline" size="sm" disabled={!found.length} onclick={add}>Add {found.length || ''} to saved chains</Button>
+          <Button variant="outline" size="sm" disabled={!found.length} onclick={add}>Add {found.length || ''} to My chains</Button>
           {#if text.trim() && !found.length}<span class="text-destructive text-xs">No chain code found in this text.</span>{/if}
           {#if msg}<span class="text-muted-foreground text-xs" role="status">{msg}</span>{/if}
         </div>

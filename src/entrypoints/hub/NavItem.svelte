@@ -16,7 +16,9 @@
     active,
     count = 0,
     badge = [],
+    children = [],
     onselect,
+    onpart,
   }: {
     id: string;
     label: string;
@@ -27,7 +29,11 @@
     count?: number;
     /** What the badge says, as colored chips ("+32" green, "−5" red); the plain count when empty. */
     badge?: { text: string; tone: 'success' | 'destructive' | 'info' }[];
+    /** Views of the page, listed under it (hidden when the sidebar is collapsed to icons). */
+    children?: { id: string; label: string; sub: string; href: string; active: boolean; count?: string }[];
     onselect: () => void;
+    /** A part was clicked (its link changes the hash; this also fires when the hash is already that part). */
+    onpart?: (href: string) => void;
   } = $props();
 
   const sidebar = Sidebar.useSidebar();
@@ -62,5 +68,17 @@
         <Badge variant="info" class="h-4 rounded-md px-1.5 text-[11px] font-semibold tabular-nums">{count > 99 ? '99+' : count}</Badge>
       {/each}
     </Sidebar.MenuBadge>
+  {/if}
+  {#if children.length}
+    <Sidebar.MenuSub class="mr-0 pr-1">
+      {#each children as c (c.id)}
+        <Sidebar.MenuSubItem>
+          <Sidebar.MenuSubButton href={c.href} isActive={c.active} aria-current={c.active ? 'page' : undefined} title={c.sub} class="justify-between" onclick={() => (onpart?.(c.href), sidebar.isMobile && sidebar.setOpenMobile(false))}>
+            <span class="truncate">{c.label}</span>
+            {#if c.count}<span class="text-muted-foreground text-[11px] tabular-nums">{c.count}</span>{/if}
+          </Sidebar.MenuSubButton>
+        </Sidebar.MenuSubItem>
+      {/each}
+    </Sidebar.MenuSub>
   {/if}
 </Sidebar.MenuItem>
