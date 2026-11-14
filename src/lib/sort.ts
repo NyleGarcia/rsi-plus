@@ -1,4 +1,5 @@
 /** Column sorting shared by every hub table. Pure. */
+import { UI_LOCALE } from '@/lib/fmt';
 
 export type Dir = 'asc' | 'desc';
 export interface SortState<K extends string = string> {
@@ -13,7 +14,7 @@ export function nextSort<K extends string>(cur: SortState<K>, key: K, firstDir: 
   return cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: firstDir };
 }
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const collator = new Intl.Collator(UI_LOCALE, { numeric: true, sensitivity: 'base' });
 
 /** Compare two cell values: numbers numerically, strings naturally ("Mk II" < "Mk 10"), empty always last. */
 export function compare(a: SortValue, b: SortValue, dir: Dir): number {

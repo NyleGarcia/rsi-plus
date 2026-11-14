@@ -11,6 +11,7 @@ import { clean } from './dom';
 import { isWarbond } from './hangar';
 import { parseMoney as money, r2 } from './money';
 import { SPECTRUM_ORIGIN } from './types';
+import { fmtNum } from '@/lib/fmt';
 
 export type PayKind = 'cash' | 'credit' | 'mixed' | 'free' | 'refund' | 'cancelled' | 'unknown';
 export interface OrderLine {
@@ -188,7 +189,7 @@ export async function captureBilling(): Promise<string> {
   const main = doc.querySelector('.orders, #billing, #contentbody, body');
   const out = (main?.innerHTML ?? html).replace(/\s{2,}/g, ' ').slice(0, 30000);
   await navigator.clipboard.writeText(out);
-  return `copied ${out.length.toLocaleString()} chars of ${doc.title || '/account/billing'}`;
+  return `copied ${fmtNum(out.length)} chars of ${doc.title || '/account/billing'}`;
 }
 
 export interface YearTotals {

@@ -28,6 +28,7 @@
   import { cleanLabels, labelsOf, type Labels } from '@/lib/labels';
   import { sortBy, type SortState } from '@/lib/sort';
   import { paintKey, priceLabel, usd, type Catalog, type CatalogShip, type PaintCatalog, type StoreContent, type StorePaint } from '@/lib/store';
+  import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
   import { ownUsd } from '@/lib/privacy.svelte';
   import SortTh from './SortTh.svelte';
   import Thumb from './Thumb.svelte';
@@ -97,10 +98,13 @@
     return () => offs.forEach((o) => o());
   });
   async function refreshPaints(fresh: boolean) {
+    const wait = fresh ? cooldownLeft('paints') : 0;
+    if (wait) return void (error = cooldownMsg(wait));
     paintsLoading = true;
     try {
       storePaints = await bg({ type: 'paints:get', fresh });
     } catch (e) {
+      if (fresh) cooldownReset('paints');
       error = `Store paints: ${(e as Error).message}`;
     } finally {
       paintsLoading = false;

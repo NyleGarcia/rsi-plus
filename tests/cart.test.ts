@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addable, addStandalone, addUpgrade, CartError, csrfFrom, readCart, signedIn, verifyUpgrade } from '@/lib/cart';
+import { addable, addStandalone, addUpgrade, asLimit, batchPlan, CartError, csrfFrom, lineHolds, readCart, signedIn, verifyUpgrade } from '@/lib/cart';
 import type { Step } from '@/lib/ccu';
 import type { CatalogShip } from '@/lib/store';
 
@@ -207,5 +207,34 @@ describe('cart: which steps are addable', () => {
     expect(addable(step({ kind: 'owned', ref: 5 }), byId).kind).toBe('none');
     expect(addable(step({ kind: 'buyback', ref: 7 }), byId)).toEqual({ kind: 'upgrade', ref: { fromShipId: 1, toShipId: 3, toSkuId: 30, pledgeId: 7 } });
     expect(addable(step({ kind: 'buyback', ref: 7, toId: 4 }), byId).kind).toBe('none');
+  });
+});
+
+describe('several chains into one cart', () => {
+  const line = (skuId: number, qty: number, upgrade: string | null = null) => ({ skuId, qty, upgrade });
+  it('a cart line holds a wanted line by SKU, and by source hull when the upgrade is named', () => {
+    expect(lineHolds(line(7, 1), { skuId: 7, fromName: 'Galaxy' })).toBe(true); // no upgrade name: the SKU decides
+    expect(lineHolds(line(7, 1, 'Upgrade - Galaxy to 600i Touring Warbond Edition'), { skuId: 7, fromName: 'Galaxy' })).toBe(true);
+    expect(lineHolds(line(7, 1, 'Upgrade - Meteor to 600i Touring Warbond Edition'), { skuId: 7, fromName: 'Galaxy' })).toBe(false);
+    expect(lineHolds(line(8, 1), { skuId: 7, fromName: null })).toBe(false);
+  });
+  it('each copy in the cart covers one wanted line; the rest still need adding', () => {
+    const want = [
+      { key: 'a', skuId: 7, fromName: 'Galaxy' },
+      { key: 'b', skuId: 7, fromName: 'Galaxy' }, // a second chain needs the same CCU
+      { key: 'c', skuId: 9, fromName: null },
+    ];
+    expect(batchPlan(want, [])).toEqual({ add: ['a', 'b', 'c'], held: [] });
+    expect(batchPlan(want, [line(7, 1), line(9, 3)])).toEqual({ add: ['b'], held: ['a', 'c'] });
+    expect(batchPlan(want, [line(7, 2)])).toEqual({ add: ['c'], held: ['a', 'b'] });
+  });
+  it('a refusal for a line the cart already holds reads as the one-per-cart limit', () => {
+    const refused = new CartError('refused', 'RSI refused: Maximum quantity reached');
+    expect(asLimit(refused, false)).toBe(refused);
+    const l = asLimit(refused, true);
+    expect(l.code).toBe('limit');
+    expect(l.message).toContain('Maximum quantity reached');
+    const out = new CartError('signed-out', 'Sign in to RSI first.');
+    expect(asLimit(out, true)).toBe(out);
   });
 });

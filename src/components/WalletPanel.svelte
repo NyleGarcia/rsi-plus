@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtGrouped, fmtWhen } from '@/lib/fmt';
   import { fetchCredits } from '@/lib/account';
   import { ownedCcus } from '@/lib/ccu';
   import { hangarUrl, totals, type BuybackItem, type Credits, type Pledge } from '@/lib/hangar';
@@ -265,7 +266,7 @@
   const big = (n: number) => (displayCurrency() !== 'USD' ? (n >= 1e6 ? fmtUsdCompact(n) : usd0(n)) : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : usd0(n));
   /** Fits a narrow bar column: $55, $2.3k, $16k. */
   const short = (n: number) => (displayCurrency() !== 'USD' ? (n >= 1e3 ? fmtUsdCompact(n) : usd0(n)) : n >= 1e6 ? big(n) : n >= 1e4 ? `$${Math.round(n / 1e3)}k` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}k` : usd0(n));
-  const fmtN = (n: number) => ownMoney(`¤${n.toLocaleString('en-US')}`);
+  const fmtN = (n: number) => ownMoney(`¤${fmtGrouped(n)}`);
   const RANGES: { id: FundingRange; label: string; hint: string }[] = [
     { id: 'day', label: 'Days', hint: 'last 7 days' },
     { id: 'week', label: 'Weeks', hint: 'last 7 weeks' },
@@ -371,7 +372,7 @@
   {#if !slices.length || total <= 0}
     <Empty class="py-3 text-xs">Nothing to chart.</Empty>
   {:else}
-    {@const pct = (v: number) => `${((100 * v) / total).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`}
+    {@const pct = (v: number) => `${fmtGrouped((100 * v) / total, { maximumFractionDigits: 1 })}%`}
     {@const on = hot[id] ?? null}
     {@const cur = slices.find((s) => s.key === on)}
     {@const config = Object.fromEntries(slices.map((s, i) => [s.key, { label: s.label, color: color(s, i) }]))}
@@ -574,12 +575,12 @@
         grid={{ x: false, y: true }}
         props={{
           area: { fillOpacity: 0.25, line: { strokeWidth: 2 } },
-          xAxis: { format: (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), ticks: 6, tickOcclusion: true },
+          xAxis: { format: (d: Date) => fmtWhen(d, { month: 'short', year: '2-digit' }), ticks: 6, tickOcclusion: true },
           yAxis: { format: (n: number) => (n ? short(n) : '0'), ticks: 3 },
         }}
       >
         {#snippet tooltip()}
-          <Chart.Tooltip labelFormatter={(d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} indicator="line">
+          <Chart.Tooltip labelFormatter={(d: Date) => fmtWhen(d, { month: 'short', year: 'numeric' })} indicator="line">
             {#snippet formatter({ value, name })}
               <div class="flex w-full items-center justify-between gap-3">
                 <span class="text-muted-foreground">{name}</span>
@@ -824,7 +825,7 @@
       {#if funding}
         <StatGrid>
           <Stat value={big(funding.funds)} label="raised to date" />
-          <Stat value={funding.fans.toLocaleString('en-US')} label="citizens" />
+          <Stat value={fmtGrouped(funding.fans)} label="citizens" />
           <Stat value={funding.fans ? money0(funding.funds / funding.fans) : '—'} label="per citizen" />
           {#if period}
             <Stat value={big(period.usd)} label={`this ${range}`} delta={delta != null ? { text: `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(0)}% vs last`, tone: delta >= 0 ? 'up' : 'down' } : null}>

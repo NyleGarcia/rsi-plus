@@ -4,6 +4,7 @@
    * that draws down the feed as rows come into view, rows that expand in place, new rows that slide in on top.
    * Arrow keys move between expandable rows, Enter / Space expands.
    */
+  import { fmtWhen } from '@/lib/fmt';
   import { untrack, type Component, type Snippet } from 'svelte';
   import { slide } from 'svelte/transition';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -49,12 +50,12 @@
       if (rows) rows.push(e);
       else by.set(k, [e]);
     }
-    return [...by].map(([day, rows]) => ({ day, rows, label: day === today ? 'Today' : day === yesterday ? 'Yesterday' : new Date(rows[0]!.at).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }));
+    return [...by].map(([day, rows]) => ({ day, rows, label: day === today ? 'Today' : day === yesterday ? 'Yesterday' : fmtWhen(rows[0]!.at, { weekday: 'long', month: 'long', day: 'numeric' }) }));
   });
   const when = (t: number) => {
     const m = Math.max(0, Math.floor((now - t) / 60000));
     if (dayKey(t) === dayKey(now) && m < 12 * 60) return m < 1 ? 'now' : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`;
-    return new Date(t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return fmtWhen(t, { hour: 'numeric', minute: '2-digit' });
   };
   let expanded = $state<Set<string>>(new Set());
   const toggle = (id: string) => (expanded = new Set(expanded.has(id) ? [...expanded].filter((x) => x !== id) : [...expanded, id]));

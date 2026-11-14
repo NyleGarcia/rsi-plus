@@ -1,4 +1,6 @@
 /** Calendar helpers shared by the spend charts (hangar melt value and order history bucket the same way). */
+import { fmtDate } from './fmt';
+
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 export const monthKey = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 /** The last `months` calendar months ending now, oldest first, as `YYYY-MM` keys with their short labels. */
@@ -33,8 +35,7 @@ export function parseRsiDate(s: string | null | undefined): number {
 }
 
 // ---- one look per concept: dates in tables = date only; "loaded …" lines = date + time; feed = relative ----
-export const fmtDate = (ms: number | Date): string => new Date(ms).toLocaleDateString();
-export const fmtDateTime = (ms: number | Date): string => new Date(ms).toLocaleString();
+export { fmtDate, fmtDateTime } from './fmt';
 /** "just now", "5 min ago", "3 h ago", "2 d ago", else the date. */
 export function ago(ms: number, now = Date.now()): string {
   const s = Math.max(0, now - ms) / 1000;

@@ -8,7 +8,8 @@
   import { bg } from '@/lib/messages';
   import { feedItem, getSettings, lastPollItem, settingsItem, storeLogItem } from '@/lib/settings';
   import { cleanLog, tally } from '@/lib/storelog';
-  import { EVENT_KINDS, type EventKind, type FeedEvent } from '@/lib/watch';
+  import { EVENT_KINDS, FEED_SECTIONS, isFeedSection, type EventKind, type FeedEvent, type FeedSection } from '@/lib/watch';
+  import { LINK } from '@/lib/ui';
   import * as Card from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
   import { ago } from '@/lib/dates';
@@ -37,14 +38,20 @@
   type View = 'activity' | 'store';
   const viewFromHash = (): View => (location.hash.startsWith('#notifications') || hashParam('view') === 'store' ? 'store' : 'activity');
   let view = $state<View>(viewFromHash());
+  /** One part of the Feed, picked in the sidebar (`#feed?show=spectrum`): only its kinds are listed. */
+  const sectionFromHash = (): FeedSection | null => (isFeedSection(hashParam('show')) ? (hashParam('show') as FeedSection) : null);
+  let section = $state<FeedSection | null>(sectionFromHash());
+  const SECTION_LABEL: Record<FeedSection, string> = { spectrum: 'Spectrum', friends: 'Friends', store: 'Store alerts' };
   $effect(() => {
-    const on = () => (view = viewFromHash());
+    const on = () => ((view = viewFromHash()), (section = sectionFromHash()));
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   });
   function setView(v: View) {
     view = v;
+    section = null;
     history.replaceState(null, '', v === 'store' ? '#feed?view=store' : '#feed');
+    window.dispatchEvent(new HashChangeEvent('hashchange')); // the sidebar marks the part that is open
   }
 
   let feed = $state<FeedEvent[]>([]);
@@ -87,7 +94,8 @@
 
   const LABEL: Record<EventKind, string> = Object.fromEntries(EVENT_KINDS.map((k) => [k.id, k.label])) as Record<EventKind, string>;
   const KIND_TONE: Partial<Record<EventKind, string>> = { dev: 'text-accent-2', store: 'text-warning', friend: 'text-success', request: 'text-success', party: 'text-warning', replies: 'text-primary', keyword: 'text-info', hangar: 'text-info', issue: 'text-warning' };
-  const base = $derived(unseenOnly ? feed.filter((e) => !e.seen) : feed);
+  const inSection = $derived(section ? feed.filter((e) => (FEED_SECTIONS[section!] as readonly EventKind[]).includes(e.kind)) : feed);
+  const base = $derived(unseenOnly ? inSection.filter((e) => !e.seen) : inSection);
   const count = $derived.by(() => {
     const m = new Map<EventKind, number>();
     for (const e of base) m.set(e.kind, (m.get(e.kind) ?? 0) + 1);
@@ -95,7 +103,7 @@
   });
   const present = $derived(EVENT_KINDS.filter((k) => (count.get(k.id) ?? 0) > 0 || kinds.includes(k.id)));
   const shown = $derived(kinds.length ? base.filter((e) => kinds.includes(e.kind)) : base);
-  const filtered = $derived(kinds.length > 0 || unseenOnly);
+  const filtered = $derived(kinds.length > 0 || unseenOnly || !!section);
   const shownUnseen = $derived(shown.filter((e) => !e.seen).map((e) => e.key));
   const unseen = $derived(feed.filter((e) => !e.seen).length);
   const ICON: Record<EventKind, typeof Rss> = { replies: MessageSquare, thread: Rss, dev: Code, author: AtSign, keyword: Hash, friend: Users, request: UserPlus, party: PartyPopper, store: Store, hangar: Warehouse, issue: Bug };
@@ -148,6 +156,9 @@
       </Card.Header>
 
       <Card.Content class="grid gap-3">
+        {#if section}
+          <span class="text-muted-foreground text-xs">Showing {SECTION_LABEL[section]} only. <a class={LINK} href="#feed">Show everything</a></span>
+        {/if}
         <div class="flex flex-wrap items-center gap-2">
           <FilterChips
             multiple
