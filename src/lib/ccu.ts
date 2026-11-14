@@ -9,7 +9,7 @@
  * - future (`planAhead`): ship B has no CCU on sale today → assume a standard CCU at msrp(B) when it returns
  *   (event sales: IAE, Invictus, the maker's showcase) → cost msrp(B) − msrp(A), bought later. Ranked after
  *   anything buyable now at the same price; `chainEvents` alerts when such a CCU shows up in the store.
- * Objective picks what is minimised (see `Objective`); ties → fewer waits, then fewer steps. Pure; inputs come from
+ * Objective picks what is minimised (see `Objective`); ties → fewer waits, then fewer steps (or more, `PlanOptions.steps`). Pure; inputs come from
  * the catalog + hangar/buyback caches.
  */
 import { isWarbondSku, lowestOffer, matchShip, shipKey, usd, type CatalogShip } from './store';
@@ -93,7 +93,14 @@ export interface PlanOptions {
   via?: number[];
   /** Store SKUs (CCU / standalone) never used: steps ignored from a chain, so the planner routes around that offer. */
   skip?: number[];
+  /**
+   * Tie-break after cost and waits: `fewer` steps (default, also when unset) or `more` (every extra step is a ship you
+   * can stop at and fly). Never changes the cost of the chain — only which of the equally priced chains is shown.
+   */
+  steps?: StepsPreference;
 }
+
+export type StepsPreference = 'fewer' | 'more';
 
 export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   warbond: true,
@@ -107,6 +114,7 @@ export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   planAhead: false,
   via: [],
   skip: [],
+  steps: 'fewer',
 };
 
 function skuKind(title: string): EdgeKind {
@@ -124,22 +132,42 @@ interface Dist {
   steps: number;
   prev: Step | null;
   id: number;
+  /** MSRP of the node (0 for the store start): orders equally ranked nodes when more steps are preferred. */
+  msrp: number;
   /** Order the node was first reached: ties settle the earliest one (the old linear scan's order). */
   seq: number;
 }
 
-/** Lexicographic ranking of a path for the objective; true when `a` beats `b`. Waiting for a sale loses to buying today. */
-function before(objective: Objective, a: Dist, b: Dist): boolean {
+/** What a path is ranked on: running totals (a Dijkstra node, or a whole `Plan` with `steps` = its length). */
+type Ranked = { cost: number; cash: number; paid: number; waits: number; steps: number };
+
+/** Cost part of the ranking (objective, then waits): -1 / 0 / 1. */
+function rank(objective: Objective, a: Ranked, b: Ranked): number {
   if (objective === 'cash') {
-    if (a.cash !== b.cash) return a.cash < b.cash;
-    if (a.cost !== b.cost) return a.cost < b.cost;
+    if (a.cash !== b.cash) return a.cash < b.cash ? -1 : 1;
+    if (a.cost !== b.cost) return a.cost < b.cost ? -1 : 1;
   } else if (objective === 'longterm') {
     const x = a.cost + a.paid;
     const y = b.cost + b.paid;
-    if (x !== y) return x < y;
-  } else if (a.cost !== b.cost) return a.cost < b.cost;
-  if (a.waits !== b.waits) return a.waits < b.waits;
-  return a.steps < b.steps;
+    if (x !== y) return x < y ? -1 : 1;
+  } else if (a.cost !== b.cost) return a.cost < b.cost ? -1 : 1;
+  if (a.waits !== b.waits) return a.waits < b.waits ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Lexicographic ranking of a path for the objective; true when `a` beats `b`. Waiting for a sale loses to buying today;
+ * then fewer steps, or more with `steps: 'more'`.
+ */
+function before(objective: Objective, steps: StepsPreference | undefined, a: Ranked, b: Ranked): boolean {
+  const r = rank(objective, a, b);
+  if (r) return r < 0;
+  return steps === 'more' ? a.steps > b.steps : a.steps < b.steps;
+}
+
+/** True when chain `a` beats chain `b` for these options (the planner's own order: objective, waits, steps). */
+export function planBefore(opt: Pick<PlanOptions, 'objective' | 'steps'>, a: Plan, b: Plan): boolean {
+  return before(opt.objective, opt.steps, { ...a, cost: a.total, steps: a.steps.length }, { ...b, cost: b.total, steps: b.steps.length });
 }
 
 /**
@@ -217,14 +245,31 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
   return { byId, edges };
 }
 
-/** Dijkstra from `startId` to `targetId` on the ranked cost, binary heap with lazy deletion. */
-function route(g: PlanGraph, objective: Objective, startId: number, targetId: number): Step[] | null {
+/**
+ * Dijkstra from `startId` to `targetId` on the ranked cost, binary heap with lazy deletion. Every edge costs ≥ 0 and a
+ * settled node is never updated again, so each node is expanded once and the `prev` links form a tree (no loop, even
+ * through a zero-cost cycle of owned CCUs to an unpriced hull).
+ *
+ * Fewer steps: the step count is part of the order (an extra edge never makes a path better), plain Dijkstra.
+ * More steps: an extra zero-cost edge (an owned CCU) does make a path better, so the heap pops equally ranked nodes
+ * cheapest hull first instead — a zero-cost edge goes up in MSRP, so every zero-cost way into a node is relaxed before
+ * the node is settled with the most steps. Cost and waits stay primary in both.
+ */
+function route(g: PlanGraph, opt: Pick<PlanOptions, 'objective' | 'steps'>, startId: number, targetId: number): Step[] | null {
   if (startId === targetId) return [];
+  const { objective, steps: pref } = opt;
   let seq = 0;
-  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null, id: startId, seq: seq++ };
+  const msrpOf = (id: number) => (id === STORE_START ? 0 : (g.byId.get(id)?.msrp ?? 0));
+  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null, id: startId, msrp: msrpOf(startId), seq: seq++ };
   const dist = new Map<number, Dist>([[startId, first]]);
   const done = new Set<number>();
-  const lt = (a: Dist, b: Dist) => before(objective, a, b) || (!before(objective, b, a) && a.seq < b.seq);
+  const lt =
+    pref === 'more'
+      ? (a: Dist, b: Dist) => {
+          const r = rank(objective, a, b);
+          return r ? r < 0 : a.msrp !== b.msrp ? a.msrp < b.msrp : a.seq < b.seq;
+        }
+      : (a: Dist, b: Dist) => before(objective, pref, a, b) || (!before(objective, pref, b, a) && a.seq < b.seq);
   const heap: Dist[] = [first];
   const push = (d: Dist) => {
     let i = heap.push(d) - 1;
@@ -261,6 +306,7 @@ function route(g: PlanGraph, objective: Objective, startId: number, targetId: nu
     if (here.id === targetId) break;
     done.add(here.id);
     for (const e of g.edges(here.id)) {
+      if (done.has(e.toId)) continue;
       const old = dist.get(e.toId);
       // Compare in a scratch record; allocate only when the edge improves the node.
       cand.cost = here.cost + e.cost;
@@ -268,8 +314,8 @@ function route(g: PlanGraph, objective: Objective, startId: number, targetId: nu
       cand.paid = here.paid + e.paid;
       cand.waits = here.waits + (e.kind === 'future' ? 1 : 0);
       cand.steps = here.steps + 1;
-      if (old && !before(objective, cand, old)) continue;
-      const next: Dist = { ...cand, prev: e, id: e.toId, seq: old ? old.seq : seq++ };
+      if (old && !before(objective, pref, cand, old)) continue;
+      const next: Dist = { ...cand, prev: e, id: e.toId, msrp: msrpOf(e.toId), seq: old ? old.seq : seq++ };
       dist.set(e.toId, next);
       push(next);
     }
@@ -307,20 +353,20 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   for (const st of stops) {
     if ('via' in st) {
       if (st.msrp < 0) return null;
-      const leg = route(g, opt.objective, at, st.via);
+      const leg = route(g, opt, at, st.via);
       if (!leg || (at !== st.via && !leg.length)) return null;
       steps.push(...leg);
       at = st.via;
       continue;
     }
     const o = st.ccu;
-    const leg = route(g, opt.objective, at, o.fromId);
+    const leg = route(g, opt, at, o.fromId);
     const edge = g.edges(o.fromId).find((e) => e.ref === o.ref);
     if (!leg || !edge) return null;
     steps.push(...leg, edge);
     at = o.toId;
   }
-  const last = route(g, opt.objective, at, targetId);
+  const last = route(g, opt, at, targetId);
   if (!last) return null;
   steps.push(...last);
   if (!steps.length) return null;

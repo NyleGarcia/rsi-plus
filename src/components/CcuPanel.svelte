@@ -561,6 +561,7 @@
           {#each OPTIONS as o (o.key)}
             <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={!!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
           {/each}
+          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps: each extra step is a ship you can stop at and fly. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Exclude saved chains${chains.length ? ` (${reservedBy.size} CCUs)` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
         </div>
         <span class="text-muted-foreground text-[11px]">

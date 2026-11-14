@@ -86,6 +86,32 @@ describe('ccu planner', () => {
     expect(matchShip('Nothing Here', wolves)).toBeNull();
   });
 
+  it('steps preference: same cost, fewer steps by default, more steps on request', () => {
+    // Without warbond every standard route Aurora → Connie costs 21500.
+    const fewer = plan(ships, [], 1, 4, o({ warbond: false }))!;
+    expect(fewer.steps.map((s) => s.toId)).toEqual([4]);
+    expect(plan(ships, [], 1, 4, o({ warbond: false, steps: undefined }))!.steps.map((s) => s.toId)).toEqual([4]);
+    const more = plan(ships, [], 1, 4, o({ warbond: false, steps: 'more' }))!;
+    expect(more.steps.map((s) => s.toId)).toEqual([2, 3, 4]);
+    expect(more.total).toBe(fewer.total);
+    // Cost stays primary: the cheaper warbond chain wins whatever the preference.
+    expect(plan(ships, [], 1, 4, o({ steps: 'more' }))).toMatchObject({ total: 20500 });
+    for (const objective of ['cash', 'longterm'] as const) expect(plan(ships, [], 1, 4, o({ warbond: false, steps: 'more', objective }))!.total).toBe(21500);
+  });
+
+  it('steps preference more: free owned CCUs are chained, and a free cycle through an unpriced hull ends', () => {
+    // Owned Aurora → Titan → Cutlass and Aurora → Cutlass, all free: same cost, more steps takes the long way.
+    const owned = [own(1, 2, 51), own(2, 3, 52), own(1, 3, 53)];
+    expect(plan(ships, owned, 1, 4)!.steps.map((s) => s.ref ?? s.toId)).toEqual([53, 4]);
+    expect(plan(ships, owned, 1, 4, o({ steps: 'more' }))!.steps.map((s) => s.ref ?? s.toId)).toEqual([51, 52, 4]);
+    // Unpriced hull U: owned Aurora → U and U → Aurora are both free edges, a zero-cost loop.
+    const U = ship(9, 'Unpriced', 0);
+    const loop = [own(1, 9, 61), own(9, 1, 62)];
+    const p = plan([...ships, U], loop, 1, 4, o({ steps: 'more' }))!;
+    expect(p.total).toBe(20500);
+    expect(new Set(p.steps.map((s) => s.toId)).size).toBe(p.steps.length);
+  });
+
   it('objective cash: avoids warbond new money when credit can pay a standard chain', () => {
     // spend: Aurora → Cutlass WB (7500 cash) → Connie = 20500. cash: direct standard 21500, all credit.
     const spend = plan(ships, [], 1, 4, o({ objective: 'spend' }))!;
