@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+import { chainEvents, DEFAULT_PLAN_OPTIONS, excludeReserved, legExclude, ownedCcus, ownedHulls, ownedShips, plan, planFleet, applyAlternative, farthestReachable, planAlternatives, planGraph, plannerExclude, reservedRefs, savedVsMsrp, STORE_START, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
 import { lastSale, lowestOffer, matchShip, recordSales, wishlistEvents, withExtraShips, type CatalogShip, type Sku } from '@/lib/store';
 
 const sku = (title: string, price: number, extra: Partial<Sku> = {}): Sku => ({ id: price, title, price, available: true, stock: null, ...extra });
@@ -47,6 +47,20 @@ describe('ccu planner', () => {
     expect(p.steps[0]).toMatchObject({ kind: 'owned', cost: 0, ref: 99 });
     expect(p.total).toBe(13000);
     expect(p.paid).toBe(7500);
+    // the headline saving counts what the owned CCU cost: gap 21500 − 13000 to pay − 7500 paid = 1000 (not 8500)
+    expect(p.savings).toBe(8500);
+    expect(savedVsMsrp(p)).toBe(1000);
+  });
+
+  it('a buyback CCU costs what RSI asks for it once its page was read, else the MSRP gap', () => {
+    const bb = (price?: number) => [own(1, 3, 77, { source: 'buyback', ...(price ? { price } : {}) })];
+    // Aurora → Cutlass: gap 8500; store warbond 7500
+    expect(plan([A, ship(3, 'Cutlass Black', 11000)], bb(), 1, 3, o({ buyback: true }))!.steps[0]).toMatchObject({ kind: 'buyback', cost: 8500 }); // nothing else sells it
+    expect(plan(ships, bb(4000), 1, 3, o({ buyback: true }))!.steps[0]).toMatchObject({ kind: 'buyback', cost: 4000, ref: 77 });
+    // dearer than the store today → the store step wins
+    expect(plan(ships, bb(9000), 1, 3, o({ buyback: true }))!.steps[0]).toMatchObject({ kind: 'warbond', cost: 7500 });
+    const r = ownedCcus([], [{ id: 77, name: 'x', price: 4000, upgrade: { fromId: 1, fromName: 'Aurora MR', toId: 3, toName: 'Cutlass Black' } }], ships);
+    expect(r.owned[0]).toMatchObject({ source: 'buyback', price: 4000, value: 0, gifted: false });
   });
 
   it('buyback edges only when enabled; sold-out limited skipped', () => {

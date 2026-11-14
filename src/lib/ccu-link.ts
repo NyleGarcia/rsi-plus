@@ -26,6 +26,8 @@ export interface CcuLink {
   objective?: Objective;
   steps?: StepsPreference;
   flags: Partial<Record<LinkFlag, boolean>>;
+  /** A saved chain's name, when the code was exported from one. */
+  name?: string;
 }
 
 const OBJECTIVES: readonly Objective[] = ['spend', 'cash', 'longterm'];
@@ -37,8 +39,9 @@ const id = (s: string | null): number | undefined => {
 const bool = (s: string | null): boolean | undefined => (s === '1' || s === 'true' ? true : s === '0' || s === 'false' ? false : undefined);
 
 /** `#ccu?…` for a route and its options (`from` null = no source picked yet). */
-export function encodeCcuLink(r: { from: number | null; to: number; via?: number[]; opt: Pick<PlanOptions, 'objective' | 'steps' | LinkFlag> }): string {
+export function encodeCcuLink(r: { from: number | null; to: number; via?: number[]; opt: Pick<PlanOptions, 'objective' | 'steps' | LinkFlag>; name?: string }): string {
   const p = new URLSearchParams();
+  if (r.name?.trim()) p.set('name', r.name.trim().slice(0, 80));
   if (r.from != null) p.set('from', r.from === STORE_START ? 'store' : String(r.from));
   p.set('to', String(r.to));
   const via = (r.via ?? []).filter((v) => id(String(v)) != null);
@@ -61,6 +64,8 @@ export function decodeCcuLink(hash: string): CcuLink | null {
     return { flags: {} };
   }
   const out: CcuLink = { flags: {} };
+  const name = p.get('name')?.trim().slice(0, 80);
+  if (name) out.name = name;
   const from = p.get('from');
   if (from === 'store') out.from = STORE_START;
   else if (id(from) != null) out.from = id(from);
@@ -117,3 +122,23 @@ export function watchCcuLink(apply: (l: CcuLink) => void): () => void {
   window.addEventListener('hashchange', run);
   return () => window.removeEventListener('hashchange', run);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Chains as text, to export and import: one code per line, the same `#ccu?…` as the link (RSI's ship ids, so a code
+// means the same route for anyone). A file is just those lines. Your own CCUs are not in a code — whoever imports it
+// gets the chain planned on their own hangar and today's store.
+
+/** Every chain code in a text: lines, a pasted link, a whole file. Lines that are not a code with a target are skipped. */
+export function parseCcuCodes(text: string): CcuLink[] {
+  const out: CcuLink[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const i = line.indexOf('ccu?');
+    if (i < 0) continue;
+    const l = decodeCcuLink(`#${line.slice(i).trim()}`);
+    if (l?.to != null) out.push(l);
+  }
+  return out;
+}
+
+/** Chain codes as a text file / clipboard string. */
+export const ccuCodesText = (codes: string[]): string => codes.join('\n') + (codes.length ? '\n' : '');

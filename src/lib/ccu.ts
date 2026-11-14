@@ -36,6 +36,8 @@ export interface OwnedCcu {
   value: number;
   /** Hangar CCU with no melt value = received as a gift. */
   gifted: boolean;
+  /** Buyback only: what RSI asks to buy it back today (cents), once the entry's own page was read (Buyback page → Load contents & prices). */
+  price?: number;
 }
 
 export interface Step {
@@ -108,6 +110,12 @@ export interface PlanOptions {
 }
 
 export type StepsPreference = 'fewer' | 'more';
+
+/**
+ * What a chain really saves against the MSRP gap: what is still to pay AND what its owned CCUs cost you both count.
+ * (`savings` alone treats owned CCUs as free — right for ranking chains by what is left to spend, wrong as a headline.)
+ */
+export const savedVsMsrp = (p: Pick<Plan, 'savings' | 'paid'>): number => p.savings - p.paid;
 
 export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   warbond: true,
@@ -249,7 +257,8 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
       if (!to || (to.msrp > 0 && to.msrp <= a.msrp)) continue;
       if (o.source === 'hangar') out.push({ fromId: a.id, toId: to.id, kind: 'owned', cost: 0, cash: 0, paid: o.value, label: 'Owned CCU', ref: o.ref });
       else {
-        const cost = to.msrp - a.msrp;
+        // RSI's own buy-back price when the entry's page was read; else the MSRP gap (what a standard CCU would cost)
+        const cost = o.price ?? to.msrp - a.msrp;
         out.push({ fromId: a.id, toId: to.id, kind: 'buyback', cost, cash: opt.storeCredit ? 0 : cost, paid: 0, label: 'Buyback CCU', ref: o.ref });
       }
     }
@@ -701,7 +710,7 @@ export function chainEvents(chains: SavedChain[], ships: CatalogShip[], now: num
  */
 export function ownedCcus(
   pledges: { id: number; name: string; value?: number; upgrade: { fromId: number | null; fromName: string; toId: number | null; toName: string } | null }[],
-  buyback: { id: number; name: string; upgrade: { fromId: number | null; fromName: string; toId: number | null; toName: string } | null }[],
+  buyback: { id: number; name: string; price?: number; upgrade: { fromId: number | null; fromName: string; toId: number | null; toName: string } | null }[],
   ships: CatalogShip[],
 ): { owned: OwnedCcu[]; unmapped: { name: string; source: 'hangar' | 'buyback' }[] } {
   const byId = new Map(ships.map((s) => [s.id, s]));
@@ -712,13 +721,13 @@ export function ownedCcus(
   };
   const owned: OwnedCcu[] = [];
   const unmapped: { name: string; source: 'hangar' | 'buyback' }[] = [];
-  const add = (list: typeof pledges, source: 'hangar' | 'buyback') => {
+  const add = (list: (typeof pledges[number] & { price?: number })[], source: 'hangar' | 'buyback') => {
     for (const p of list) {
       if (!p.upgrade) continue;
       const from = resolve(p.upgrade.fromId, p.upgrade.fromName);
       const to = resolve(p.upgrade.toId, p.upgrade.toName);
       const value = Math.round((p.value ?? 0) * 100);
-      if (from && to && from.id !== to.id) owned.push({ fromId: from.id, toId: to.id, ref: p.id, source, value, gifted: source === 'hangar' && value === 0 });
+      if (from && to && from.id !== to.id) owned.push({ fromId: from.id, toId: to.id, ref: p.id, source, value, gifted: source === 'hangar' && value === 0, ...(source === 'buyback' && p.price ? { price: p.price } : {}) });
       else unmapped.push({ name: p.name, source });
     }
   };

@@ -3,7 +3,7 @@
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { transient } from '@/lib/flash.svelte';
   import { lastSaleLabel, shipName, uid } from '@/lib/ccu-ui';
-  import { applyAlternative, DEFAULT_PLAN_OPTIONS, farthestReachable, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
+  import { applyAlternative, DEFAULT_PLAN_OPTIONS, savedVsMsrp, farthestReachable, ownedCcus, ownedHulls, excludeReserved, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
   import { buybackItem, catalogItem, ccuChainsItem, ccuGoalsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem } from '@/lib/settings';
@@ -18,8 +18,10 @@
   import Stat from './Stat.svelte';
   import CcuFleet from './CcuFleet.svelte';
   import CcuAlternatives from './CcuAlternatives.svelte';
-  import CcuShareLink from './CcuShareLink.svelte';
-  import { encodeCcuLink, linkToPlanner, watchCcuLink } from '@/lib/ccu-link';
+  import CcuTransfer from './CcuTransfer.svelte';
+  import { ccuCodesText, encodeCcuLink, linkToPlanner, watchCcuLink, type CcuLink } from '@/lib/ccu-link';
+  import { dateStamp, downloadFile } from '@/lib/download';
+  import Copy from '@lucide/svelte/icons/copy';
   import { untrack } from 'svelte';
   import StatGrid from './StatGrid.svelte';
   import Section from './Section.svelte';
@@ -124,13 +126,17 @@
   const catalogReady = $derived(ships.length > 0);
   $effect(() => {
     if (!catalogReady) return;
-    return watchCcuLink((l) => untrack(() => {
-      const r = linkToPlanner(l, (id) => byId.has(id), (id) => mine.some((m) => m.id === id));
-      if (r.mode) (mode = r.mode), (fromId = r.fromId ?? null);
-      if (r.toId != null) (toId = r.toId), (planner = 'one');
-      Object.assign(opt, r.opt);
-    }));
+    return watchCcuLink((l) => untrack(() => applyLink(l)));
   });
+  /** A chain code / link → the planner on screen (ids checked against the catalog). */
+  function applyLink(l: CcuLink) {
+    const r = linkToPlanner(l, (id) => byId.has(id), (id) => mine.some((m) => m.id === id));
+    if (r.mode) (mode = r.mode), (fromId = r.fromId ?? null);
+    if (r.toId != null) (toId = r.toId), (planner = 'one');
+    Object.assign(opt, r.opt);
+    if (l.name) chainName = l.name;
+    openedLeg = null;
+  }
   /** Hull copies a fleet plan may upgrade: pledges labelled *Keep* are left out (`lib/labels.ts`). */
   const keepIds = $derived(idsWith(labels, KEEP));
   const hulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => !keepIds.has(p.id)), ships));
@@ -310,9 +316,9 @@
   /** Under the MSRP gap of the step, counting what an owned CCU cost you. */
   const stepSaved = (s: Step): { saved: number; pct: number } | null => {
     const gap = (byId.get(s.toId)?.msrp ?? 0) - (s.fromId === STORE_START ? 0 : (byId.get(s.fromId)?.msrp ?? 0));
-    if (gap <= 0 || s.kind === 'future') return null;
+    if (gap <= 0 || (s.kind === 'future' && !s.est)) return null; // a wait at MSRP saves nothing by definition
     const saved = gap - s.cost - s.paid;
-    return { saved, pct: Math.round((100 * saved) / gap) };
+    return { saved, pct: Math.round((100 * savedReal) / gap) };
   };
   /** A step's figures. An owned CCU costs what you paid for it (nothing more to pay now); a gifted one is free. */
   const figures = (s: Step, i: number): { dt: string; dd: string; cls: string }[] => {
@@ -375,6 +381,43 @@
     chainName = '';
     saved.show(c.name);
   }
+  // ---- export / import as text (`CcuTransfer`): the route on screen and the saved chains as codes ----
+  const routeCode = $derived(toId != null ? encodeCcuLink({ from: startId, to: toId, via: opt.via, opt, name: chainName }) : null);
+  const savedCodes = $derived(chains.map((c) => codeOf(c)));
+  /** Imported codes → saved chains, each planned now on this hangar and today's store (other saved chains' CCUs left alone). */
+  async function importChains(links: CcuLink[]): Promise<{ added: number; failed: number }> {
+    const next = [...$state.snapshot(chains)] as SavedChain[];
+    let failed = 0;
+    for (const l of links) {
+      const r = linkToPlanner(l, (id) => byId.has(id), (id) => mine.some((m) => m.id === id));
+      const start = r.mode === 'store' ? STORE_START : (r.fromId ?? null);
+      if (start == null || r.toId == null) {
+        failed++;
+        continue;
+      }
+      const o: PlanOptions = { ...DEFAULT_PLAN_OPTIONS, ...r.opt, include: [], skip: [], exclude: [], via: r.opt.via ?? [] };
+      const p = plan(ships, ccus.owned, start, r.toId, { ...o, exclude: reservedRefs(next) }) ?? plan(ships, ccus.owned, start, r.toId, { ...o, planAhead: true, exclude: reservedRefs(next) });
+      if (!p) {
+        failed++;
+        continue;
+      }
+      next.push({ id: uid(), name: l.name || `${name(start)} → ${name(r.toId)}`, at: Date.now(), startId: start, targetId: r.toId, steps: p.steps, total: p.total, cash: p.cash, opt: p.waits ? { ...o, planAhead: true } : o });
+    }
+    if (next.length !== chains.length) await persist(next);
+    return { added: next.length - chains.length, failed };
+  }
+  /** Saved chains → codes: the ticked ones, or all of them when none is ticked. */
+  const codeOf = (c: SavedChain) => encodeCcuLink({ from: c.startId, to: c.targetId, via: c.opt.via, opt: c.opt, name: c.name });
+  const exported = transient(2500);
+  async function copyCodes(list: SavedChain[]) {
+    try {
+      await navigator.clipboard.writeText(ccuCodesText(list.map(codeOf)));
+      exported.show(list.length === 1 ? `Copied “${list[0]!.name}”` : `Copied ${list.length} chains`);
+    } catch {
+      exported.show('Could not copy: use Download instead');
+    }
+  }
+  const downloadCodes = () => downloadFile(`rsi-plus-ccu-chains-${dateStamp()}.txt`, ccuCodesText(exportRows.map(codeOf)), 'text/plain');
   function loadChain(c: SavedChain) {
     mode = c.startId === STORE_START ? 'store' : mine.some((s) => s.id === c.startId) ? 'hangar' : 'any';
     fromId = c.startId === STORE_START ? null : c.startId;
@@ -416,6 +459,7 @@
   const savedRows = $derived([...chains].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '')).map((c) => ({ c, p: now(c) })));
   // ---- several saved chains → the cart in one go (each chain as it prices today) ----
   let pick = $state(new Set<string>());
+  const exportRows = $derived(pick.size ? chains.filter((c) => pick.has(c.id)) : chains);
   const togglePick = (id: string, on: boolean) => (pick = new Set(on ? [...pick, id] : [...pick].filter((x) => x !== id)));
   const chainLines = (c: SavedChain, p: ReturnType<typeof plan>) => (p?.steps ?? []).map((s) => lineOf(s, `chain:${c.id}:`)).filter((l): l is BatchLine => !!l);
   const pickedRows = $derived(savedRows.filter((r) => pick.has(r.c.id) && r.p));
@@ -448,6 +492,27 @@
   let ownedShow = $state<'all' | 'hangar' | 'buyback'>('all');
   const gainOf = (o: { fromId: number; toId: number }) => (byId.get(o.toId)?.msrp ?? 0) - (byId.get(o.fromId)?.msrp ?? 0);
   const ownedCount = (src: 'hangar' | 'buyback') => ccus.owned.filter((o) => o.source === src).length;
+  /**
+   * What a saved chain has already cost you: the CCUs of yours it uses (what you paid for them) and the pledge holding
+   * its source ship (the cheapest one when you have several). Today's plan when the chain still works, else as saved.
+   */
+  const sourceValue = $derived.by(() => {
+    const m = new Map<number, number>();
+    for (const pl of hangar?.pledges ?? []) {
+      if (pl.upgrade || !pl.value) continue;
+      for (const t of pl.ships) {
+        const id = matchShip(t, ships)?.id;
+        const v = Math.round(pl.value * 100);
+        if (id != null && (!m.has(id) || v < m.get(id)!)) m.set(id, v);
+      }
+    }
+    return m;
+  });
+  const spentOn = (c: SavedChain, p: ReturnType<typeof plan>) => {
+    const ccu = p ? p.paid : c.steps.reduce((n, st) => n + st.paid, 0);
+    const ship = c.startId === STORE_START ? 0 : (sourceValue.get(c.startId) ?? 0);
+    return { ccu, ship, total: ccu + ship };
+  };
   const ownedSorted = $derived(
     sortBy(
       // natural order: cheapest source hull first (ties in a sorted column keep it)
@@ -457,7 +522,7 @@
         from: (o) => byId.get(o.fromId)?.msrp ?? 0, // hull price, the order a chain climbs in
         to: (o) => name(o.toId),
         source: (o) => `${o.source}${o.gifted ? ' gift' : ''}`,
-        paid: (o) => (o.source === 'hangar' ? o.value : null),
+        paid: (o) => (o.source === 'hangar' ? o.value : (o.price ?? null)),
         gain: (o) => gainOf(o),
         reserved: (o) => reservedBy.get(o.ref)?.name ?? '',
         force: (o) => forceOf(o.ref),
@@ -481,6 +546,8 @@
     { key: 'planAhead', label: 'Plan ahead (ships not on sale)', hint: 'Route through hulls nobody sells a CCU to today, at MSRP, to buy when they return (IAE, Invictus, the maker\'s showcase). Save the chain and the Feed tells you when such a CCU is in the store.' },
     { key: 'lastSeen', label: 'Last seen sale prices', hint: 'A step that waits for a sale is priced at the last CCU price RSI+ saw for that hull (warbond included when warbond CCUs are on) instead of MSRP. What the store sells today is always taken at today\'s price.' },
   ];
+  /** Headline saving: the MSRP gap minus what is still to pay and what the owned CCUs in the chain cost. */
+  const savedReal = $derived(result ? savedVsMsrp(result) : 0);
   const payNow = $derived(result ? result.total - result.later : 0);
   const storeSteps = $derived(addableSteps.filter((s) => s.kind !== 'buyback').length);
   // ---- guided flow: each step judged from the state above (verify, save, cart, hangar reload) ----
@@ -508,7 +575,7 @@
         title: 'Pick the source and the target',
         done: !!result,
         hint: result
-          ? `${steps.length} steps · pay ${usd(payNow)} now${waits ? ` · ${usd(result.later)} later (${waits} step${waits === 1 ? '' : 's'} wait for a sale)` : ''} · ${usd(result.savings)} under MSRP`
+          ? `${steps.length} steps · pay ${usd(payNow)} now${waits ? ` · ${usd(result.later)} later (${waits} step${waits === 1 ? '' : 's'} wait for a sale)` : ''} · ${usd(savedReal)} under MSRP`
           : 'Source = a ship you own (or buy the cheapest from the store), target = the ship you want. Then pick what to optimise for.',
         warn: startId != null && toId != null && !result ? 'No chain found, not even planning ahead through ships not on sale — allow buyback / warbond CCUs, or pick a cheaper source.' : undefined,
       },
@@ -559,7 +626,8 @@
   <Card.Root>
     <Card.Header>
       <Card.Description>Cheapest path using CCUs on sale now, the CCUs in your hangar (free) and, optionally, buyback. Warbond steps need new money. <em>Plan ahead</em> adds hulls nobody sells a CCU to today (at MSRP, bought when they return) for long-term goals. <em>Fleet plan</em> plans several ships at once without using a CCU or hull twice.</Card.Description>
-      <Card.Action>
+      <Card.Action class="flex flex-wrap items-center gap-2">
+        <CcuTransfer code={planner === 'one' ? routeCode : null} saved={savedCodes} onopen={applyLink} onadd={importChains} />
         <Segmented
           options={[
             { id: 'one', label: 'One chain', hint: 'One source → one target: verify with RSI, add to cart' },
@@ -675,11 +743,11 @@
             {#if result.paid}<Stat value={ownUsd(result.paid)} label="already paid (owned CCUs)" />{/if}
             <Stat value={usd(result.msrpDiff)} label={mode === 'store' ? 'target MSRP' : 'MSRP difference'} />
             <Stat
-              value={usd(result.savings)}
+              value={usd(savedReal)}
               label="saved vs MSRP"
-              valueTone={result.savings > 0 ? 'ok' : result.savings < 0 ? 'err' : null}
+              valueTone={savedReal > 0 ? 'ok' : savedReal < 0 ? 'err' : null}
               delta={result.msrpDiff > 0
-                ? { text: `${result.savings >= 0 ? '▼' : '▲'} ${Math.abs((100 * result.savings) / result.msrpDiff).toFixed(0)}%`, tone: result.savings > 0 ? 'up' : result.savings < 0 ? 'down' : 'neutral' }
+                ? { text: `${savedReal >= 0 ? '▼' : '▲'} ${Math.abs((100 * savedReal) / result.msrpDiff).toFixed(0)}%`, tone: savedReal > 0 ? 'up' : savedReal < 0 ? 'down' : 'neutral' }
                 : null}
             />
           </StatGrid>
@@ -776,7 +844,6 @@
             <form class="flex flex-wrap items-center gap-2" onsubmit={(e) => (e.preventDefault(), saveChain())}>
               <Input class="w-52" placeholder="Chain name (optional)" bind:value={chainName} aria-label="Chain name" />
               <Button variant="outline" size="sm" type="submit">Save chain</Button>
-              <CcuShareLink hash={encodeCcuLink({ from: startId, to: toId, via: opt.via, opt })} />
               <TipButton variant="outline" size="sm" type="button" onclick={addToFleet} tip="Add this source → target (with its stops) as a goal at the end of your fleet plan">Add to fleet plan</TipButton>
               {#if saved.text}<span class="text-success text-[11px]">Saved “{saved.text}”</span>{/if}
               {#if addedToFleet.text}<span class="text-success text-[11px]">{addedToFleet.text} — <Button variant="link" size="xs" class="h-auto p-0 text-[11px]" onclick={() => (planner = 'fleet')}>open Fleet plan</Button></span>{/if}
@@ -805,12 +872,17 @@
               <TipButton size="sm" disabled={cart.busy || !pickedLines.length} onclick={addChains} tip="Adds the store steps of every ticked chain, as it prices today (the Now column). Lines your cart already holds are skipped; buy-backs are left out.">
                 <ShoppingCart />{cart.busy ? 'Adding…' : pickedRows.length ? `Add ${pickedRows.length} chain${pickedRows.length === 1 ? '' : 's'} to RSI cart (${pickedLines.length} line${pickedLines.length === 1 ? '' : 's'})` : 'Tick chains to add them to the RSI cart'}
               </TipButton>
-              {#if batchNote}<span class="text-muted-foreground text-[11px]">{batchNote}</span>{/if}
+              <span class="flex-1"></span>
+              {#if exported.text}<span class="text-success text-[11px]" role="status">{exported.text}</span>{/if}
+              <TipButton variant="outline" size="sm" onclick={() => copyCodes(exportRows)} tip="Copies the chains as text codes, one per line (the ticked chains, or all of them when none is ticked). A code holds the route and options, not your own CCUs."><Copy />Copy {pick.size ? `${exportRows.length} ticked` : `all ${chains.length}`}</TipButton>
+              <TipButton variant="outline" size="sm" onclick={downloadCodes} tip="The same codes as a text file">Download file</TipButton>
+              <CcuTransfer label="Import" code={null} saved={savedCodes} onopen={applyLink} onadd={importChains} />
+              {#if batchNote}<span class="text-muted-foreground basis-full text-[11px]">{batchNote}</span>{/if}
             </div>
-            <p class="text-muted-foreground m-0 text-sm">Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. “Now” re-prices each chain on today's store + hangar; a chain with steps waiting for a sale is a long-term goal — the Feed alerts when one of those CCUs is in the store.</p>
+            <p class="text-muted-foreground m-0 text-sm">Their CCUs stay out of new plans while <em>Exclude saved chains</em> is on. <em>Already spent</em> is what you paid for the CCUs of yours the chain uses, plus the pledge holding its source ship. <em>Saved</em> is what was left to pay when you saved it; “Now” re-prices each chain on today's store + hangar; a chain with steps waiting for a sale is a long-term goal — the Feed alerts when one of those CCUs is in the store.</p>
             <Table.Root>
               <Table.Header>
-                <Table.Row><Table.Head class="w-8"><span class="sr-only">Add to cart</span></Table.Head><Table.Head>Name</Table.Head><Table.Head>Chain</Table.Head><Table.Head class="text-right">Saved</Table.Head><Table.Head class="text-right">Now</Table.Head><Table.Head><span class="sr-only">Actions</span></Table.Head></Table.Row>
+                <Table.Row><Table.Head class="w-8"><span class="sr-only">Add to cart</span></Table.Head><Table.Head>Name</Table.Head><Table.Head>Chain</Table.Head><Table.Head class="text-right">Already spent</Table.Head><Table.Head class="text-right">Saved</Table.Head><Table.Head class="text-right">Now</Table.Head><Table.Head><span class="sr-only">Actions</span></Table.Head></Table.Row>
               </Table.Header>
               <Table.Body>
                 {#each savedRows as { c, p } (c.id)}
@@ -820,6 +892,10 @@
                     <Table.Cell><Checkbox checked={pick.has(c.id)} disabled={!cc.total} onCheckedChange={(v) => togglePick(c.id, !!v)} aria-label={`Add ${c.name} to the cart`} /></Table.Cell>
                     <Table.Cell>{#if c.group}<span class="text-primary text-[11px]">{c.group}</span><br />{/if}<strong>{c.name}</strong>{#if savedWaits}<Badge variant="warning" class="ml-1.5">{savedWaits} waiting</Badge>{/if}<br /><span class="text-muted-foreground text-[11px]">{fmtDate(c.at)} · {c.steps.length} steps · {OBJECTIVES.find((o) => o.id === c.opt.objective)?.label}</span></Table.Cell>
                     <Table.Cell class="text-[11px] whitespace-normal">{[name(c.startId), ...c.steps.map((s) => name(s.toId))].join(' → ')}</Table.Cell>
+                    {@const sp = spentOn(c, p)}
+                    <Table.Cell class="text-right tabular-nums">
+                      {#if sp.total}{ownUsd(sp.total)}<br /><span class="text-muted-foreground text-[11px]">{[sp.ccu ? `${ownUsd(sp.ccu)} CCUs` : '', sp.ship ? `${ownUsd(sp.ship)} ship` : ''].filter(Boolean).join(' + ')}</span>{:else}<span class="text-muted-foreground">—</span>{/if}
+                    </Table.Cell>
                     <Table.Cell class="text-right tabular-nums">{usd(c.total)}<br /><span class="text-muted-foreground text-[11px]">{usd(c.cash)} new money</span></Table.Cell>
                     <Table.Cell class="text-right tabular-nums">
                       {#if !p}<HintBadge variant="destructive" hint="A step is no longer on sale or in your hangar, or its CCU is now reserved by another saved chain">no longer possible</HintBadge>
@@ -833,6 +909,7 @@
                     </Table.Cell>
                     <Table.Cell class="text-right">
                       <div class="flex items-center justify-end gap-1.5">
+                        <TipButton variant="ghost" size="icon-xs" onclick={() => copyCodes([c])} tip="Copy this chain as a text code" aria-label={`Copy ${c.name} as a code`}><Copy /></TipButton>
                         <Button variant="outline" size="xs" onclick={() => loadChain(c)}>Load</Button>
                         <ConfirmButton onconfirm={() => persist(chains.filter((x) => x.id !== c.id))}>Delete</ConfirmButton>
                       </div>
@@ -873,7 +950,7 @@
                   <SortTh key="from" bind:sort={ownedSort}>From</SortTh>
                   <SortTh key="to" bind:sort={ownedSort}>→ To</SortTh>
                   <SortTh key="source" bind:sort={ownedSort}>Source</SortTh>
-                  <SortTh key="paid" bind:sort={ownedSort} firstDir="desc" numeric>Paid</SortTh>
+                  <SortTh key="paid" bind:sort={ownedSort} firstDir="desc" numeric>Paid / buy-back</SortTh>
                   <SortTh key="gain" bind:sort={ownedSort} firstDir="desc" numeric>Upgrade value</SortTh>
                   <SortTh key="reserved" bind:sort={ownedSort}>Reserved by</SortTh>
                   <SortTh key="force" bind:sort={ownedSort} firstDir="desc">Force</SortTh>
@@ -887,8 +964,13 @@
                     <Table.Cell class="text-muted-foreground">{name(o.fromId)}</Table.Cell>
                     <Table.Cell><strong>{name(o.toId)}</strong></Table.Cell>
                     <Table.Cell>{o.source}{o.gifted ? ' · gift' : ''}</Table.Cell>
-                    <Table.Cell class="text-right tabular-nums">{o.value ? ownUsd(o.value) : o.source === 'hangar' ? '—' : '?'}</Table.Cell>
-                    <Table.Cell class={cn('text-right tabular-nums', o.value && gain > o.value && 'text-success')}>{usd(gain)}</Table.Cell>
+                    <Table.Cell class="text-right tabular-nums">
+                      {#if o.source === 'hangar'}{o.value ? ownUsd(o.value) : '—'}
+                      {:else if o.price != null}{usd(o.price)}<span class="text-muted-foreground ml-1 text-[11px]">to buy back</span>
+                      {:else}<HintBadge variant="muted" size="xs" hint="RSI shows a buy-back's price only on its own page. Open the Buyback page and use “Load contents & prices”; until then the planner assumes the MSRP difference.">?</HintBadge>{/if}
+                    </Table.Cell>
+                    {@const cost = o.source === 'hangar' ? o.value : (o.price ?? 0)}
+                    <Table.Cell class={cn('text-right tabular-nums', cost > 0 && gain > cost && 'text-success')}>{usd(gain)}</Table.Cell>
                     <Table.Cell class="text-[11px]">{reservedBy.get(o.ref)?.name ?? ''}</Table.Cell>
                     <Table.Cell>
                       <Button variant="outline" size="xs" class={cn('min-w-16', f === 'include' && 'text-success', f === 'exclude' && 'text-destructive')} onclick={() => cycleForce(o.ref)}>{f || 'auto'}</Button>

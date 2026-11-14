@@ -5,7 +5,7 @@
    * owned CCUs and hulls. Pay-now vs later totals over the whole plan, a list of the CCUs still waiting for a sale, and
    * Save plan → one saved chain per goal (grouped), which the Feed watches like any saved chain.
    */
-  import { excludeReserved, legExclude, planFleet, STORE_START, type Goal, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
+  import { excludeReserved, legExclude, planFleet, savedVsMsrp, STORE_START, type Goal, type OwnedCcu, type PlanOptions, type SavedChain } from '@/lib/ccu';
   import { ccuGoalsItem } from '@/lib/settings';
   import { usd, type CatalogShip, type SaleHistory } from '@/lib/store';
   import { ownUsd } from '@/lib/privacy.svelte';
@@ -251,7 +251,7 @@
                 </LazyTip>
               {/each}
               <span class="flex-1"></span>
-              <span class="tabular-nums">{usd(leg.plan.total - leg.plan.later)} now{leg.plan.later ? ` · ${usd(leg.plan.later)} later` : ''} · <span class={cn(leg.plan.savings > 0 && 'text-success')}>{usd(leg.plan.savings)} saved</span></span>
+              <span class="tabular-nums">{usd(leg.plan.total - leg.plan.later)} now{leg.plan.later ? ` · ${usd(leg.plan.later)} later` : ''} · <span class={cn(savedVsMsrp(leg.plan) > 0 && 'text-success')}>{usd(savedVsMsrp(leg.plan))} saved</span></span>
               <TipButton variant="outline" size="xs" onclick={() => leg.startId != null && onopen(leg.startId, g.targetId, g.via, legExclude(fleet, i, planOpt.exclude))} tip="Open this chain in the single planner to verify it with RSI and add it to the cart">Open</TipButton>
             </div>
           {/if}
@@ -295,7 +295,7 @@
       {#if fleet.waits}<Stat value={usd(fleet.later)} label={`later · ${fleet.waits} CCU${fleet.waits === 1 ? '' : 's'} wait for a sale`} tone="accent" />{/if}
       <Stat value={usd(fleet.cash)} label="new money" />
       {#if fleet.paid}<Stat value={ownUsd(fleet.paid)} label="already paid (owned CCUs)" />{/if}
-      <Stat value={usd(fleet.savings)} label="saved vs MSRP" valueTone={fleet.savings > 0 ? 'ok' : fleet.savings < 0 ? 'err' : null} />
+      <Stat value={usd(savedVsMsrp(fleet))} label="saved vs MSRP" valueTone={savedVsMsrp(fleet) > 0 ? 'ok' : savedVsMsrp(fleet) < 0 ? 'err' : null} />
       <Stat value={`${goals.length - fleet.failed} / ${goals.length}`} label="goals with a chain" valueTone={fleet.failed ? 'warn' : 'ok'} />
     </StatGrid>
 

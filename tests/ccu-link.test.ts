@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_PLAN_OPTIONS, STORE_START } from '@/lib/ccu';
-import { decodeCcuLink, encodeCcuLink, linkToPlanner } from '@/lib/ccu-link';
+import { decodeCcuLink, encodeCcuLink, linkToPlanner, ccuCodesText, parseCcuCodes } from '@/lib/ccu-link';
 
 describe('ccu link', () => {
   it('round-trips a route with its options', () => {
@@ -67,3 +67,23 @@ describe('linkToPlanner', () => {
     expect(linkToPlanner(decodeCcuLink('#ccu?to=4&ahead=1')!, has, owns)).toEqual({ toId: 4, opt: { planAhead: true } });
   });
 });
+
+describe('chain codes as text', () => {
+  const opt = { ...DEFAULT_PLAN_OPTIONS, objective: 'cash' as const, buyback: true };
+  it('a code carries the chain name; codes round-trip through a text / file', () => {
+    const a = encodeCcuLink({ from: 12, to: 40, via: [20, 30], opt, name: 'liby & co → Liberator' });
+    const b = encodeCcuLink({ from: STORE_START, to: 7, opt });
+    const got = parseCcuCodes(ccuCodesText([a, b]));
+    expect(got).toHaveLength(2);
+    expect(got[0]).toMatchObject({ from: 12, to: 40, via: [20, 30], objective: 'cash', name: 'liby & co → Liberator' });
+    expect(got[0]!.flags.buyback).toBe(true);
+    expect(got[1]).toMatchObject({ from: STORE_START, to: 7 });
+    expect(got[1]!.name).toBeUndefined();
+  });
+  it('finds codes inside pasted links and skips everything else', () => {
+    const text = ['my chains:', '', `chrome-extension://abc/hub.html${encodeCcuLink({ from: 1, to: 2, opt })}`, '  ccu?to=9  ', '#ccu?from=3', 'ccu?to=nope', '#store?ship=4'].join('\r\n');
+    expect(parseCcuCodes(text).map((l) => [l.from, l.to])).toEqual([[1, 2], [undefined, 9]]);
+    expect(parseCcuCodes('')).toEqual([]);
+  });
+});
+
