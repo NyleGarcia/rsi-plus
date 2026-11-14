@@ -4,6 +4,7 @@
    * standalone ships from the upgrade catalog, paints / packs / gear … from the listing. Newest first, one group per
    * check and action. Built only from copies read since this log existed, so it starts empty.
    */
+  import { fmtWhen } from '@/lib/fmt';
   import Plus from '@lucide/svelte/icons/plus';
   import Minus from '@lucide/svelte/icons/minus';
   import { catalogItem, gameShipsItem, hangarItem, storeItemsItem, storeLogItem, storeSnapshotItem } from '@/lib/settings';
@@ -160,9 +161,21 @@
   /** A poll's catalog check and listing check log separately; one card for both. */
   const merged = $derived(mergeChanges(log));
   const shown = $derived(merged.filter((c) => show === 'all' || c.action === show));
+  /** What is already in the hangar (the green tiles: owned items and hulls, CCUs to a hull you have), among the groups shown. */
+  const ownedShown = $derived(shown.reduce((n, c) => n + c.entries.filter((e) => ownedLabel(e)).length, 0));
+  const dropOwned = () => {
+    let next = $state.snapshot(log);
+    for (const c of shown) {
+      for (const p of c.parts) {
+        const keys = p.entries.filter((e) => ownedLabel(e)).map((e) => e.key);
+        if (keys.length) next = dismiss(next, p.at, p.action, p.entries[0]?.key ?? '', keys);
+      }
+    }
+    return storeLogItem.setValue(next);
+  };
   const count = (s: Show) => merged.filter((c) => s === 'all' || c.action === s).length;
   const since = $derived(Math.min(...[snap.catalog?.at, snap.listing?.at].filter((n): n is number => !!n)));
-  const when = (at: number) => new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const when = (at: number) => fmtWhen(at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   /** Tiles per type before "+n more". */
   const FIRST = 12;
   /** A group's entries by kind, in the catalog's order (CCU, ship, then the listing categories). */
@@ -186,6 +199,9 @@
     {#if log.length}
       <Card.Action class="flex flex-wrap items-center gap-2">
         <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />
+        {#if ownedShown}
+          <TipButton variant="outline" size="default" onclick={dropOwned} tip="Dismiss what is already in your hangar (the green tiles), in the changes shown">Dismiss owned · {ownedShown}</TipButton>
+        {/if}
         <Button variant="outline" onclick={dropAll}>{show === 'all' ? 'Dismiss all' : `Dismiss ${show === 'add' ? 'added' : 'removed'}`}</Button>
         <Segmented
           options={[

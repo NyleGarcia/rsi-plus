@@ -9,8 +9,8 @@ Copy-paste source for the developer dashboard (same layout as Crunchy+). Assets 
 
 ## Store listing
 
-**Title (from package):** RSI+
-**Summary (from package, 132 chars max):** RSI, better: Spectrum read tracking, mutes, watches, friends, hangar & buyback explorer, store prices, wishlist alerts, CCU planner.
+**Title (from package, `public/_locales/en/messages.json` → `extName`):** RSI+
+**Summary (from package, `extDescription`, 132 chars max):** RSI, better: Spectrum read tracking, mutes, watches, friends, hangar & buyback explorer, store prices, wishlist alerts, CCU planner.
 **Category:** Entertainment (alternative: Productivity)
 **Language:** English
 

@@ -4,6 +4,7 @@
    * `popup` in lib/hub-pages), party mode, and the few switches people flip often (`quick` in lib/settings-ui). Hints
    * and every other setting live on the hub Settings page.
    */
+  import { fmtWhen } from '@/lib/fmt';
   import FanNotice from '@/components/FanNotice.svelte';
   import { bg, type HubTab } from '@/lib/messages';
   import { INCOGNITO, feedItem, getSettings, partyModeItem, patchSettings, storeLogItem, type Settings } from '@/lib/settings';
@@ -94,7 +95,7 @@
       tip="Auto-accept friend requests (2 h) — details & log in Friends"
     >
       <PartyPopper aria-hidden="true" />
-      {partyOn ? `Party mode ON${party?.until ? ` until ${new Date(party.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''} — stop` : 'Start party mode (2 h)'}
+      {partyOn ? `Party mode ON${party?.until ? ` until ${fmtWhen(party.until, { hour: '2-digit', minute: '2-digit' })}` : ''} — stop` : 'Start party mode (2 h)'}
     </TipButton>
 
     {#if s}

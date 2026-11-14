@@ -1,11 +1,25 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 # Changelog
 
 ## Unreleased
+- **Price history.** RSI+ now keeps what every hull's CCU, warbond CCU and standalone cost each time it reads the store, and ships with an archive of earlier prices back to November 2021. On the Ship catalog a hull that is not on sale shows *was Warbond CCU $x*; hover it for the list of past prices and dates. Your own readings replace the archive where they overlap.
+- **CCU planner: steps that wait for a sale use the last sale price.** With *Plan ahead*, a hull nobody sells a CCU to today was priced at MSRP. It is now priced at the last CCU price seen for it (the warbond one when warbond CCUs are on), and the step says so with the date. A CCU the store sells today is always taken at today's price. Switch off *Last seen sale prices* under Options to go back to MSRP.
+- **Pledges: CCUs used by a saved chain say so.** A CCU that one of your saved planner chains uses shows *chain → target ship*; hover it for the chain's name and full route.
+- **CCU planner: how far a chain gets.** When no chain reaches the target, the *No chain found* message now names the priciest ship below the target that a chain does reach, with its price, and *Plan to that ship instead* sets it as the target.
+- **CCU planner: copy a link to a chain.** *Copy link* next to *Save chain* copies a link to the planner with this route in it: source, target, stops, what to optimise for and the options. Opening the link sets the planner up the same way. Your own CCUs, forced ones and ignored steps are not in the link. The old *Plan CCU* links to a target keep working.
+- **CCU planner: other routes.** Under the chain, *Show other routes* lists up to three other chains to the same target, each one without one step of the chain shown: the route, its total and new money, and how much more it costs. *Use this route* plans it, and the step it leaves out shows under *Ignored*, where you can bring it back.
+- **CCU planner: prefer more steps.** When two chains cost the same, the planner shows the one with fewer steps. The new *Prefer more steps* switch under *Options* shows the one with more steps instead: each extra step is a ship you can stop at and fly. The price of the chain never changes.
+- **CCU planner: see your RSI cart, and add several chains at once.** A new *RSI cart* block lists what is in your cart (lines, quantity, RSI's discounts, total) with *Check cart* to read it again. In *Saved chains*, tick the chains you want and *Add n chains to RSI cart* puts in the store steps of all of them, as they price today. The cart is read first, so lines it already holds are skipped (the single chain's *Add store steps* does the same). Buy-backs are left out: each checks out alone.
+- **CCU planner: CCUs RSI takes once per cart.** RSI refuses a second copy of some CCUs in one cart. That line is now marked *One per cart* with what to do (check out, then add it again) and the rest of the chain or batch still goes in, where the add used to stop at the error.
+- **CCU planner: per-step saving, ignore a step, and owned CCUs show what you paid.** Each step shows what it saves against the MSRP gap, in dollars and percent. The new ignore button on a step plans the chain again without that CCU (a store offer or one of yours); ignored ones are listed under *Options*, where you can bring them back. A step using a CCU you own showed *Cost free*: it now shows what you paid for it, marked *already paid* (a gifted one says *free · gift*).
+- **CCU planner: sort *Your CCUs*, and exclude all buybacks in one click.** Every column of *Your CCUs* sorts (From goes by hull price, the order a chain climbs in). Show *All*, *Hangar* or *Buyback*, then *Exclude all …* keeps every CCU listed out of the chain and *Reset all …* sets them back to auto.
+- **Store changes: *Dismiss owned*, and the dismiss X stays put.** *Dismiss owned · n* clears every change for something already in your hangar (the green tiles) from the changes shown. The X on a tile no longer drops from the corner to the middle when you hover it; the same shift is gone from tooltip buttons on other pages.
+- **Store refreshes no longer trip RSI's rate limit.** Refreshing the store lists sent every request at once, and RSI could answer *429 Too Many Requests* and block its own pages for a few minutes. Requests are now spaced out, RSI+ waits and retries when RSI asks it to slow down, and says so in plain words if RSI still refuses. *Refresh* (Browse), *Refresh prices* (Ship catalog) and *Refresh store paints* each work once a minute.
+- **Dates and counts follow your browser's language everywhere.** A few places printed them the US way whatever the browser was set to (the Wallet funding chart's months, some counts). Prices keep one look in every language, `$1,234.50`, now on The Impound too.
 
 ## 0.15.0 — 2026-11-12
 - **Org lookup: clear the cache.** *Clear cache (n)* next to *Recent* forgets every saved lookup (players, orgs, member lists and the Recent list), so the next lookup reads RSI again. Your tags and suspected orgs are kept.

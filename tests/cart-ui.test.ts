@@ -88,4 +88,38 @@ describe("cart ledger: what is in the RSI cart already", () => {
       vi.useRealTimers();
     }
   });
+  it("a refusal for a SKU already in the cart is the one-per-cart limit; addAll carries on past it when asked", async () => {
+    const { CartError } = await import("@/lib/cart");
+    readCart.mockResolvedValue(snap([[7, 1]]));
+    const { createCartLedger } = await import("@/lib/cart-ui.svelte");
+    const cart = createCartLedger();
+    await flush();
+    const refuse = async () => {
+      throw new CartError("refused", "RSI refused: no");
+    };
+    const ran: string[] = [];
+    const ok = (k: string) => async () => void ran.push(k);
+    await cart.addAll(
+      [
+        { key: "a", sku: 7, task: refuse }, // in the cart already → limit, carry on
+        { key: "b", sku: 8, task: ok("b") },
+        { key: "c", sku: 9, task: refuse }, // not in the cart → plain refusal, stops here
+        { key: "d", sku: 10, task: ok("d") },
+      ],
+      0,
+      ["limit"],
+    );
+    expect(cart.of("a")).toMatchObject({ st: "error", code: "limit" });
+    expect(cart.of("b")).toMatchObject({ st: "added" });
+    expect(cart.of("c")).toMatchObject({ st: "error", code: "refused" });
+    expect(cart.of("d")).toBeUndefined();
+    expect(ran).toEqual(["b"]);
+    // a second copy of what this ledger just added is the limit too, before the cart is read back
+    await cart.add("b2", refuse, 8);
+    expect(cart.of("b2")).toMatchObject({ st: "error", code: "limit" });
+    // held lines show as in the cart but are not counted as added here
+    cart.hold("h");
+    expect(cart.of("h")).toMatchObject({ st: "added", held: true });
+    expect(cart.added).toBe(1);
+  });
 });

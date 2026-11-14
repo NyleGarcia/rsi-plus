@@ -9,7 +9,7 @@
  * - future (`planAhead`): ship B has no CCU on sale today → assume a standard CCU at msrp(B) when it returns
  *   (event sales: IAE, Invictus, the maker's showcase) → cost msrp(B) − msrp(A), bought later. Ranked after
  *   anything buyable now at the same price; `chainEvents` alerts when such a CCU shows up in the store.
- * Objective picks what is minimised (see `Objective`); ties → fewer waits, then fewer steps. Pure; inputs come from
+ * Objective picks what is minimised (see `Objective`); ties → fewer waits, then fewer steps (or more, `PlanOptions.steps`). Pure; inputs come from
  * the catalog + hangar/buyback caches.
  */
 import { isWarbondSku, lowestOffer, matchShip, shipKey, usd, type CatalogShip } from './store';
@@ -53,6 +53,8 @@ export interface Step {
   ref?: number;
   /** Store SKU to add to the cart (store CCU / standalone steps; none on `future` steps). */
   skuId?: number;
+  /** `future` step priced at the last sale price seen (not MSRP): when it was seen, and whether it was a warbond CCU. */
+  est?: { at: number; wb: boolean };
 }
 
 export interface Plan {
@@ -91,7 +93,21 @@ export interface PlanOptions {
   planAhead?: boolean;
   /** Stops: hulls the chain must pass through (to fly a while on the way), visited in MSRP order. */
   via?: number[];
+  /** Store SKUs (CCU / standalone) never used: steps ignored from a chain, so the planner routes around that offer. */
+  skip?: number[];
+  /**
+   * Price a "wait for a sale" step at the last CCU price seen below MSRP (`CatalogShip.expect`) instead of MSRP.
+   * Default on; a CCU on sale today is always used at today's price, history only fills in for what is not sold now.
+   */
+  lastSeen?: boolean;
+  /**
+   * Tie-break after cost and waits: `fewer` steps (default, also when unset) or `more` (every extra step is a ship you
+   * can stop at and fly). Never changes the cost of the chain — only which of the equally priced chains is shown.
+   */
+  steps?: StepsPreference;
 }
+
+export type StepsPreference = 'fewer' | 'more';
 
 export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   warbond: true,
@@ -104,6 +120,8 @@ export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   exclude: [],
   planAhead: false,
   via: [],
+  skip: [],
+  steps: 'fewer',
 };
 
 function skuKind(title: string): EdgeKind {
@@ -121,22 +139,42 @@ interface Dist {
   steps: number;
   prev: Step | null;
   id: number;
+  /** MSRP of the node (0 for the store start): orders equally ranked nodes when more steps are preferred. */
+  msrp: number;
   /** Order the node was first reached: ties settle the earliest one (the old linear scan's order). */
   seq: number;
 }
 
-/** Lexicographic ranking of a path for the objective; true when `a` beats `b`. Waiting for a sale loses to buying today. */
-function before(objective: Objective, a: Dist, b: Dist): boolean {
+/** What a path is ranked on: running totals (a Dijkstra node, or a whole `Plan` with `steps` = its length). */
+type Ranked = { cost: number; cash: number; paid: number; waits: number; steps: number };
+
+/** Cost part of the ranking (objective, then waits): -1 / 0 / 1. */
+function rank(objective: Objective, a: Ranked, b: Ranked): number {
   if (objective === 'cash') {
-    if (a.cash !== b.cash) return a.cash < b.cash;
-    if (a.cost !== b.cost) return a.cost < b.cost;
+    if (a.cash !== b.cash) return a.cash < b.cash ? -1 : 1;
+    if (a.cost !== b.cost) return a.cost < b.cost ? -1 : 1;
   } else if (objective === 'longterm') {
     const x = a.cost + a.paid;
     const y = b.cost + b.paid;
-    if (x !== y) return x < y;
-  } else if (a.cost !== b.cost) return a.cost < b.cost;
-  if (a.waits !== b.waits) return a.waits < b.waits;
-  return a.steps < b.steps;
+    if (x !== y) return x < y ? -1 : 1;
+  } else if (a.cost !== b.cost) return a.cost < b.cost ? -1 : 1;
+  if (a.waits !== b.waits) return a.waits < b.waits ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Lexicographic ranking of a path for the objective; true when `a` beats `b`. Waiting for a sale loses to buying today;
+ * then fewer steps, or more with `steps: 'more'`.
+ */
+function before(objective: Objective, steps: StepsPreference | undefined, a: Ranked, b: Ranked): boolean {
+  const r = rank(objective, a, b);
+  if (r) return r < 0;
+  return steps === 'more' ? a.steps > b.steps : a.steps < b.steps;
+}
+
+/** True when chain `a` beats chain `b` for these options (the planner's own order: objective, waits, steps). */
+export function planBefore(opt: Pick<PlanOptions, 'objective' | 'steps'>, a: Plan, b: Plan): boolean {
+  return before(opt.objective, opt.steps, { ...a, cost: a.total, steps: a.steps.length }, { ...b, cost: b.total, steps: b.steps.length });
 }
 
 /**
@@ -151,21 +189,34 @@ export interface PlanGraph {
 
 export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOptions): PlanGraph {
   const byId = new Map(ships.map((s) => [s.id, s]));
-  const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId?: number }[] = [];
+  const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId?: number; est?: { at: number; wb: boolean } }[] = [];
   const starts: Step[] = [];
+  const skip = new Set(opt.skip ?? []);
   for (const s of ships) {
     let onSale = false;
     for (const k of s.ccu) {
       if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
       const kind = skuKind(k.title);
       if (kind === 'warbond' && !opt.warbond) continue;
+      // An ignored offer is still on sale: the hull must not turn into a "wait for a sale" step at MSRP instead.
+      if (skip.has(k.id)) {
+        onSale = true;
+        continue;
+      }
       offers.push({ to: s, price: k.price, kind, title: k.title || 'Standard', skuId: k.id });
       onSale = true;
     }
     // Nothing sells a CCU to this hull today: with planAhead, assume a standard CCU at MSRP when it next returns.
-    if (opt.planAhead && !onSale && s.msrp > 0) offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
+    if (opt.planAhead && !onSale && s.msrp > 0) {
+      // Last sale price seen, when there is one below MSRP (the cheaper of standard and — if allowed — warbond).
+      const e = opt.lastSeen === false ? undefined : s.expect;
+      const wb = opt.warbond ? e?.wb : undefined;
+      const pick = wb && (!e?.std || wb.price < e.std.price) ? { ...wb, wb: true } : e?.std ? { ...e.std, wb: false } : null;
+      if (pick && pick.price < s.msrp) offers.push({ to: s, price: pick.price, kind: 'future', title: pick.wb ? 'Last seen warbond price' : 'Last seen sale price', est: { at: pick.at, wb: pick.wb } });
+      else offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
+    }
     for (const k of s.standalone) {
-      if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
+      if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id)) continue;
       const wb = isWarbondSku(k);
       if (wb && !opt.warbond) continue;
       starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
@@ -189,7 +240,7 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
       // RSI only sells CCUs up: the target must be worth more than the hull it starts from.
       if (o.to.id === a.id || o.price <= a.msrp || o.to.msrp <= a.msrp) continue;
       const cost = o.price - a.msrp;
-      out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, ...(o.skuId != null ? { skuId: o.skuId } : {}) });
+      out.push({ fromId: a.id, toId: o.to.id, kind: o.kind, cost, cash: o.kind === 'warbond' || o.est?.wb || !opt.storeCredit ? cost : 0, paid: 0, label: o.title, ...(o.skuId != null ? { skuId: o.skuId } : {}), ...(o.est ? { est: o.est } : {}) });
     }
     for (const o of ownedFrom.get(a.id) ?? []) {
       const to = byId.get(o.toId);
@@ -208,14 +259,31 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
   return { byId, edges };
 }
 
-/** Dijkstra from `startId` to `targetId` on the ranked cost, binary heap with lazy deletion. */
-function route(g: PlanGraph, objective: Objective, startId: number, targetId: number): Step[] | null {
+/**
+ * Dijkstra from `startId` to `targetId` on the ranked cost, binary heap with lazy deletion. Every edge costs ≥ 0 and a
+ * settled node is never updated again, so each node is expanded once and the `prev` links form a tree (no loop, even
+ * through a zero-cost cycle of owned CCUs to an unpriced hull).
+ *
+ * Fewer steps: the step count is part of the order (an extra edge never makes a path better), plain Dijkstra.
+ * More steps: an extra zero-cost edge (an owned CCU) does make a path better, so the heap pops equally ranked nodes
+ * cheapest hull first instead — a zero-cost edge goes up in MSRP, so every zero-cost way into a node is relaxed before
+ * the node is settled with the most steps. Cost and waits stay primary in both.
+ */
+function route(g: PlanGraph, opt: Pick<PlanOptions, 'objective' | 'steps'>, startId: number, targetId: number): Step[] | null {
   if (startId === targetId) return [];
+  const { objective, steps: pref } = opt;
   let seq = 0;
-  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null, id: startId, seq: seq++ };
+  const msrpOf = (id: number) => (id === STORE_START ? 0 : (g.byId.get(id)?.msrp ?? 0));
+  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null, id: startId, msrp: msrpOf(startId), seq: seq++ };
   const dist = new Map<number, Dist>([[startId, first]]);
   const done = new Set<number>();
-  const lt = (a: Dist, b: Dist) => before(objective, a, b) || (!before(objective, b, a) && a.seq < b.seq);
+  const lt =
+    pref === 'more'
+      ? (a: Dist, b: Dist) => {
+          const r = rank(objective, a, b);
+          return r ? r < 0 : a.msrp !== b.msrp ? a.msrp < b.msrp : a.seq < b.seq;
+        }
+      : (a: Dist, b: Dist) => before(objective, pref, a, b) || (!before(objective, pref, b, a) && a.seq < b.seq);
   const heap: Dist[] = [first];
   const push = (d: Dist) => {
     let i = heap.push(d) - 1;
@@ -252,6 +320,7 @@ function route(g: PlanGraph, objective: Objective, startId: number, targetId: nu
     if (here.id === targetId) break;
     done.add(here.id);
     for (const e of g.edges(here.id)) {
+      if (done.has(e.toId)) continue;
       const old = dist.get(e.toId);
       // Compare in a scratch record; allocate only when the edge improves the node.
       cand.cost = here.cost + e.cost;
@@ -259,8 +328,8 @@ function route(g: PlanGraph, objective: Objective, startId: number, targetId: nu
       cand.paid = here.paid + e.paid;
       cand.waits = here.waits + (e.kind === 'future' ? 1 : 0);
       cand.steps = here.steps + 1;
-      if (old && !before(objective, cand, old)) continue;
-      const next: Dist = { ...cand, prev: e, id: e.toId, seq: old ? old.seq : seq++ };
+      if (old && !before(objective, pref, cand, old)) continue;
+      const next: Dist = { ...cand, prev: e, id: e.toId, msrp: msrpOf(e.toId), seq: old ? old.seq : seq++ };
       dist.set(e.toId, next);
       push(next);
     }
@@ -298,20 +367,20 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   for (const st of stops) {
     if ('via' in st) {
       if (st.msrp < 0) return null;
-      const leg = route(g, opt.objective, at, st.via);
+      const leg = route(g, opt, at, st.via);
       if (!leg || (at !== st.via && !leg.length)) return null;
       steps.push(...leg);
       at = st.via;
       continue;
     }
     const o = st.ccu;
-    const leg = route(g, opt.objective, at, o.fromId);
+    const leg = route(g, opt, at, o.fromId);
     const edge = g.edges(o.fromId).find((e) => e.ref === o.ref);
     if (!leg || !edge) return null;
     steps.push(...leg, edge);
     at = o.toId;
   }
-  const last = route(g, opt.objective, at, targetId);
+  const last = route(g, opt, at, targetId);
   if (!last) return null;
   steps.push(...last);
   if (!steps.length) return null;
@@ -322,6 +391,92 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   const msrpDiff = target.msrp - (start?.msrp ?? 0);
   const future = steps.filter((s) => s.kind === 'future');
   return { steps, total, cash, paid, msrpDiff, savings: msrpDiff - total, waits: future.length, later: future.reduce((n, s) => n + s.cost, 0) };
+}
+
+/**
+ * When no chain gets to `targetId`: the hull with the highest MSRP below the target's that a chain from `startId` does
+ * reach on graph `g` (same MSRP: the lower id). Null when nothing below the target is reachable, the target is unknown,
+ * or the graph does reach the target — then the graph isn't what blocks the chain (a stop or a forced CCU is), and a
+ * lower target would hit the same wall. Walks the graph only: stops / forced CCUs are the caller's (`plan`) to check.
+ */
+export function farthestReachable(g: PlanGraph, startId: number, targetId: number): number | null {
+  const target = g.byId.get(targetId);
+  if (!target) return null;
+  const seen = new Set<number>([startId]);
+  const todo = [startId];
+  let best: CatalogShip | null = null;
+  while (todo.length) {
+    for (const e of g.edges(todo.pop()!)) {
+      if (seen.has(e.toId)) continue;
+      if (e.toId === targetId) return null;
+      seen.add(e.toId);
+      todo.push(e.toId);
+      const s = g.byId.get(e.toId);
+      if (s && s.id !== targetId && s.msrp < target.msrp && (!best || s.msrp > best.msrp || (s.msrp === best.msrp && s.id < best.id))) best = s;
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** A chain other than the best one, and what was taken out of the options to get it (to apply it in the planner). */
+export interface Alternative {
+  plan: Plan;
+  /** Store SKUs (CCU / standalone) to add to `PlanOptions.skip`. */
+  skip: number[];
+  /** Owned / buyback refs to add to `PlanOptions.exclude`. */
+  exclude: number[];
+}
+
+/**
+ * Identity of a chain as the user sees it: its steps' targets, kinds, SKU and prices. Not the owned / buyback ref — two
+ * copies of the same CCU are the same route.
+ */
+const chainKey = (p: Plan) => p.steps.map((s) => `${s.toId}:${s.kind}:${s.skuId ?? ''}:${s.cost}:${s.paid}`).join('|');
+
+/**
+ * Up to `n` chains that differ from the best one and from each other, best first by the planner's order. Each one is
+ * the best chain once one step of the best chain is taken out (a store SKU skipped, an owned / buyback CCU excluded —
+ * with every other copy of that CCU, same hulls and source); `future` steps can't be taken out. With `steps: 'more'`,
+ * a chain that only drops hulls of the best one (same ships minus a stop) isn't a different route and is left out.
+ * Pure, like `plan`.
+ */
+export function planAlternatives(ships: CatalogShip[], owned: OwnedCcu[], startId: number, targetId: number, opt: PlanOptions, n = 3): Alternative[] {
+  const best = plan(ships, owned, startId, targetId, opt);
+  if (!best || n <= 0) return [];
+  const seen = new Set([chainKey(best)]);
+  const bestHulls = new Set(best.steps.map((s) => s.toId));
+  const out: Alternative[] = [];
+  for (const s of best.steps) {
+    let alt: Alternative;
+    if ((s.kind === 'owned' || s.kind === 'buyback') && s.ref != null) {
+      if (opt.exclude.includes(s.ref)) continue;
+      const source = s.kind === 'owned' ? 'hangar' : 'buyback';
+      const refs = [...new Set([s.ref, ...owned.filter((c) => c.fromId === s.fromId && c.toId === s.toId && c.source === source && !opt.exclude.includes(c.ref)).map((c) => c.ref)])];
+      const p = plan(ships, owned, startId, targetId, { ...opt, include: opt.include.filter((r) => !refs.includes(r)), exclude: [...opt.exclude, ...refs] });
+      if (!p) continue;
+      alt = { plan: p, skip: [], exclude: refs };
+    } else if (s.kind !== 'future' && s.skuId != null) {
+      if ((opt.skip ?? []).includes(s.skuId)) continue;
+      const p = plan(ships, owned, startId, targetId, { ...opt, skip: [...(opt.skip ?? []), s.skuId] });
+      if (!p) continue;
+      alt = { plan: p, skip: [s.skuId], exclude: [] };
+    } else continue;
+    const k = chainKey(alt.plan);
+    if (seen.has(k)) continue;
+    if (opt.steps === 'more' && alt.plan.steps.length < best.steps.length && alt.plan.steps.every((x) => bestHulls.has(x.toId))) continue;
+    seen.add(k);
+    out.push(alt);
+  }
+  return out.sort((a, b) => (planBefore(opt, a.plan, b.plan) ? -1 : planBefore(opt, b.plan, a.plan) ? 1 : 0)).slice(0, n);
+}
+
+/** The planner options with an alternative's removals added (an excluded CCU is no longer forced in). */
+export function applyAlternative(opt: Pick<PlanOptions, 'skip' | 'exclude' | 'include'>, alt: Pick<Alternative, 'skip' | 'exclude'>): Pick<PlanOptions, 'skip' | 'exclude' | 'include'> {
+  return {
+    skip: [...new Set([...(opt.skip ?? []), ...alt.skip])],
+    exclude: [...new Set([...opt.exclude, ...alt.exclude])],
+    include: opt.include.filter((r) => !alt.exclude.includes(r)),
+  };
 }
 
 export interface SavedChain {
@@ -428,7 +583,7 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
   // reserves more CCUs.
   const graphs = new Map<string, PlanGraph>();
   const graphOf = (o: PlanOptions) => {
-    const k = `${!!o.planAhead}|${[...o.exclude].sort((a, b) => a - b).join(',')}`;
+    const k = `${!!o.planAhead}|${o.lastSeen !== false}|${[...o.exclude].sort((a, b) => a - b).join(',')}|${[...(o.skip ?? [])].sort((a, b) => a - b).join(',')}`;
     return graphs.get(k) ?? graphs.set(k, planGraph(ships, owned, o)).get(k)!;
   };
   for (const goal of goals) {

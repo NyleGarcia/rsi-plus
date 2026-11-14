@@ -37,6 +37,7 @@ import { threadUrl } from '@/lib/types';
 import { issueUrl } from '@/lib/issue-council';
 import type { FeedEvent } from '@/lib/watch';
 import css from './style.css?inline';
+import { fmtWhen } from '@/lib/fmt';
 
 let settings: Settings;
 let issues: IcIssues = {};
@@ -199,7 +200,7 @@ function paintCard(card: HTMLElement, snap: IcSnapshot) {
   host.prepend(box);
 }
 
-const when = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const when = (ms: number) => fmtWhen(ms, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** Issue page: RSI+ panel under the header, new Activity Feed entries highlighted. */
 function paintIssuePage(p: ReturnType<typeof parseIssuePage> & {}) {

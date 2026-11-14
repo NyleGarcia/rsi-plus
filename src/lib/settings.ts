@@ -173,6 +173,8 @@ export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; 
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */
 export const saleHistoryItem = storage.defineItem<SaleHistory>('local:saleHistory', { fallback: {} });
+/** Per ship: MSRP / CCU / standalone prices over time (`lib/price-history.ts`), stamped on every catalog refresh. */
+export const priceHistoryItem = storage.defineItem<import('./price-history').PriceHistory>('local:priceHistory', { fallback: {} });
 /** Pledge-store paints (public), refreshed every 6 h on demand. */
 /** Every pledge-store category (ships, paints, packs, gear …) — per account, since Concierge-only listings only show on a Concierge session. */
 export const storeItemsItem = storage.defineItem<StoreListing | null>(acct('local:storeItems'), { fallback: null });

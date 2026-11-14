@@ -1,7 +1,7 @@
 ---
 title: UI components and page conventions
 tags: [ui, shadcn, conventions]
-updated: 2026-10-29
+updated: 2026-11-14
 ---
 # UI components and page conventions
 
@@ -39,6 +39,7 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 | `Tag` | `kind`, `value` (insurance/sale), `count` (owned), `size`, `label`, `hint` | Warbond / LTI / owned / Concierge / … |
 | `CartButton` | `state` (ledger entry), `inCart` (ledger `qtyOf`), `onadd`, `name`, `available`, `busy`, `qty`, `text` | + cart / adding… / in cart / error; *in cart ×n* badge, first click arms *Add another?* |
 | `OpenCartButton` | `count`, `total` (ledger `snapshot.qty`), `always`, `size` | "Open RSI cart (n added · m in cart)" header button |
+| `CartView` | `cart` (ledger) | the RSI cart as last read: lines, qty, discounts, total, *Check cart*. Read-only |
 | `Empty` | `colspan?` | the empty state |
 | `LoadStatus` | `loading`, `data`, `count`, `noun`, `empty`, children | "Loading page 3 / 12…" + progress / "n pledges · loaded …" |
 | `LoadActions` | `loading`, `data`, `noun`, `onstop`, `onload(resume)`, `onupdate`, `updateHint`, `size`, children | Stop / Resume / Update / Reload ladder |
@@ -60,7 +61,7 @@ Hub and popup pages are shadcn-svelte (`src/components/ui/`, see [architecture](
 | `Section`, `Combobox`, `ShipSelect`, `Wizard`, `LabelEdit`, `FanNotice`, `WidgetGrid` | unchanged | — |
 
 ## Shared helpers (`src/lib/`)
-- `cart-ui.svelte.ts` — `createCartLedger()` → `{ state, busy, added, of(key), add(key, task), addAll(lines), reset() }`, `cartErrorLabel(code)`. Pages keep the call (`addStandalone`, `addStep`) and hand it to the ledger.
+- `cart-ui.svelte.ts` — `createCartLedger()` → `{ state, busy, added, snapshot, syncing, syncError, of(key), qtyOf(sku), sync(), add(key, task, sku?), addAll(lines, gapMs, past), hold(key), reset() }`, `cartErrorLabel(code)`. Pages keep the call (`addStandalone`, `addStep`) and hand it to the ledger. Pass the line's `sku`: a refusal while the cart holds that SKU becomes the `limit` error (*One per cart*). `past` = error codes `addAll` carries on after. For a batch, read the cart, split it with `batchPlan` (`lib/cart.ts`) and `hold` the lines already there (CCU planner `addLines`).
 - `deep-link.svelte.ts` — `useDeepLink({ hash, idParam, elId, apply, rendered })` → `{ flash }`; `hashParam(k)`.
 - `hub-pages.ts` — `HUB_GROUPS`, `HUB_PAGES`, `SETTINGS_PAGE`, `pageOf(tab)`, `isHubTab(s)`: the one list of pages (sidebar, popup, links).
 - `settings-ui.ts` — `SETTING_TOGGLES` (+ `quick` for the popup), `QUICK_TOGGLES`, `MUTE_MODES`, `STARORG_SWITCH` (the opt-in switch on Settings → Integrations that shows the card), `STARORG_TOGGLES` (the StarOrg Tools card, `StarOrgCard.svelte`).

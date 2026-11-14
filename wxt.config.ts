@@ -60,9 +60,12 @@ export default defineConfig({
     // The Impound (Settings → Integrations, opt-in): same pattern, for RSI prices and owned marks there.
     const optionalHosts = [...starorgHosts, 'https://issue-council.robertsspaceindustries.com/*', 'https://theimpound.com/*'];
     return {
-      name: 'RSI+',
+      // Name and summary come from `public/_locales/<lang>/messages.json` (extName, extDescription): a language is added
+      // by adding a folder there, with no code change. English is the only one for now.
+      name: '__MSG_extName__',
+      default_locale: 'en',
       ...(versionName ? { version_name: versionName } : {}),
-      description: 'RSI, better: Spectrum read tracking, mutes, watches, friends, hangar & buyback explorer, store prices, wishlist alerts, CCU planner.',
+      description: '__MSG_extDescription__',
       // unlimitedStorage: big hangars/buybacks + read marks can pass storage.local's 10 MB default quota.
       // cookies: read the Rsi-Token cookie so the background can call Spectrum's API (X-Rsi-Token header) without a tab.
       // offscreen (Chromium): a service worker can't play audio; the party-mode ding plays in an offscreen document.

@@ -35,7 +35,8 @@
 {:else if !armed}
   <Button {...rest} onpointerenter={arm} onfocus={arm}>{@render children?.()}</Button>
 {:else}
-  <span class="inline-flex" role="presentation" onpointerleave={() => (open = false)}>
+  <!-- `contents`: no box of its own, so the button stays the flex / grid item it was before the tooltip armed (`self-start`, `ml-auto` … keep working) -->
+  <span class="contents" role="presentation" onpointerleave={() => (open = false)}>
     <Tooltip.Root bind:open>
       <Tooltip.Trigger>
         {#snippet child({ props })}
