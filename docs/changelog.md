@@ -6,6 +6,8 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+
+## 0.16.0 — 2026-11-14
 - **CCU planner: skip a step that waits for a sale.** The ignore button now works on *Later · wait for a sale* steps too: the chain is planned again without waiting for that hull. It shows as *waiting for …* in the *Ignored* row, where you can bring it back.
 - **CCU planner: routes with and without the CCUs you own.** New option *Use CCUs I own*: switch it off to see what the route costs bought fresh today, with your own CCUs left free for other chains. *Show other routes* always lists the other one of the two (*without my CCUs* / *with my CCUs*) next to the alternatives, and now also routes that skip a waiting step.
 - **CCU planner: waiting for a sale has to be worth it.** Since waiting steps use past sale prices, a chain could turn into a dozen cheap CCUs to wait for instead of one you can buy today. A step that waits must now save at least $25 over buying today to be chosen; the totals still show the real prices.
