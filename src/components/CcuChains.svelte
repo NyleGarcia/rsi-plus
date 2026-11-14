@@ -472,7 +472,7 @@
             <Table.Cell class="text-right">
               <div class="flex items-center justify-end gap-1">
                 <TipButton variant={open ? 'secondary' : 'ghost'} size="icon-xs" onclick={() => toggleEdit(c.id)} tip="Source, stops, insurance, name" aria-label={`Settings of ${c.name}`} aria-expanded={open}><Settings2 /></TipButton>
-                <TipButton variant={guiding.has(c.id) ? 'secondary' : 'ghost'} size="icon-xs" onclick={() => toggleGuide(c.id)} tip="How to apply this chain in your hangar: which pledge, which CCUs, in which order" aria-label={`How to apply ${c.name}`} aria-expanded={guiding.has(c.id)}><ListChecks /></TipButton>
+                <TipButton variant={guiding.has(c.id) ? 'secondary' : 'ghost'} size="icon-xs" onclick={() => toggleGuide(c.id)} tip="Apply this chain: which pledge, which CCUs, in which order" aria-label={`How to apply ${c.name}`} aria-expanded={guiding.has(c.id)}><ListChecks /></TipButton>
                 <TipButton variant="ghost" size="icon-xs" onclick={() => copyCodes([c])} tip="Copy this chain as a text code" aria-label={`Copy ${c.name} as a code`}><Copy /></TipButton>
                 <TipButton variant="outline" size="xs" onclick={() => onopen(c, leg?.startId ?? c.startId, legExclude(fleet, i, []))} tip={p ? 'Open this chain in the planner above: verify it with RSI, add it to the cart, change it' : 'Open it in the planner above to see why there is no chain and change its options (buyback, warbond, stops), then Update chain'}>Open</TipButton>
                 <ConfirmButton onconfirm={() => persist(($state.snapshot(chains) as SavedChain[]).filter((x) => x.id !== c.id))}>Delete</ConfirmButton>
@@ -555,9 +555,7 @@
               <Table.Cell colspan={7} class="whitespace-normal">
                 <div class="bg-muted/30 grid gap-2 rounded-lg border p-2.5 text-sm">
                   <strong>Apply this chain in your hangar</strong>
-                  <p class="text-muted-foreground m-0 text-xs">
-                    You apply each CCU yourself on RSI: <em>Apply upgrade</em> on the CCU, pick the pledge, type your password. It cannot be undone, and RSI+ never does it for you. Apply them in this order, all onto the same pledge. Reload your hangar afterwards and the chain updates itself.
-                  </p>
+                  <p class="text-muted-foreground m-0 text-xs">Apply the CCUs in this order, all onto the same pledge. The chain updates itself after each one.</p>
                   {#if !p}
                     <span class="text-destructive text-xs">This chain has no route today, so there is nothing to apply yet.</span>
                   {:else}
@@ -590,7 +588,7 @@
                             {@const fit = fits[x.ref]}
                             <Badge variant="success-soft">in your hangar</Badge>
                             {#if next}
-                              <TipButton size="xs" href={hangarUrl(pledges, x.ref, 'apply', undefined, onto)} target="_blank" rel="noopener" tip="Opens RSI's own Apply upgrade window for this CCU and outlines the pledge to pick. You choose it, type your password and confirm: RSI+ does none of that.">Apply on RSI <ExternalLink /></TipButton>
+                              <TipButton size="xs" href={hangarUrl(pledges, x.ref, 'apply', undefined, onto)} target="_blank" rel="noopener" tip="Opens RSI's Apply upgrade window for this CCU with the pledge to pick outlined">Apply on RSI <ExternalLink /></TipButton>
                               <TipButton variant="outline" size="xs" disabled={fit?.st === 'checking'} onclick={() => checkFits(x.ref!)} tip="Asks RSI which of your pledges this CCU can be applied to right now. Read-only.">{fit?.st === 'checking' ? 'Asking RSI…' : 'Check with RSI'}</TipButton>
                             {:else}
                               <span class="text-muted-foreground">after step {(c.applied?.length ?? 0) + k}</span>

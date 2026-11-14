@@ -211,9 +211,9 @@ async function afterApply(submittedAt: number) {
 
 /**
  * RSI's *Apply upgrade* dialog lists the pledges the upgrade can go onto (radio rows, loaded a moment after it opens).
- * Point at the one the chain means: outline its row and say so. Nothing is selected, typed or confirmed here — the
- * choice, the password and the Apply click are the user's. When RSI does not list that pledge, say that instead: the
- * earlier steps of the chain are not applied yet, or this upgrade does not fit it.
+ * Point at the one the chain means: outline its row and tag it — nothing else on screen. Nothing is selected or
+ * confirmed here; that stays with the user. A note appears only when another pledge is picked, or when RSI does not
+ * list that pledge (the earlier steps of the chain are not applied yet, or this upgrade does not fit it).
  */
 function guideApply(pledgeId: string) {
   const TAG = 'data-rsiplus-apply';
@@ -226,30 +226,33 @@ function guideApply(pledgeId: string) {
       return void note("RSI+: RSI's list of pledges did not load. Pick the pledge your chain names in RSI+.", 8000);
     }
     const mine = list.find((r) => r.querySelector<HTMLInputElement>('input[type="radio"]')?.value === pledgeId);
-    if (!mine) return void note(`RSI+: RSI does not offer pledge #${pledgeId} for this upgrade. Apply the earlier steps of the chain first, or check the chain in RSI+. Do not pick another pledge unless you mean to.`, 0);
+    if (!mine) return void note(`RSI+: RSI does not offer pledge #${pledgeId} for this upgrade. Apply the earlier steps of the chain first, or check the chain in RSI+.`, 12000);
     if (mine.hasAttribute(TAG)) return;
     mine.setAttribute(TAG, '');
     mine.style.cssText += ';outline:2px solid #ffd166;outline-offset:2px;border-radius:6px';
     const tag = document.createElement('span');
-    tag.textContent = 'RSI+: your chain applies onto this pledge';
+    tag.textContent = 'RSI+: your chain';
     tag.style.cssText = 'display:inline-block;margin-left:8px;padding:1px 6px;border-radius:6px;background:#ffd166;color:#10202e;font:700 11px system-ui,sans-serif;vertical-align:middle';
     (mine.querySelector('label') ?? mine).appendChild(tag);
     mine.scrollIntoView({ block: 'nearest' });
-    const info = note(`RSI+: pick the outlined pledge (#${pledgeId}), then type your password and apply. RSI+ selects and confirms nothing.`, 0);
-    // Another pledge picked: say so, once per change. Cleared when the dialog goes away.
+    // Quiet unless another pledge is picked: then one warning, gone again when the outlined one is picked.
+    let warning: HTMLDivElement | null = null;
     const warn = (e: Event) => {
       const r = (e.target as HTMLElement | null)?.closest<HTMLElement>('.upgrade-pledge-rows .row');
       if (!r) return;
-      const other = r !== mine;
-      info.textContent = other ? `RSI+: that is not the pledge your chain names (#${pledgeId}, outlined). Applying cannot be undone.` : `RSI+: this is the pledge your chain names (#${pledgeId}). Type your password and apply.`;
-      info.style.borderColor = other ? '#ff6b6b' : '#ffd166';
+      warning?.remove();
+      warning = null;
+      if (r !== mine) {
+        warning = note(`RSI+: that is not the pledge your chain names (#${pledgeId}, outlined).`, 0);
+        warning.style.borderColor = '#ff6b6b';
+      }
     };
     document.addEventListener('click', warn, true);
     const gone = setInterval(() => {
       if (document.body.contains(mine)) return;
       clearInterval(gone);
       document.removeEventListener('click', warn, true);
-      info.remove();
+      warning?.remove();
     }, 1000);
   };
   setTimeout(look, 1200);
