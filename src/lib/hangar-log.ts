@@ -90,7 +90,7 @@ export async function fetchHangarLogPage(page: number, signal?: AbortSignal): Pr
   const res = await fetch(`${SPECTRUM_ORIGIN}/api/account/pledgeLog`, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Rsi-Token': await token() },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-Rsi-Token': await token() },
     body: JSON.stringify({ page }),
     signal,
   });
@@ -115,4 +115,58 @@ export async function findInHangarLog(want: readonly number[], maxPages = 6, sig
     await new Promise((ok) => setTimeout(ok, 400));
   }
   return all;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Which pledges RSI lets an upgrade go onto — what its *Apply upgrade* dialog lists.
+// `POST /api/account/chooseUpgradeTarget { upgrade_id }` → `{ success, data: { rendered } }`, rows of radio buttons
+// (value = pledge id) with the pledge's name in the label (RSI's account script, 2026-11). Read-only: applying is
+// `applyUpgrade { upgrade_id, pledge_id, current_password }`, permanent, and RSI+ never calls it.
+
+export interface UpgradeTarget {
+  id: number;
+  name: string;
+}
+
+/** RSI has no such upgrade any more: it was applied, melted or gifted since the hangar was read. */
+export class UpgradeGoneError extends Error {
+  constructor() {
+    super('RSI no longer has this CCU');
+  }
+}
+
+/** The pledges in a rendered target list. Reads the radio buttons; the name is the row's text. */
+export function parseUpgradeTargets(html: string): UpgradeTarget[] {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  const out: UpgradeTarget[] = [];
+  for (const radio of doc.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
+    const id = Number(radio.getAttribute('value'));
+    if (!Number.isFinite(id) || id <= 0 || out.some((t) => t.id === id)) continue;
+    const row = radio.closest('.row') ?? radio.parentElement;
+    // RSI prints "Standalone Ships - Pulse plus Dominion Paint (#103546693)": the id is ours already
+    const name = (row?.querySelector('label span')?.textContent ?? row?.textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*\(#\d+\)\s*$/, '')
+      .trim();
+    out.push({ id, name });
+  }
+  return out;
+}
+
+/** Ask RSI which pledges this upgrade (its pledge id) can be applied to right now. */
+export async function upgradeTargets(upgradeId: number, signal?: AbortSignal): Promise<UpgradeTarget[]> {
+  const res = await fetch(`${SPECTRUM_ORIGIN}/api/account/chooseUpgradeTarget`, {
+    method: 'POST',
+    credentials: 'include',
+    // As RSI's own page sends it (checked against its request, 2026-11): the id as a string, and the XHR marker.
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-Rsi-Token': await token() },
+    body: JSON.stringify({ upgrade_id: String(upgradeId) }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`RSI upgrade targets: HTTP ${res.status}`);
+  const body = (await res.json()) as { success?: number | boolean; code?: string; msg?: string; data?: { rendered?: string } | string };
+  // `ErrInvalidObject`: RSI has no such upgrade any more — applied, melted or gifted since the hangar was read.
+  if (!body.success && body.code === 'ErrInvalidObject') throw new UpgradeGoneError();
+  if (!body.success) throw new Error(`RSI upgrade targets: ${body.msg || 'refused — sign in to RSI'}`);
+  return parseUpgradeTargets(typeof body.data === 'object' ? (body.data?.rendered ?? '') : '');
 }

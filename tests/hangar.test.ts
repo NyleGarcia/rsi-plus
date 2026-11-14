@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { hangarCsv, hangarUrl, parseBuybackPage, parseCredits, parseHangarPage, parseInsurance, parseMoney, stackPledges, totals, upgradeFromName, type Pledge } from '@/lib/hangar';
+import { hangarCsv, hangarUrl, parseBuybackPage, parseCredits, parseHangarPage, parseInsurance, parseMoney, stackPledges, totals, upgradeFromName, type Pledge, patchHangar } from '@/lib/hangar';
 
 // Synthetic markup mirroring /account/pledges (structure per HangarXPLOR's parser).
 const li = (id: number, name: string, value: string, items: [string, string, string?][], extra = '') => `
@@ -235,3 +235,19 @@ describe('buyback parser (defensive)', () => {
     expect(parseCredits(billing)).toEqual({ usd: 812.17, uec: 45000, rec: 1440000 });
   });
 });
+
+describe('patching a saved hangar after an upgrade was applied', () => {
+  const p = (id: number, name: string, extra: Record<string, unknown> = {}) => ({ id, name, page: 1, ships: [name], ...extra }) as unknown as Parameters<typeof patchHangar>[0][number];
+  it('takes out the used-up upgrade and swaps in the pledge as it reads now, in place', () => {
+    const saved = [p(1, 'Paint'), p(2, 'Upgrade - Pulse to Meteor'), p(3, 'Pulse', { page: 2 }), p(4, 'Other')];
+    const out = patchHangar(saved, [2], [p(3, 'Meteor', { page: undefined, upgraded: true })]);
+    expect(out.map((x) => [x.id, x.name])).toEqual([[1, 'Paint'], [3, 'Meteor'], [4, 'Other']]);
+    expect(out[1]).toMatchObject({ upgraded: true, page: 2 }); // keeps where it sits when the fresh read has no page
+    expect(out[0]).toBe(saved[0]); // untouched pledges are the same objects
+    // nothing to do → the same array; a pledge the hangar never had is not added
+    expect(patchHangar(saved, [], [])).toBe(saved);
+    expect(patchHangar(saved, [99], [p(1, 'Paint')])).toBe(saved);
+    expect(patchHangar(saved, [], [p(50, 'New')])).toBe(saved);
+  });
+});
+

@@ -1,5 +1,7 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { consumedUpgrades, parseHangarLog, upgradeHulls } from '@/lib/hangar-log';
+import { consumedUpgrades, parseHangarLog, parseUpgradeTargets, upgradeHulls } from '@/lib/hangar-log';
+import { hangarUrl, type Pledge } from '@/lib/hangar';
 import { DEFAULT_PLAN_OPTIONS, goneRefs, planChains, reconcileApplied, reconcileByTarget, type AppliedUpgrade, type SavedChain, type Step } from '@/lib/ccu';
 import type { CatalogShip } from '@/lib/store';
 
@@ -100,3 +102,31 @@ describe('a chain applied in the hangar', () => {
     expect(reconcileByTarget(rec, log)).toBe(rec);
   });
 });
+
+describe('applying on RSI', () => {
+  it('reads the pledges RSI offers for an upgrade from its radio rows', () => {
+    // as RSI's dialog script reads it: .row > :radio (value = pledge id, data-configuration-price) + label span (the name)
+    const html = `
+      <div class="row"><input type="radio" name="pledge" value="102519192" id="p1"><label for="p1"><span>Coramor 2956 Referral Bonus - Lovestruck HoverQuad</span><span>extra</span></label></div>
+      <div class="row"><input type="radio" name="pledge" value="103546693" data-configuration-price="$5.00" id="p2"><label for="p2"><span>Standalone Ships - Pulse plus Dominion Paint</span></label></div>
+      <div class="row"><input type="checkbox" value="9"></div>`;
+    expect(parseUpgradeTargets(html)).toEqual([
+      { id: 102519192, name: 'Coramor 2956 Referral Bonus - Lovestruck HoverQuad' },
+      { id: 103546693, name: 'Standalone Ships - Pulse plus Dominion Paint' },
+    ]);
+    // RSI's real answer (Nov 2026)
+    const real = '<div class="row"> <label for="upgrade-radio-103546693"> <input id="upgrade-radio-103546693" name="pledge_id" type="radio" value="103546693" /> <span>Standalone Ships - Pulse plus Dominion Paint (#103546693)</span> </label> </div> <div class="row"> <label for="upgrade-radio-113735969"> <input id="upgrade-radio-113735969" name="pledge_id" type="radio" value="113735969" /> <span>Standalone Ships - Constellation Mk V Centaurus plus Magnitude Paint (#113735969)</span> </label> </div>';
+    expect(parseUpgradeTargets(real)).toEqual([
+      { id: 103546693, name: 'Standalone Ships - Pulse plus Dominion Paint' },
+      { id: 113735969, name: 'Standalone Ships - Constellation Mk V Centaurus plus Magnitude Paint' },
+    ]);
+    expect(parseUpgradeTargets('')).toEqual([]);
+  });
+  it('the apply link opens RSI\'s own window for the CCU and names the pledge to point at', () => {
+    const all = [{ id: 7, page: 2 }] as unknown as Pledge[];
+    expect(hangarUrl(all, 7, 'apply', undefined, 55)).toBe('https://robertsspaceindustries.com/account/pledges?page=2&pagesize=50&rsiplus=7&rsiplus_do=apply&rsiplus_on=55');
+    expect(hangarUrl(all, 7, 'apply')).toMatch(/rsiplus_do=apply$/);
+    expect(hangarUrl(all, 7, 'melt', undefined, 55)).not.toContain('rsiplus_on'); // only for apply
+  });
+});
+

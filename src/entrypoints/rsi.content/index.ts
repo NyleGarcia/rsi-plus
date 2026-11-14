@@ -6,6 +6,7 @@ import { mount, unmount } from 'svelte';
 import SiteBar from '@/components/SiteBar.svelte';
 import { pageCount } from '@/lib/account';
 import { parseCredits } from '@/lib/hangar';
+import { syncApplied } from '@/lib/hangar-sync';
 import { hangarItem } from '@/lib/settings';
 import { trackPath } from '@/lib/page-path.svelte';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
@@ -27,6 +28,7 @@ export default defineContentScript({
     });
     ui.mount();
     highlightPledge();
+    watchApply(ctx);
     captureCredits(ctx);
     // After the URL commits: WXT can fire this before `location` updates (see `page-path`).
     ctx.addEventListener(window, 'wxt:locationchange', () => setTimeout(highlightPledge));
@@ -35,8 +37,9 @@ export default defineContentScript({
 
 /**
  * Hangar page opened from RSI+ (`?rsiplus=<pledge id>`): scroll to that pledge and outline it for a few seconds.
- * `&rsiplus_do=melt|gift` then clicks RSI's own Melt / Gift button in that row, so RSI's dialog (which asks for the
- * account password) opens for exactly that pledge. RSI+ never sees or sends the password.
+ * `&rsiplus_do=melt|gift|apply` then clicks RSI's own Melt / Gift / Apply upgrade button in that row, so RSI's dialog
+ * (which asks for the account password) opens for exactly that pledge. RSI+ never sees or sends the password. With
+ * `apply` and `&rsiplus_on=<pledge id>`, the pledge the chain means is pointed out in RSI's list (`guideApply`).
  * Not on this page (stale page number, RSI reordered, different page size)? Walk the hangar pages here, in the
  * logged-in tab, until the id turns up, then go there.
  */
@@ -45,6 +48,7 @@ function highlightPledge() {
   const params = new URLSearchParams(location.search);
   const id = params.get('rsiplus');
   const action = params.get('rsiplus_do');
+  const onto = params.get('rsiplus_on');
   if (!id) return;
   const rowFor = (root: ParentNode) => [...root.querySelectorAll<HTMLInputElement>('input.js-pledge-id')].find((i) => i.value === id)?.closest('li') ?? null;
   let tries = 0;
@@ -62,10 +66,17 @@ function highlightPledge() {
       const btn = li.querySelector<HTMLElement>(action === 'melt' ? '.js-reclaim' : '.js-gift, .js-gift-v2');
       if (btn) openDialog(btn, action);
       else note(`RSI+: no ${action} button on this pledge (not ${action === 'melt' ? 'meltable' : 'giftable'}?)`, 6000);
+    } else if (action === 'apply') {
+      const btn = li.querySelector<HTMLElement>('.js-apply-upgrade');
+      if (btn) {
+        openDialog(btn, 'apply');
+        if (onto) guideApply(onto);
+      } else note('RSI+: no Apply upgrade button on this pledge (not an upgrade?)', 6000);
     }
     // One shot: a reload after RSI's dialog shouldn't re-open it.
     params.delete('rsiplus');
     params.delete('rsiplus_do');
+    params.delete('rsiplus_on');
     history.replaceState(null, '', `${location.pathname}${params.size ? `?${params}` : ''}`);
   };
   /** Pledge isn't here: fetch hangar pages (same session) until it is, then open that page with the same marker. */
@@ -125,7 +136,7 @@ function highlightPledge() {
  * list is on screen (Edge, slow loads), so one early click is simply lost: retry every 700 ms for ~6 s, with a full
  * mouse sequence, and say so if the dialog never opens — the row is outlined, the button is right there.
  */
-function openDialog(btn: HTMLElement, action: 'melt' | 'gift') {
+function openDialog(btn: HTMLElement, action: 'melt' | 'gift' | 'apply') {
   const dialogOpen = () =>
     [...document.querySelectorAll<HTMLElement>('[role="dialog"], [class*="modal"], [class*="dialog"], [class*="overlay"]')].some((el) => {
       const st = getComputedStyle(el);
@@ -134,12 +145,114 @@ function openDialog(btn: HTMLElement, action: 'melt' | 'gift') {
   let tries = 0;
   const attempt = () => {
     if (dialogOpen()) return;
-    if (tries++ >= 9) return void note(`RSI+: RSI's ${action} dialog didn't open — click the ${action === 'melt' ? 'Melt' : 'Gift'} button on the outlined pledge.`, 8000);
+    if (tries++ >= 9) return void note(`RSI+: RSI's ${action} dialog didn't open — click the ${action === 'melt' ? 'Melt' : action === 'gift' ? 'Gift' : 'Apply upgrade'} button on the outlined pledge.`, 8000);
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
     btn.click();
     setTimeout(attempt, 700);
   };
   setTimeout(attempt, 400);
+}
+
+/**
+ * An upgrade applied on RSI → RSI+'s copy of the hangar is out of date the same second (the CCU is gone, a pledge
+ * holds another ship), and a chain in *My chains* cannot know its step is done. So: remember when the *Apply upgrade*
+ * dialog is submitted (session storage — RSI reloads the page on success), and on the reloaded hangar page bring the
+ * saved hangar up to date, here, in the signed-in tab — without reading the whole hangar:
+ *   1. RSI's hangar log (one request) says which upgrade was used up on which pledge since the submit;
+ *   2. the used-up upgrades leave the saved hangar, and the pledges they went onto are read again — from this very
+ *      page when they are on it, else from the page they were saved on and its neighbours (rows only move up).
+ * Only when the log has nothing yet, or a pledge is not where it was, is the whole hangar read (as *Reload* does).
+ * The planner sees the change and marks the step applied. A submit that failed (wrong password) leaves the mark to
+ * expire. However the dialog was opened — from RSI+ or by hand.
+ */
+const APPLIED_MARK = 'rsiplus:upgrade-submitted';
+function watchApply(ctx: ContentScriptContext) {
+  if (!/^\/(?:[a-z]{2}\/)?account\/pledges/.test(location.pathname)) return;
+  ctx.addEventListener(
+    document,
+    'click',
+    (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.('.js-submit');
+      // the apply dialog is the one with the list of pledges to apply onto
+      if (!btn || !btn.classList.contains('active') || !document.querySelector('.upgrade-pledge-rows')) return;
+      try {
+        sessionStorage.setItem(APPLIED_MARK, String(Date.now()));
+      } catch {
+        /* no session storage: the hangar is reloaded from RSI+ by hand, as before */
+      }
+    },
+    true,
+  );
+  let at = 0;
+  try {
+    at = Number(sessionStorage.getItem(APPLIED_MARK)) || 0;
+    sessionStorage.removeItem(APPLIED_MARK);
+  } catch {
+    return;
+  }
+  if (!at || Date.now() - at > 3 * 60_000) return;
+  void afterApply(at);
+}
+
+async function afterApply(submittedAt: number) {
+  const box = note('RSI+: an upgrade was applied. Updating your saved hangar…', 0);
+  const done = (text: string, ms = 8000) => ((box.textContent = text), setTimeout(() => box.remove(), ms));
+  try {
+    const here = Number(new URLSearchParams(location.search).get('page') || 1);
+    const r = await syncApplied({ since: submittedAt, here: { root: document, page: here }, onStep: (t) => (box.textContent = `RSI+: ${t}`), fullWhenUnknown: true });
+    if (!r) return void done('RSI+: load your hangar in RSI+ → Pledges to keep your chains up to date.');
+    if (r.full) return void done('RSI+: hangar updated. Your chain in RSI+ shows this step as applied (open the CCU planner).');
+    const pledges = new Set(r.used.map((u) => u.pledgeId)).size;
+    done(`RSI+: saved hangar updated (${r.used.length} upgrade${r.used.length === 1 ? '' : 's'} used, ${pledges} pledge${pledges === 1 ? '' : 's'} read again). Your chain in RSI+ shows the step as applied.`);
+  } catch (err) {
+    done(`RSI+: could not update your saved hangar (${(err as Error).message}). Reload it in RSI+ → Pledges.`, 10000);
+  }
+}
+
+/**
+ * RSI's *Apply upgrade* dialog lists the pledges the upgrade can go onto (radio rows, loaded a moment after it opens).
+ * Point at the one the chain means: outline its row and say so. Nothing is selected, typed or confirmed here — the
+ * choice, the password and the Apply click are the user's. When RSI does not list that pledge, say that instead: the
+ * earlier steps of the chain are not applied yet, or this upgrade does not fit it.
+ */
+function guideApply(pledgeId: string) {
+  const TAG = 'data-rsiplus-apply';
+  const rows = () => [...document.querySelectorAll<HTMLElement>('.upgrade-pledge-rows .row')];
+  let tries = 0;
+  const look = () => {
+    const list = rows();
+    if (!list.length) {
+      if (tries++ < 60) return void setTimeout(look, 250); // the list loads ~1.5 s after the dialog opens
+      return void note("RSI+: RSI's list of pledges did not load. Pick the pledge your chain names in RSI+.", 8000);
+    }
+    const mine = list.find((r) => r.querySelector<HTMLInputElement>('input[type="radio"]')?.value === pledgeId);
+    if (!mine) return void note(`RSI+: RSI does not offer pledge #${pledgeId} for this upgrade. Apply the earlier steps of the chain first, or check the chain in RSI+. Do not pick another pledge unless you mean to.`, 0);
+    if (mine.hasAttribute(TAG)) return;
+    mine.setAttribute(TAG, '');
+    mine.style.cssText += ';outline:2px solid #ffd166;outline-offset:2px;border-radius:6px';
+    const tag = document.createElement('span');
+    tag.textContent = 'RSI+: your chain applies onto this pledge';
+    tag.style.cssText = 'display:inline-block;margin-left:8px;padding:1px 6px;border-radius:6px;background:#ffd166;color:#10202e;font:700 11px system-ui,sans-serif;vertical-align:middle';
+    (mine.querySelector('label') ?? mine).appendChild(tag);
+    mine.scrollIntoView({ block: 'nearest' });
+    const info = note(`RSI+: pick the outlined pledge (#${pledgeId}), then type your password and apply. RSI+ selects and confirms nothing.`, 0);
+    // Another pledge picked: say so, once per change. Cleared when the dialog goes away.
+    const warn = (e: Event) => {
+      const r = (e.target as HTMLElement | null)?.closest<HTMLElement>('.upgrade-pledge-rows .row');
+      if (!r) return;
+      const other = r !== mine;
+      info.textContent = other ? `RSI+: that is not the pledge your chain names (#${pledgeId}, outlined). Applying cannot be undone.` : `RSI+: this is the pledge your chain names (#${pledgeId}). Type your password and apply.`;
+      info.style.borderColor = other ? '#ff6b6b' : '#ffd166';
+    };
+    document.addEventListener('click', warn, true);
+    const gone = setInterval(() => {
+      if (document.body.contains(mine)) return;
+      clearInterval(gone);
+      document.removeEventListener('click', warn, true);
+      info.remove();
+    }, 1000);
+  };
+  setTimeout(look, 1200);
 }
 
 /** Small fixed notice at the bottom of the page; `ms` 0 = until removed by the caller. */
@@ -148,6 +261,9 @@ function note(text: string, ms: number): HTMLDivElement {
   el.textContent = text;
   el.style.cssText =
     'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483001;background:#0f1a24;color:#e8eef5;border:1px solid #ffd166;border-radius:10px;padding:10px 14px;font:600 13px system-ui,sans-serif;box-shadow:0 8px 30px rgb(0 0 0/.5)';
+  el.title = 'Click to dismiss';
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', () => el.remove());
   document.body.appendChild(el);
   if (ms) setTimeout(() => el.remove(), ms);
   return el;

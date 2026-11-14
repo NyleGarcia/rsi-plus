@@ -8,7 +8,8 @@
    */
   import { untrack } from 'svelte';
   import { dropBakedExcludes, goneRefs, legExclude, mergeGoals, planChains, reconcileApplied, reconcileByTarget, savedVsMsrp, STORE_START, withPlans, type FleetLeg, type OwnedCcu, type SavedChain, type Step } from '@/lib/ccu';
-  import { consumedUpgrades, findInHangarLog, upgradeHulls } from '@/lib/hangar-log';
+  import { consumedUpgrades, findInHangarLog, UpgradeGoneError, upgradeHulls, upgradeTargets, type UpgradeTarget } from '@/lib/hangar-log';
+  import { syncApplied } from '@/lib/hangar-sync';
   import { hangarUrl, type Pledge } from '@/lib/hangar';
   import { mergeEvents } from '@/lib/watch';
   import { ccuCodesText, encodeCcuLink, type CcuLink } from '@/lib/ccu-link';
@@ -276,6 +277,35 @@
   // ---- applying a chain: which pledge, which CCUs, in which order ----
   let guiding = $state(new Set<string>());
   const toggleGuide = (id: string) => (guiding = new Set(guiding.has(id) ? [...guiding].filter((x) => x !== id) : [...guiding, id]));
+  /** What RSI answered for a CCU (*Check with RSI*): the pledges it can go onto right now. */
+  let fits = $state<Record<number, { st: 'checking' } | { st: 'ok'; targets: UpgradeTarget[] } | { st: 'applied'; pledgeId: number } | { st: 'lost' } | { st: 'error'; msg: string }>>({});
+  async function checkFits(ref: number) {
+    fits = { ...fits, [ref]: { st: 'checking' } };
+    try {
+      fits = { ...fits, [ref]: { st: 'ok', targets: await upgradeTargets(ref) } };
+    } catch (e) {
+      if (!(e instanceof UpgradeGoneError)) return void (fits = { ...fits, [ref]: { st: 'error', msg: (e as Error).message } });
+      // RSI no longer has the CCU: find out what became of it instead of sending the user to reload. Applied → the
+      // saved hangar is brought up to date (that pledge only) and the chain records the step; else it was melted or
+      // gifted and leaves the saved hangar, so the chain is planned without it.
+      try {
+        const r = await syncApplied({ ids: [ref] });
+        const hit = r?.used.find((u) => u.id === ref);
+        fits = { ...fits, [ref]: hit ? { st: 'applied', pledgeId: hit.pledgeId } : r ? { st: 'lost' } : { st: 'error', msg: 'RSI no longer has this CCU. Load your hangar in Pledges to bring your chains up to date.' } };
+      } catch (x) {
+        fits = { ...fits, [ref]: { st: 'error', msg: `RSI no longer has this CCU, and its hangar log could not be read (${(x as Error).message}). Reload your hangar.` } };
+      }
+    }
+  }
+  /** Answers that outlived their step (the chain was re-planned): shown under the guide so they are not lost. */
+  const fitNotes = (c: SavedChain, steps: Step[]) =>
+    Object.entries(fits).flatMap(([ref, f]) => {
+      const id = Number(ref);
+      if (steps.some((x) => x.ref === id)) return [];
+      const a = c.applied?.find((x) => x.ref === id);
+      if (f.st === 'applied' && a) return [`${name(a.fromId)} → ${name(a.toId)} was already applied (onto pledge #${f.pledgeId}): recorded, the chain carries on.`];
+      return [];
+    });
   /** The pledges a chain can be applied to: the one already used, else those holding its source hull (LTI first when the chain wants it). */
   const targetsOf = (c: SavedChain, leg: FleetLeg | undefined): Pledge[] => {
     const usedOn = c.applied?.at(-1)?.pledgeId;
@@ -555,8 +585,32 @@
                           <span class="bg-background grid size-5 place-items-center rounded-full border text-[11px] font-bold">{(c.applied?.length ?? 0) + k + 1}</span>
                           <span>{name(x.fromId)} → <strong>{name(x.toId)}</strong></span>
                           {#if x.kind === 'owned' && x.ref != null}
+                            {@const next = k === 0}
+                            {@const onto = targets[0]?.id}
+                            {@const fit = fits[x.ref]}
                             <Badge variant="success-soft">in your hangar</Badge>
-                            <Button variant="ghost" size="xs" href={hangarUrl(pledges, x.ref)} target="_blank" rel="noopener">Open the CCU <ExternalLink /></Button>
+                            {#if next}
+                              <TipButton size="xs" href={hangarUrl(pledges, x.ref, 'apply', undefined, onto)} target="_blank" rel="noopener" tip="Opens RSI's own Apply upgrade window for this CCU and outlines the pledge to pick. You choose it, type your password and confirm: RSI+ does none of that.">Apply on RSI <ExternalLink /></TipButton>
+                              <TipButton variant="outline" size="xs" disabled={fit?.st === 'checking'} onclick={() => checkFits(x.ref!)} tip="Asks RSI which of your pledges this CCU can be applied to right now. Read-only.">{fit?.st === 'checking' ? 'Asking RSI…' : 'Check with RSI'}</TipButton>
+                            {:else}
+                              <span class="text-muted-foreground">after step {(c.applied?.length ?? 0) + k}</span>
+                              <Button variant="ghost" size="xs" href={hangarUrl(pledges, x.ref)} target="_blank" rel="noopener">Open the CCU <ExternalLink /></Button>
+                            {/if}
+                            {#if fit?.st === 'ok'}
+                              {#if !fit.targets.length}
+                                <span class="text-destructive basis-full pl-6">RSI lists no pledge this CCU can go onto right now.</span>
+                              {:else if onto != null && fit.targets.some((t) => t.id === onto)}
+                                <span class="text-success basis-full pl-6">RSI confirms: it can go onto pledge #{onto}{fit.targets.length > 1 ? ` (and ${fit.targets.length - 1} other${fit.targets.length === 2 ? '' : 's'})` : ''}.</span>
+                              {:else}
+                                <span class="text-warning basis-full pl-6">RSI offers {fit.targets.map((t) => `${t.name} #${t.id}`).join(', ')}{onto != null ? `, not pledge #${onto}` : ''}.</span>
+                              {/if}
+                            {:else if fit?.st === 'applied'}
+                              <span class="text-success basis-full pl-6">Already applied onto pledge #{fit.pledgeId}. Updating the chain…</span>
+                            {:else if fit?.st === 'lost'}
+                              <span class="text-warning basis-full pl-6">This CCU is no longer in your hangar and was not applied (melted or gifted). The chain is planned without it.</span>
+                            {:else if fit?.st === 'error'}
+                              <span class="text-destructive basis-full pl-6">{fit.msg}</span>
+                            {/if}
                           {:else if x.kind === 'future'}
                             <Badge variant="warning">not on sale yet</Badge>
                           {:else if x.kind === 'buyback'}
@@ -569,6 +623,7 @@
                         </li>
                       {/each}
                     </ol>
+                    {#each fitNotes(c, steps) as n (n)}<span class="text-success text-xs">{n}</span>{/each}
                     {#if !ready2}<span class="text-muted-foreground text-xs">You can apply the steps you hold now, in order, and stop at the first one you still have to buy: the chain carries on from there.</span>{/if}
                   {/if}
                 </div>
