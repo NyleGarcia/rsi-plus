@@ -852,6 +852,7 @@
         keptByLabel={keepIds.size}
         lti={ltiHulls}
         owned={ccus.owned}
+        pledges={hangar?.pledges ?? []}
         {sales}
         {chains}
         {persist}

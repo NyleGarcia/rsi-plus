@@ -6,6 +6,7 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+- **My chains: applying a chain.** When CCUs a chain was planned with leave your hangar, RSI+ reads RSI's hangar log to see what happened. Applied ones are recorded: once the last CCU is applied the chain moves to *Completed* (with the CCUs used and what they were worth) and the Feed says so; applied part-way, the chain carries on from the ship the pledge has become instead of starting over. Melted or gifted CCUs are simply planned around, as before. Each chain has an *apply* guide: the pledge to apply onto, the CCUs in order with a link to each, and which steps you still have to buy. You apply them on RSI yourself (it needs your password and cannot be undone); RSI+ never does it for you. For a chain you applied before this update, *Check hangar log* finds it from the upgrades applied to its target ship, or close it by hand with *Mark as completed* in its settings.
 
 ## 0.16.0 — 2026-11-14
 - **CCU planner: skip a step that waits for a sale.** The ignore button now works on *Later · wait for a sale* steps too: the chain is planned again without waiting for that hull. It shows as *waiting for …* in the *Ignored* row, where you can bring it back.
