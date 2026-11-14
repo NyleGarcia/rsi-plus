@@ -27,6 +27,15 @@ describe('ccu planner', () => {
     expect(p).toMatchObject({ total: 20500, cash: 7500, msrpDiff: 21500, savings: 1000 });
   });
 
+  it('an ignored store SKU is routed around, and its hull does not turn into a wait-for-a-sale step', () => {
+    // Cutlass warbond (sku id 10000) ignored → direct standard, as without warbond
+    const p = plan(ships, [], 1, 4, o({ skip: [10000] }))!;
+    expect(p.steps.map((s) => [s.toId, s.kind])).toEqual([[4, 'standard']]);
+    // Every CCU to the target ignored: no chain today; planAhead must not price it "later at MSRP" (it is on sale)
+    expect(plan(ships, [], 1, 2, o({ skip: [5500] }))).toBeNull();
+    expect(plan(ships, [], 1, 2, o({ skip: [5500], planAhead: true }))).toBeNull();
+  });
+
   it('without warbond = direct standard', () => {
     const p = plan(ships, [], 1, 4, o({ warbond: false }))!;
     expect(p.steps.map((s) => s.toId)).toEqual([4]);

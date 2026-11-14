@@ -1,11 +1,16 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 # Changelog
 
 ## Unreleased
+- **CCU planner: see your RSI cart, and add several chains at once.** A new *RSI cart* block lists what is in your cart (lines, quantity, RSI's discounts, total) with *Check cart* to read it again. In *Saved chains*, tick the chains you want and *Add n chains to RSI cart* puts in the store steps of all of them, as they price today. The cart is read first, so lines it already holds are skipped (the single chain's *Add store steps* does the same). Buy-backs are left out: each checks out alone.
+- **CCU planner: CCUs RSI takes once per cart.** RSI refuses a second copy of some CCUs in one cart. That line is now marked *One per cart* with what to do (check out, then add it again) and the rest of the chain or batch still goes in, where the add used to stop at the error.
+- **CCU planner: per-step saving, ignore a step, and owned CCUs show what you paid.** Each step shows what it saves against the MSRP gap, in dollars and percent. The new ignore button on a step plans the chain again without that CCU (a store offer or one of yours); ignored ones are listed under *Options*, where you can bring them back. A step using a CCU you own showed *Cost free*: it now shows what you paid for it, marked *already paid* (a gifted one says *free · gift*).
+- **CCU planner: sort *Your CCUs*, and exclude all buybacks in one click.** Every column of *Your CCUs* sorts (From goes by hull price, the order a chain climbs in). Show *All*, *Hangar* or *Buyback*, then *Exclude all …* keeps every CCU listed out of the chain and *Reset all …* sets them back to auto.
+- **Store changes: *Dismiss owned*, and the dismiss X stays put.** *Dismiss owned · n* clears every change for something already in your hangar (the green tiles) from the changes shown. The X on a tile no longer drops from the corner to the middle when you hover it; the same shift is gone from tooltip buttons on other pages.
 - **Store refreshes no longer trip RSI's rate limit.** Refreshing the store lists sent every request at once, and RSI could answer *429 Too Many Requests* and block its own pages for a few minutes. Requests are now spaced out, RSI+ waits and retries when RSI asks it to slow down, and says so in plain words if RSI still refuses. *Refresh* (Browse), *Refresh prices* (Ship catalog) and *Refresh store paints* each work once a minute.
 - **Dates and counts follow your browser's language everywhere.** A few places printed them the US way whatever the browser was set to (the Wallet funding chart's months, some counts). Prices keep one look in every language, `$1,234.50`, now on The Impound too.
 

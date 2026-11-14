@@ -26,7 +26,7 @@ import { SPECTRUM_ORIGIN } from './types';
 export const CART_URL = `${SPECTRUM_ORIGIN}/en/store/pledge/cart`;
 const CART_TOKEN_PATH = '/api/store/v2/cart/token';
 
-export type CartErrorCode = 'signed-out' | 'refused' | 'conflict' | 'network' | 'not-addable';
+export type CartErrorCode = 'signed-out' | 'refused' | 'conflict' | 'network' | 'not-addable' | 'limit';
 
 export class CartError extends Error {
   constructor(
@@ -238,6 +238,50 @@ export function cartShortfall(plan: readonly PlannedLine[], cart: readonly { sku
 /** Per planned line: `missing` (fewer than planned), `over` (more — you would pay for extra copies) or `ok` (exact). */
 export function cartLineStatus(want: number, got: number): 'ok' | 'missing' | 'over' {
   return got < want ? 'missing' : got > want ? 'over' : 'ok';
+}
+
+/**
+ * RSI takes some CCUs (warbond, limited) only once per cart: a second copy is refused. We cannot tell which SKUs up
+ * front, so a refusal for a line the cart already holds is read as that limit, with what to do about it.
+ */
+export function asLimit(e: CartError, alreadyInCart: boolean): CartError {
+  if (!alreadyInCart || (e.code !== 'refused' && e.code !== 'conflict')) return e;
+  const said = e.message.replace(/^RSI refused: /, '').replace(/\. A pending order or a buy-back in the cart blocks new lines — open the cart\.$/, '');
+  return new CartError('limit', `RSI takes this one only once per cart, and yours already has it. Check out that cart first, then add this copy. (RSI: ${said})`);
+}
+
+/** A store line a batch wants in the cart: the SKU and, for an upgrade, the hull it starts from. */
+export interface WantedLine {
+  key: string;
+  skuId: number;
+  /** Source hull name of an upgrade (null = standalone): two upgrades to the same SKU from different hulls are different lines. */
+  fromName: string | null;
+}
+
+/** Does this cart line hold the wanted one? An upgrade line names its hulls; without that name the SKU decides. */
+export function lineHolds(l: Pick<CartLine, 'skuId' | 'upgrade'>, w: Pick<WantedLine, 'skuId' | 'fromName'>): boolean {
+  if (l.skuId !== w.skuId) return false;
+  if (!w.fromName || !l.upgrade) return true;
+  return l.upgrade.toLowerCase().includes(w.fromName.toLowerCase());
+}
+
+/**
+ * Which wanted lines the cart already holds (`held`) and which still need adding (`add`), in order. Each copy in the
+ * cart covers one wanted line, so two chains that need the same CCU get one held and one to add.
+ */
+export function batchPlan(want: readonly WantedLine[], cart: readonly Pick<CartLine, 'skuId' | 'upgrade' | 'qty'>[]): { add: string[]; held: string[] } {
+  const left = cart.map((l) => l.qty);
+  const add: string[] = [];
+  const held: string[] = [];
+  for (const w of want) {
+    const i = cart.findIndex((l, n) => left[n]! > 0 && lineHolds(l, w));
+    if (i < 0) add.push(w.key);
+    else {
+      left[i]!--;
+      held.push(w.key);
+    }
+  }
+  return { add, held };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

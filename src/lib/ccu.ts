@@ -91,6 +91,8 @@ export interface PlanOptions {
   planAhead?: boolean;
   /** Stops: hulls the chain must pass through (to fly a while on the way), visited in MSRP order. */
   via?: number[];
+  /** Store SKUs (CCU / standalone) never used: steps ignored from a chain, so the planner routes around that offer. */
+  skip?: number[];
 }
 
 export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
@@ -104,6 +106,7 @@ export const DEFAULT_PLAN_OPTIONS: PlanOptions = {
   exclude: [],
   planAhead: false,
   via: [],
+  skip: [],
 };
 
 function skuKind(title: string): EdgeKind {
@@ -153,19 +156,25 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
   const byId = new Map(ships.map((s) => [s.id, s]));
   const offers: { to: CatalogShip; price: number; kind: EdgeKind; title: string; skuId?: number }[] = [];
   const starts: Step[] = [];
+  const skip = new Set(opt.skip ?? []);
   for (const s of ships) {
     let onSale = false;
     for (const k of s.ccu) {
       if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
       const kind = skuKind(k.title);
       if (kind === 'warbond' && !opt.warbond) continue;
+      // An ignored offer is still on sale: the hull must not turn into a "wait for a sale" step at MSRP instead.
+      if (skip.has(k.id)) {
+        onSale = true;
+        continue;
+      }
       offers.push({ to: s, price: k.price, kind, title: k.title || 'Standard', skuId: k.id });
       onSale = true;
     }
     // Nothing sells a CCU to this hull today: with planAhead, assume a standard CCU at MSRP when it next returns.
     if (opt.planAhead && !onSale && s.msrp > 0) offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
     for (const k of s.standalone) {
-      if (!k.available || (opt.inStockOnly && k.stock === 0)) continue;
+      if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id)) continue;
       const wb = isWarbondSku(k);
       if (wb && !opt.warbond) continue;
       starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
@@ -428,7 +437,7 @@ export function planFleet(ships: CatalogShip[], owned: OwnedCcu[], goals: Goal[]
   // reserves more CCUs.
   const graphs = new Map<string, PlanGraph>();
   const graphOf = (o: PlanOptions) => {
-    const k = `${!!o.planAhead}|${[...o.exclude].sort((a, b) => a - b).join(',')}`;
+    const k = `${!!o.planAhead}|${[...o.exclude].sort((a, b) => a - b).join(',')}|${[...(o.skip ?? [])].sort((a, b) => a - b).join(',')}`;
     return graphs.get(k) ?? graphs.set(k, planGraph(ships, owned, o)).get(k)!;
   };
   for (const goal of goals) {
