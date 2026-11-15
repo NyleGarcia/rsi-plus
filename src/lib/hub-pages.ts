@@ -20,6 +20,7 @@ import Wallet from '@lucide/svelte/icons/wallet';
 import Store from '@lucide/svelte/icons/store';
 import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 import Route from '@lucide/svelte/icons/route';
+import Timer from '@lucide/svelte/icons/timer';
 import Paintbrush from '@lucide/svelte/icons/paintbrush';
 import Settings from '@lucide/svelte/icons/settings';
 import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
@@ -127,6 +128,7 @@ export const HUB_GROUPS: HubGroup[] = [
     label: 'Plan',
     items: [
       { tab: 'ccu', label: 'CCU planner', sub: 'Upgrade chains, cart', icon: Route, popup: true, short: 'Planner' },
+      { tab: 'waves', label: 'Limited waves', sub: 'Stock-limited hulls: countdown, ready check, stock watch', icon: Timer },
       { tab: 'paint-rebuy', label: 'Paint rebuy', sub: 'Melt paints, buy them back bundled', icon: Paintbrush },
       { tab: 'melt', label: 'Melt calculator', sub: 'Tick pledges, see credit and losses', icon: Calculator },
     ],

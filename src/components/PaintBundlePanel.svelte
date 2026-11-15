@@ -10,7 +10,7 @@
   import { cartErrorLabel, createCartLedger, type CartState } from '@/lib/cart-ui.svelte';
   import { HANGAR_PAGE, hangarUrl, type BuybackItem, type Pledge } from '@/lib/hangar';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
-  import { storePaintIndex, type ItemRow, type OwnedShip } from '@/lib/items';
+  import { familyLabel, storePaintIndex, type ItemRow, type OwnedShip } from '@/lib/items';
   import { itemKey } from '@/lib/melt';
   import { sortBy, type SortState } from '@/lib/sort';
   import SortTh from './SortTh.svelte';
@@ -113,7 +113,7 @@
   const PREFS = 'rsiplus:paintbundle';
   const saved = (() => {
     try {
-      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ wanted: number[]; limit: number; packTier: PackTier; meltNoShip: boolean; meltDups: boolean; bbHideStore: boolean; bbOwned: number[] }>;
+      return JSON.parse(localStorage.getItem(PREFS) ?? '{}') as Partial<{ wanted: number[]; limit: number; packTier: PackTier; meltNoShip: boolean; meltDups: boolean; meltKeep: string[]; candGroup: boolean; bbHideStore: boolean; bbOwned: number[] }>;
     } catch {
       return {};
     }
@@ -123,13 +123,17 @@
   let packTier = $state<PackTier>(saved.packTier ?? 'none');
   let meltNoShip = $state(saved.meltNoShip ?? true);
   let meltDups = $state(saved.meltDups ?? true);
+  /** Hull lines (`paintLine`) melt only is turned off for: their paints are kept even with no such hull in the hangar. */
+  let meltKeep = $state<string[]>(saved.meltKeep ?? []);
+  /** Rebuy candidates under a header per hull (off = one flat list). */
+  let candGroup = $state(saved.candGroup ?? true);
   /** Melt-only pledges the user wants to rebuy anyway. */
   let forceRebuy = $state<number[]>([]);
   /** Per pledge: store listing ids inside a pack the user set by hand (overrides the automatic dedupe). */
   let dropped = $state<Record<number, number[]>>({});
   $effect(() => {
     try {
-      localStorage.setItem(PREFS, JSON.stringify({ wanted: wantedIds, limit, packTier, meltNoShip, meltDups, bbHideStore, bbOwned: bbOwnedIds }));
+      localStorage.setItem(PREFS, JSON.stringify({ wanted: wantedIds, limit, packTier, meltNoShip, meltDups, meltKeep, candGroup, bbHideStore, bbOwned: bbOwnedIds }));
     } catch {
       /* fine */
     }
@@ -139,7 +143,7 @@
   const byId = $derived(new Map(storePaints.map((p) => [p.id, p])));
   const packs = $derived(storePacks(storePaints));
   /** Paints you don't need back (fit no owned ship / surplus copies): melt for credit, no rebuy. */
-  const melt = $derived(meltOnlySplit(pledges, rows, fleet, { noShip: meltNoShip, duplicates: meltDups, except: new Set(forceRebuy), ships }));
+  const melt = $derived(meltOnlySplit(pledges, rows, fleet, { noShip: meltNoShip, duplicates: meltDups, except: new Set(forceRebuy), ships, keepLines: new Set(meltKeep) }));
   const meltOnly = $derived(melt.meltOnly);
   const meltOnlyCredit = $derived(meltOnly.reduce((a, m) => a + m.credit, 0));
   const split = $derived(rebuyCandidates(melt.keep, idx, { packs, packTier }));
@@ -303,6 +307,21 @@
       off: (r) => paidOff(r.c) || null,
     });
   });
+  /** Candidate rows per hull line (a pack for two lines goes under its first), in row order; one group when not grouping. */
+  const candGroups = $derived.by(() => {
+    if (!candGroup) return [{ line: '', label: '', list: candRows, picked: 0, gain: 0 }];
+    const by = new Map<string, CandRow[]>();
+    for (const r of candRows) {
+      const l = r.ships[0] ? paintLine(r.ships[0], ships) : '';
+      by.set(l, [...(by.get(l) ?? []), r]);
+    }
+    return [...by].map(([line, list]) => ({ line, label: line ? familyLabel(line, ships) : 'Other', list, picked: list.filter((r) => r.on).length, gain: list.reduce((a, r) => a + r.g, 0) }));
+  });
+  const pickRows = (list: CandRow[], on: boolean) => {
+    toManual();
+    const ids = new Set(list.map((r) => r.c.pledge.id));
+    manual = on ? [...new Set([...(manual ?? []), ...ids])] : (manual ?? []).filter((id) => !ids.has(id));
+  };
   const candCounts = $derived.by(() => {
     const n = { picked: 0, gain: 0, packs: 0, partial: 0, sale: 0, dedupe: 0 };
     for (const c of cands) {
@@ -336,6 +355,17 @@
       { paint: (m) => m.titles[0] ?? '', why: (m) => m.why, pledge: (m) => m.pledge.name, credit: (m) => m.credit },
     ),
   );
+
+  /** Melt-only rows by the hull line their paints are for (a pledge for two lines goes under its first), in row order. */
+  const lineOfMelt = (m: MeltOnly) => {
+    const first = meltShips(m)[0];
+    return first ? paintLine(first, ships) : '';
+  };
+  const meltGroups = $derived.by(() => {
+    const by = new Map<string, MeltOnly[]>();
+    for (const m of meltRows) by.set(lineOfMelt(m), [...(by.get(lineOfMelt(m)) ?? []), m]);
+    return [...by].map(([line, list]) => ({ line, label: line ? familyLabel(line, ships) : 'Other', list, credit: list.reduce((a, m) => a + m.credit, 0), noShip: list.some((m) => m.why === 'no-ship') }));
+  });
 
   // ---- best value by cart size ----
   const scenarios = $derived(bundleScenarios(cands, wanted, limit, dropMap));
@@ -814,6 +844,7 @@
         ]}
         bind:value={() => candShow || 'all', (v) => (candShow = (v === 'all' ? '' : v) as CandShow)}
       />
+      <label class="flex cursor-pointer items-center gap-1.5 text-xs"><Checkbox bind:checked={candGroup} /> Group by hull</label>
     </div>
     {#if !candRows.length}
       <Empty>No candidate matches.</Empty>
@@ -833,7 +864,21 @@
         </Table.Row>
       </Table.Header>
       <Table.Body>
-        {#each candRows as r (r.c.pledge.id)}
+        {#each candGroups as grp (grp.line)}
+        {#if candGroup}
+          <Table.Row class="bg-muted/40 hover:bg-muted/40">
+            <Table.Cell colspan={8}>
+              <span class="flex flex-wrap items-center gap-2">
+                <strong>{grp.label}</strong>
+                <span class="text-muted-foreground text-xs">{grp.list.length} pledge{grp.list.length === 1 ? '' : 's'} · {grp.picked} picked</span>
+                <Button variant="outline" size="xs" disabled={grp.picked === grp.list.length} onclick={() => pickRows(grp.list, true)}>Pick hull</Button>
+                <Button variant="ghost" size="xs" disabled={!grp.picked} onclick={() => pickRows(grp.list, false)}>Unpick</Button>
+              </span>
+            </Table.Cell>
+            <Table.Cell class={cn('text-right tabular-nums', grp.gain > 0 ? 'text-success' : 'text-muted-foreground')} title="Gain here if you melt and rebuy every row of this hull">{signed(grp.gain)}</Table.Cell>
+          </Table.Row>
+        {/if}
+        {#each grp.list as r (r.c.pledge.id)}
           {@const { c, full, o, alone, g, on, isPack } = r}
           <Table.Row class={cn('align-top', on && 'bg-primary/5', !on && g <= 0 && 'text-muted-foreground')}>
             <Table.Cell class="align-top">
@@ -938,16 +983,25 @@
             <Table.Cell class={cn('text-right align-top tabular-nums', g > 0 && 'text-success', g < 0 && 'text-destructive')}><strong>{signed(g)}</strong></Table.Cell>
           </Table.Row>
         {/each}
+        {/each}
       </Table.Body>
     </Table.Root>
     {/if}
     </Section>
   {/if}
 
+  {#if meltKeep.length}
+    <div class="flex flex-wrap items-center gap-1.5 text-xs">
+      <span class="text-muted-foreground">Hulls you said you have (their paints are kept, not melt only):</span>
+      {#each meltKeep as l (l)}
+        <Chip onremove={() => (meltKeep = meltKeep.filter((x) => x !== l))} removeLabel={`Melt ${familyLabel(l, ships)} paints again`}>{familyLabel(l, ships)}</Chip>
+      {/each}
+    </div>
+  {/if}
   {#if meltOnly.length}
     <Section id="paints.meltonly" title="Melt only" summary={`${meltOnly.length} pledges · ${ownUsd(meltOnlyCredit)} credit`} done={planFrozen} doneText="plan frozen">
     <div class="flex flex-wrap items-center gap-2">
-      <span class="text-muted-foreground text-xs">Not bought back: no ship of yours to put them on, or more copies than hulls. Pure credit.</span>
+      <span class="text-muted-foreground text-xs">Not bought back: no ship of yours to put them on, or more copies than hulls. Pure credit. Grouped by hull — <em>I have this hull</em> keeps a hull's paints.</span>
       <span class="flex-1"></span>
       {@render shipFilter()}
       <Segmented
@@ -972,7 +1026,17 @@
         </Table.Row>
       </Table.Header>
       <Table.Body>
-        {#each meltRows as m (m.pledge.id)}
+        {#each meltGroups as g (g.line)}
+          <Table.Row class="bg-muted/40 hover:bg-muted/40">
+            <Table.Cell colspan={3}><strong>{g.label}</strong> <span class="text-muted-foreground text-xs">· {g.list.length} pledge{g.list.length === 1 ? '' : 's'}</span></Table.Cell>
+            <Table.Cell class="text-success text-right tabular-nums">{ownUsd(g.credit)}</Table.Cell>
+            <Table.Cell class="text-right">
+              {#if g.line && g.noShip}
+                <TipButton variant="outline" size="xs" onclick={() => (meltKeep = [...meltKeep, g.line])} tip={`You have a ${g.label} RSI+ does not see (not delivered yet, a CCU to apply): count it as one hull, keep one copy of each of its paints`}>I have this hull</TipButton>
+              {/if}
+            </Table.Cell>
+          </Table.Row>
+          {#each g.list as m (m.pledge.id)}
           <Table.Row>
             <Table.Cell class="whitespace-normal">
               {#each m.titles as t, ti (`${t}#${ti}`)}
@@ -1002,6 +1066,7 @@
               {/if}
             </Table.Cell>
           </Table.Row>
+          {/each}
         {/each}
       </Table.Body>
     </Table.Root>

@@ -336,3 +336,11 @@ Optional one-click hangar sync to [StarOrg Tools](https://starorg.tools). Opt-in
 - Assets: `public/fankit/made-by-the-community-{white,black}.png` = the kit's `MadeByTheCommunity_White/Black.png` resized to 160 px (no other change). White shows by default, black under `[data-theme=light]`.
 - Placement: `sidebar` variant in the hub sidebar footer (`SidebarFan.svelte`, badge + short "unofficial, not affiliated" line, full text as tooltip; badge only when collapsed), `footer` variant at the end of every hub page's `<main>` (full notice; Feed is the home page), `popup` variant at the bottom of the popup. Text is 13.5 px (≈ 10 pt).
 
+## Limited waves
+
+- `lib/waves.ts`: `WAVE_EVENTS` (one entry per sale event with stock-limited waves; today IAE 2956 — six waves per hull, four hours apart, from 16:00 UTC on the sale date), `waveTimes`, `currentWave`, `countdown`, `watchEveryMs` (how often the listing is read: every 4 s from T−45 s to T+3 min, slower around it, never more than 5 min out), `matchListings`, `activeWaveEvent` (7 days before the first wave to 1 day after the last) and `wavesShown` (that, and the Settings switch).
+- `WavesPanel` (`#waves`, Plan group): schedule, countdown on RSI's clock (the `Date` header of the store answer), ready check, stock watch (`fetchShipListings`, standalone ships with the warbond flag), add to cart. A sale day leaves the list a day after its last wave. RSI+ never places an order.
+- Sidebar: the entry is listed only while `wavesShown` (Hub filters it like the Spectrum-only pages). Settings → Integrations → *Limited waves* writes `wavesItem.on` (`local:waves`, absent = on).
+- Background: `scheduleWaves` sets one alarm per armed sale, wave and lead time (`WAVE_LEADS`: 30, 5, 1 min); none while `wavesShown` is false.
+- Paint rebuy also counts the craft a carrier is delivered with as hulls (`includedCraft` in `lib/paints.ts`), and `MeltOnlyOptions.keepLines` turns "no ship" melting off per hull line.
+

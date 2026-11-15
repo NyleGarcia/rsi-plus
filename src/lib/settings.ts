@@ -169,6 +169,8 @@ export const ccuChainsItem = storage.defineItem<SavedChain[]>(acct('local:ccuCha
 export const pledgeLabelsItem = storage.defineItem<Labels>(acct('local:pledgeLabels'), { fallback: {} });
 /** Fleet plan (CCU planner, several goals): the goals in priority order, hulls never / preferably auto-upgraded, store start allowed. */
 export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; prefer?: number[]; storeStart: boolean; /** The goals were folded into the saved chains (*My chains*). */ merged?: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], prefer: [], storeStart: false } });
+/** Limited waves: the sales to be reminded of (`lib/waves.ts` ids). */
+export const wavesItem = storage.defineItem<{ armed: string[]; /** Settings → Limited waves (absent = on). */ on?: boolean }>('local:waves', { fallback: { armed: [] } });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */
