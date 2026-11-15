@@ -1,11 +1,13 @@
 ---
 title: Changelog
 tags: [changelog]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 # Changelog
 
 ## Unreleased
+
+## 0.18.0 — 2026-11-15
 - New: **Limited waves** (Plan). For stock-limited hulls sold in timed waves (IAE 2956: 890 Jump, Odin, Kraken, Pioneer, Idris-P, Javelin): the schedule in your time, a countdown on RSI's clock, a ready check (signed in, Concierge, store credit, cart), a stock watch around each wave with warbond and store-credit listings apart, and reminders 30, 5 and 1 minute before. You add to cart and place the order; RSI+ never submits one. The page is listed only around an event with waves, a sale day leaves it a day after its last wave, and Settings → Integrations → Limited waves turns it off.
 - Paint rebuy: craft a ship is delivered with count as hulls — a Galaxy's Skylark, a Carrack's Pisces and Ursa, a Constellation's Merlin / Archimedes / Lynx, the 890 Jump's 85X — so their paints are no longer "fits no ship you own".
 - Paint rebuy: Melt only is grouped by hull, with the credit per hull. *I have this hull* turns melt only off for a hull RSI+ does not see in your hangar (not delivered yet, a CCU still to apply): one copy of each of its paints is kept and offered for rebuy; undo it from the chips above the list. Rebuy candidates can be grouped by hull too (*Group by hull*, on by default), with pick / unpick per hull.

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.18.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.17.0...v0.18.0) (2026-11-15)
+
+
+### Features
+
+* Limited waves, Paint rebuy grouping and included craft ([3d60150](https://github.com/NyleGarcia/rsi-plus/commit/3d601507747471f08c506613055d8ba91b65389a))
+* **paints:** Melt only grouped by hull, with a per-hull off switch for hulls the hangar does not show ([ea9e45b](https://github.com/NyleGarcia/rsi-plus/commit/ea9e45b0498961ccd8e933b2552d83c8615d8218))
+* **paints:** rebuy candidates grouped by hull; craft a ship comes with (Galaxy's Skylark) count as hulls ([c085534](https://github.com/NyleGarcia/rsi-plus/commit/c085534e63bd9452ae0fb93ccb749ebf4a7a81d8))
+* **waves:** Limited waves page for stock-limited hull waves — schedule, countdown, ready check, stock watch, reminders ([a9e7de2](https://github.com/NyleGarcia/rsi-plus/commit/a9e7de2d935fc077854762277eca00979053f7cb))
+
+
+### Bug Fixes
+
+* Hornet Mk II paint matching, card header wrapping ([6cdb432](https://github.com/NyleGarcia/rsi-plus/commit/6cdb432cd9787e802fe48a17c29a6c455c3ac30e))
+* **paints:** store "F7 Hornet Mk II" paints match the hangar "Hornet Mk II" ones ([ec6c370](https://github.com/NyleGarcia/rsi-plus/commit/ec6c3707f6cf592a9fe6cfb9715fb417280a16d8))
+* **store:** Store changes controls sit under the description, which gets the full width ([1c3f920](https://github.com/NyleGarcia/rsi-plus/commit/1c3f9206565d7162413f356b83e6f5772c0cdcb1))
+* **ui:** card header text keeps a readable width next to a wide action ([7b07f33](https://github.com/NyleGarcia/rsi-plus/commit/7b07f33f4cb2f52818d5269a5252bb3f6da412bc))
+
 ## [0.17.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.16.0...v0.17.0) (2026-11-14)
 
 
