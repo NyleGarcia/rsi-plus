@@ -466,11 +466,11 @@
 {#snippet tile(id: string, size: WidgetSize)}
   {#if id === 'year'}
     {#snippet b()}{@render fill(yearChart)}{/snippet}
-    {@render panel('By year', useOrders ? 'cash charged per year · hover for store credit' : 'melt value per year pledged', b)}
+    {@render panel('By year', useOrders ? 'cash charged per year · hover for store credit' : 'melt value of what you pledged that year · not cash: store credit buys count too', b)}
   {:else if id === 'month'}
     {#snippet b()}{@render fill(monthChart)}{/snippet}
     {#snippet a()}<Segmented options={[12, 24, 36].map((m) => ({ id: m, label: String(m) }))} bind:value={months} ariaLabel="Months shown" size="sm" />{/snippet}
-    {@render panel('By month', `last ${months} months`, b, a)}
+    {@render panel('By month', useOrders ? `cash charged, last ${months} months · hover for store credit` : `melt value of what you pledged, last ${months} months · not cash: store credit buys count too`, b, a)}
   {:else if id === 'time'}
     {#snippet b()}{@render fill(timeChart)}{/snippet}
     {@render panel('Backing over time', useOrders ? 'cash paid, running total since your first order' : 'running total since your first pledge', b)}
@@ -683,7 +683,7 @@
             {@render hero(Wallet, 'Cash paid', money(orderSums.cash), `${orderSums.count} orders · since ${Number.isFinite(oFirst) ? new Date(oFirst).getFullYear() : '—'}`, null, oCum.map((c) => c.value), 'accent')}
             {@render hero(
               CalendarRange,
-              'Last 12 months',
+              'Cash paid, last 12 months',
               money0(oThis12),
               `cash · ${money0(orderSums.credits)} store credit used overall`,
               oPrev12 > 0 ? { pct: ((oThis12 - oPrev12) / oPrev12) * 100, against: 'vs the 12 months before' } : null,
@@ -695,9 +695,9 @@
             {@render hero(Wallet, 'Hangar melt value', money(sum.value), `${sum.pledges} pledges · since ${sum.since ? new Date(sum.since).getFullYear() : '—'}`, null, cumulative.map((c) => c.value), 'accent')}
             {@render hero(
               CalendarRange,
-              'Last 12 months',
+              'Pledged, last 12 months',
               money0(this12),
-              `${money0(sum.perYear)} a year on average`,
+              `melt value, store credit buys included · ${money0(sum.perYear)} a year on average`,
               prev12 > 0 ? { pct: ((this12 - prev12) / prev12) * 100, against: 'vs the 12 months before' } : null,
               last12,
               'auto',
