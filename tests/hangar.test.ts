@@ -251,3 +251,12 @@ describe('patching a saved hangar after an upgrade was applied', () => {
   });
 });
 
+describe('classify: gear RSI gives no item kind for', () => {
+  const items = (...titles: string[]) => titles.map((title) => ({ title, kind: '' }));
+  it('armour sets and career kits are gear, not other', async () => {
+    const { classify } = await import('@/lib/hangar');
+    expect(classify("CDS ORC-mkX 'SecondWind' Med. Armor", items("FBL-8u 'SecondWind' Undersuit", "ORC-mkX 'SecondWind' Helmet", "ORC-mkX 'SecondWind' Core"), null)).toBe('gear');
+    expect(classify('Medical Career Kit - Heavy', items('ParaMed Medical Device', 'Morozov-SH-I Helmet Lifeforce'), null)).toBe('gear');
+    expect(classify('Big Benny Plushie', items('Big Benny Plushie'), null)).toBe('other');
+  });
+});

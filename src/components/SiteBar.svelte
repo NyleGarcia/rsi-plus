@@ -1,6 +1,6 @@
 <script lang="ts">
   import { bg, type HubTab } from '@/lib/messages';
-  import { catalogItem, getSettings, settingsItem, wishlistItem, type WishShip } from '@/lib/settings';
+  import { catalogItem, getSettings, settingsItem, siteBarMinItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { isWarbondSku, lowestOffer, usd, type Catalog, type CatalogShip } from '@/lib/store';
   import { page as here } from '@/lib/page-path.svelte';
   import './site-bar.css';
@@ -9,13 +9,17 @@
   let enabled = $state(true);
   let cat = $state<Catalog | null>(null);
   let wish = $state<WishShip[]>([]);
-  let hidden = $state(false);
+  /** Folded to the small RSI+ tab: out of the way of RSI's own buttons, one click to open again. */
+  let min = $state(false);
+  const fold = (v: boolean) => ((min = v), void siteBarMinItem.setValue(v));
 
   $effect(() => {
     getSettings().then((s) => (enabled = s.siteBar));
     catalogItem.getValue().then((c) => (cat = c));
     wishlistItem.getValue().then((w) => (wish = w));
+    siteBarMinItem.getValue().then((v) => (min = v));
     const offs = [
+      siteBarMinItem.watch((v) => (min = !!v)),
       settingsItem.watch(async () => (enabled = (await getSettings()).siteBar)),
       catalogItem.watch((c) => (cat = c)),
       wishlistItem.watch((w) => (wish = w ?? [])),
@@ -45,7 +49,9 @@
   const hub = (tab: HubTab, params?: Record<string, string>) => bg({ type: 'hub:open', tab, params });
 </script>
 
-{#if enabled && !hidden && (ship || page)}
+{#if enabled && min && (ship || page)}
+  <button class="bar tab rp rp-surface" onclick={() => fold(false)} aria-label="Show the RSI+ bar" title="Show the RSI+ bar"><span class="logo">RSI+</span></button>
+{:else if enabled && (ship || page)}
   <div class="bar rp rp-surface" role="toolbar" aria-label="RSI+">
     <span class="logo">RSI+</span>
     {#if ship}
@@ -63,15 +69,16 @@
       <span class="muted">Find the cheapest chain first</span>
       <button class="btn" onclick={() => hub('ccu')}>CCU planner</button>
     {/if}
-    <button class="x" aria-label="Hide" onclick={() => (hidden = true)}>×</button>
+    <button class="x" aria-label="Fold the RSI+ bar away" title="Fold away (stays folded on other pages; Settings turns the bar off)" onclick={() => fold(true)}>×</button>
   </div>
 {/if}
 
 <style>
   /* Palette, buttons, logo: site-bar.css (shared with ThreadBar). */
   .bar {
+    /* bottom left: RSI's own add-to-cart / buy buttons sit bottom right */
     position: fixed;
-    right: 18px;
+    left: 18px;
     bottom: 18px;
     display: flex;
     align-items: center;
@@ -79,6 +86,16 @@
     padding: 8px 10px;
     max-width: calc(100vw - 36px);
     flex-wrap: wrap;
+  }
+  .tab {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    padding: 6px 8px;
+    opacity: 0.85;
+  }
+  .tab:hover {
+    opacity: 1;
   }
   .wb {
     color: var(--rp-gold);

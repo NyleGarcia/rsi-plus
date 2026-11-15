@@ -6,6 +6,7 @@ import type { GameShip } from './items';
 import type { Labels } from './labels';
 import type { OrgCache } from './orgs';
 import type { Goal, SavedChain } from './ccu';
+import type { BuybackToken } from './buyback-token';
 import type { BuybackItem, Credits, Pledge } from './hangar';
 import type { Catalog, PaintCatalog, SaleHistory, StoreListing } from './store';
 import type { StoreChange, StoreSnapshot } from './storelog';
@@ -171,6 +172,10 @@ export const pledgeLabelsItem = storage.defineItem<Labels>(acct('local:pledgeLab
 export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; prefer?: number[]; storeStart: boolean; /** The goals were folded into the saved chains (*My chains*). */ merged?: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], prefer: [], storeStart: false } });
 /** Limited waves: the sales to be reminded of (`lib/waves.ts` ids). */
 export const wavesItem = storage.defineItem<{ armed: string[]; /** Settings → Limited waves (absent = on). */ on?: boolean }>('local:waves', { fallback: { armed: [] } });
+/** Credit Buy-Back tokens as RSI's buy-back pages last showed them (`lib/buyback-token.ts`). */
+export const buybackTokenItem = storage.defineItem<BuybackToken | null>(acct('local:buybackToken'), { fallback: null });
+/** RSI+ bar on RSI pages folded to its small tab (the × on the bar); remembered across pages. */
+export const siteBarMinItem = storage.defineItem<boolean>('local:siteBarMin', { fallback: false });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */

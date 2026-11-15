@@ -5,7 +5,8 @@
   import { addStandalone } from '@/lib/cart';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { hangarState, type BuybackItem, type PledgeType } from '@/lib/hangar';
-  import { buybackItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { buybackItem, buybackTokenItem, catalogItem, hangarItem, paintCatalogItem } from '@/lib/settings';
+  import { tokenStatus, type BuybackToken } from '@/lib/buyback-token';
   import { bg } from '@/lib/messages';
   import { itemKey } from '@/lib/melt';
   import { Badge } from '@/components/ui/badge';
@@ -34,7 +35,7 @@
   import Empty from './Empty.svelte';
   import * as Alert from '@/components/ui/alert';
   import { LINK } from '@/lib/ui';
-  import { fmtDate, parseRsiDate } from '@/lib/dates';
+  import { fmtDate, fmtDateTime, parseRsiDate } from '@/lib/dates';
   import * as Card from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
   import * as Table from '@/components/ui/table';
@@ -55,6 +56,13 @@
   let ships = $state<CatalogShip[]>([]);
   let paints = $state<StorePaint[]>([]);
   const storeIdx = $derived(storePaintIndex(paints));
+  let tokenRead = $state<BuybackToken | null>(null);
+  $effect(() => {
+    buybackTokenItem.getValue().then((v) => (tokenRead = v));
+    return buybackTokenItem.watch((v) => (tokenRead = v));
+  });
+  const token = $derived(tokenStatus(tokenRead, Date.now()));
+  const tokenMonth = $derived(new Date(token.next).toLocaleString(undefined, { month: 'long' }));
   /** Copies of each item title in the saved hangar → "already in hangar" per buyback entry. */
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   const hangarPledges = $derived(hangar?.pledges ?? []);
@@ -362,6 +370,24 @@
     </Card.Action>
   </Card.Header>
   <Card.Content class="grid gap-4">
+    <!-- Credit Buy-Back token: what RSI's buy-back pages said at the last read, and when the next one is due -->
+    <div class="flex flex-wrap items-center gap-2 text-sm">
+      <span class="font-medium">Store-credit buy-back token:</span>
+      {#if token.state === 'available'}
+        <Badge variant="success-soft">{token.tokens} available</Badge>
+        <span class="text-muted-foreground text-xs">Tokens don't stack: use it before {tokenMonth} or that one is lost.</span>
+      {:else if token.state === 'none'}
+        <Badge variant="muted">none</Badge>
+        <span class="text-muted-foreground text-xs">Next one early {tokenMonth}. Until then buy-backs are cash only.</span>
+      {:else if token.state === 'due'}
+        <Badge variant="warning">probably back</Badge>
+        <span class="text-muted-foreground text-xs">None at the last read, but a new quarter began since. Reload the buyback to check.</span>
+      {:else}
+        <Badge variant="muted">not read yet</Badge>
+        <span class="text-muted-foreground text-xs">Reload the buyback to read it. RSI gives one early in January, April, July and October.</span>
+      {/if}
+      {#if token.at}<span class="text-muted-foreground text-xs">· read {fmtDateTime(token.at)}</span>{/if}
+    </div>
     {#if error}<Alert.Root variant="destructive"><Alert.Description>{error}</Alert.Description></Alert.Root>{/if}
     {#if catalogError}<Alert.Root variant="warning"><Alert.Description>{catalogError}</Alert.Description></Alert.Root>{/if}
     {#if all.length}

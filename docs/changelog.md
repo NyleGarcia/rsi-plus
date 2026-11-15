@@ -6,6 +6,11 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- Buyback: shows your Credit Buy-Back token (needed to buy back with store credit) as RSI's buy-back pages last showed it — available, none (next one early January / April / July / October), or probably back after a new quarter — with when it was read. Reload the buyback to refresh it.
+- Wallet: until the order history is imported, a notice at the top says the figures come from the hangar (store credit rebuys read as new spending) and has the *Import order history* button right there. The button also sits in the *Your spend* header all the time (*Re-import* once imported). ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
+- Wallet: on the hangar basis the 12-month figure and the By year / By month charts now say they are the melt value of what you pledged, store credit buys included, not cash; *Import order history* shows cash against store credit. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
+- RSI+ bar on RSI's store and account pages sits bottom left (it covered RSI's add-to-cart and buy buttons bottom right); its × folds it to a small RSI+ tab and it stays folded on other pages until you click the tab.
+- Fixed: armour sets and career kits whose items RSI gives no kind for are typed *gear*, not *other* (Pledges, Wallet → By type). Shows after the next hangar reload. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
 
 ## 0.18.0 — 2026-11-15
 - New: **Limited waves** (Plan). For stock-limited hulls sold in timed waves (IAE 2956: 890 Jump, Odin, Kraken, Pioneer, Idris-P, Javelin): the schedule in your time, a countdown on RSI's clock, a ready check (signed in, Concierge, store credit, cart), a stock watch around each wave with warbond and store-credit listings apart, and reminders 30, 5 and 1 minute before. You add to cart and place the order; RSI+ never submits one. The page is listed only around an event with waves, a sale day leaves it a day after its last wave, and Settings → Integrations → Limited waves turns it off.
