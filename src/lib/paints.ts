@@ -124,6 +124,12 @@ export interface MeltOnlyOptions {
   except?: Set<number>;
   /** Catalog ships — lets `paintLine` see which variants share a hull line. */
   ships?: CatalogShip[];
+  /**
+   * Hull lines (`paintLine`) whose paints are never melt-only for "no ship": a hull RSI+ does not see in the hangar
+   * (not delivered yet, a CCU still to apply, a ship it failed to match) counts as one hull, so one copy of each of
+   * its paints is kept and offered for rebuy. Surplus copies beyond that still melt.
+   */
+  keepLines?: Set<string>;
 }
 
 /**
@@ -169,7 +175,9 @@ export function meltOnlySplit(pledges: Pledge[], rows: ItemRow[], fleet: OwnedSh
   const hullsFor = (title: string) => {
     const fits = fitsOf.get(itemKey(title));
     if (!fits || !fits.length) return Infinity;
-    return [...new Set(fits.map((s) => line(s.name)))].reduce((a, l) => a + (hulls.get(l) ?? 0), 0);
+    const lines = [...new Set(fits.map((s) => line(s.name)))];
+    const n = lines.reduce((a, l) => a + (hulls.get(l) ?? 0), 0);
+    return n === 0 && lines.some((l) => opts.keepLines?.has(l)) ? 1 : n;
   };
   const left = new Map<string, number>();
   // With no-ship melting off, one copy of a paint without a hull is still worth keeping (rebuying).

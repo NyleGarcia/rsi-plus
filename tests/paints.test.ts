@@ -243,6 +243,8 @@ describe('melt only', () => {
     // Options off.
     expect(meltOnlySplit(pledges, rows, fleet, { noShip: false }).meltOnly.map((m) => [m.pledge.id, m.why])).toEqual([[3, 'duplicate'], [5, 'duplicate'], [7, 'duplicate']]); // one Carrack copy kept (pledge 4)
     expect(meltOnlySplit(pledges, rows, fleet, { duplicates: false }).meltOnly.map((m) => m.pledge.id)).toEqual([4, 5]); // pledge 7 has a Frost with a hull → kept
+    // Melt only turned off for the Carrack: it counts as one hull, so one copy (pledge 4) is kept and the second (5) is surplus
+    expect(meltOnlySplit(pledges, rows, fleet, { keepLines: new Set([paintLine('Carrack', ships)]) }).meltOnly.map((m) => [m.pledge.id, m.why])).toEqual([[3, 'duplicate'], [5, 'duplicate'], [7, 'duplicate']]);
     expect(meltOnlySplit(pledges, rows, fleet, { except: new Set([4, 7]) }).meltOnly.map((m) => m.pledge.id)).toEqual([3, 5]); // forced rebuy
   });
 

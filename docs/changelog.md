@@ -6,6 +6,7 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+- Paint rebuy: Melt only is grouped by hull, with the credit per hull. *I have this hull* turns melt only off for a hull RSI+ does not see in your hangar (not delivered yet, a CCU still to apply): one copy of each of its paints is kept and offered for rebuy; undo it from the chips above the list.
 - Fixed: Hornet Mk II paints the store lists as "F7 Hornet Mk II - …" are matched to the "Hornet Mk II - …" paints in your hangar (Paint rebuy said "not on the store").
 - **Card headers no longer squeeze their text.** With several buttons in a card's header (Store changes: cart, *Dismiss owned*, *Dismiss all*, the filter), the title and description were pushed into a column a few characters wide. The text now keeps a readable width and the buttons wrap beside it.
 
