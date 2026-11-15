@@ -228,6 +228,18 @@ describe('melt only', () => {
   const rows = inventory(pledges, ships);
   const fleet = ownedShipsWithPaints(rows);
 
+  it("a carrier's own craft counts as a hull: a Galaxy keeps Skylark paints, no Galaxy melts them", () => {
+    const cat = [...ships, { ...ships[0]!, id: 80, name: 'Galaxy' }, { ...ships[0]!, id: 81, name: 'Skylark' }];
+    const paint = pledge(20, 5, [['Skylark - Dusk Paint', 'Skin']]);
+    const galaxy = pledge(21, 380, [['Galaxy', 'Ship']], { type: 'ship' });
+    const run = (list: Pledge[]) => {
+      const r = inventory(list, cat);
+      return meltOnlySplit(list, r, ownedShipsWithPaints(r, [], cat), { ships: cat }).meltOnly.map((m) => [m.pledge.id, m.why]);
+    };
+    expect(run([paint])).toEqual([[20, 'no-ship']]);
+    expect(run([paint, galaxy])).toEqual([]);
+  });
+
   it('no-ship and surplus copies melt only; one copy per owned hull, unknown ships and ship packs are kept', () => {
     const { meltOnly, keep } = meltOnlySplit(pledges, rows, fleet);
     expect(meltOnly.map((m) => [m.pledge.id, m.why, m.credit])).toEqual([

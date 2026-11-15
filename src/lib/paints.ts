@@ -144,6 +144,22 @@ export function paintLine(shipName: string, ships: CatalogShip[] = []): string {
   return line(shipName, ships);
 }
 
+/**
+ * Craft a hull is delivered with in the game though the pledge does not list it: owning the carrier is owning a hull
+ * for the craft's paints. [carrier name test, catalog names of the craft] — the craft only has to name the right
+ * paint line (any Pisces stands for the Carrack's C8).
+ */
+const INCLUDED_CRAFT: [RegExp, string[]][] = [
+  [/^galaxy\b/i, ['Skylark']],
+  [/^carrack\b/i, ['C8X Pisces Expedition', 'Ursa']],
+  [/^constellation\b.*\b(andromeda|aquila)\b/i, ['P-52 Merlin']],
+  [/^constellation\b.*\baquila\b/i, ['Ursa']],
+  [/^constellation\b.*\bphoenix\b/i, ['P-72 Archimedes', 'Lynx']],
+  [/^890 jump\b/i, ['85X']],
+];
+/** Catalog names of the craft that come with a ship (empty for most). */
+export const includedCraft = (shipName: string): string[] => INCLUDED_CRAFT.filter(([re]) => re.test(shipName.trim())).flatMap(([, craft]) => craft);
+
 /** Paint-only pledges you can melt, in hangar order. */
 const paintOnly = (p: Pledge) => {
   const items = p.items.length ? p.items : p.type === 'paint' ? [{ title: p.name, kind: 'skin' }] : [];
@@ -169,7 +185,14 @@ export function meltOnlySplit(pledges: Pledge[], rows: ItemRow[], fleet: OwnedSh
   const cat = opts.ships ?? fleet.map((f) => f.ship);
   const line = (name: string) => paintLine(name, cat);
   const hulls = new Map<string, number>();
-  for (const f of fleet) hulls.set(line(f.ship.name), (hulls.get(line(f.ship.name)) ?? 0) + f.count);
+  for (const f of fleet) {
+    hulls.set(line(f.ship.name), (hulls.get(line(f.ship.name)) ?? 0) + f.count);
+    // the snub / rover a carrier is delivered with (a Galaxy's Skylark): a hull for its paints too
+    for (const craft of includedCraft(f.ship.name)) {
+      const hit = matchShip(craft, cat);
+      if (hit) hulls.set(line(hit.name), (hulls.get(line(hit.name)) ?? 0) + f.count);
+    }
+  }
   const fitsOf = new Map(rows.filter((r) => r.category === 'paint').map((r) => [itemKey(r.title), r.fits]));
   /** Per paint: hulls you own in the lines it fits (Infinity when its ship is unknown) and copies still wanted. */
   const hullsFor = (title: string) => {
