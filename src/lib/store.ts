@@ -521,6 +521,7 @@ export function paintKey(title: string): string {
     .replace(/[^a-z0-9']+/g, ' ')
     .trim()
     .replace(MAKERS, '')
+    .replace(/^f7[a-z]? (?=hornet\b)/, '') // "F7 Hornet Mk II - Tigerveil Paint" on the store, "Hornet Mk II - Tigerveil Paint" in the hangar
     .replace(/'/g, '')
     .trim();
   if (paintKeys.size > 5000) paintKeys.clear();

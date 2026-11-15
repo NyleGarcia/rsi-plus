@@ -6,6 +6,7 @@ updated: 2026-11-14
 # Changelog
 
 ## Unreleased
+- Fixed: Hornet Mk II paints the store lists as "F7 Hornet Mk II - …" are matched to the "Hornet Mk II - …" paints in your hangar (Paint rebuy said "not on the store").
 - **Card headers no longer squeeze their text.** With several buttons in a card's header (Store changes: cart, *Dismiss owned*, *Dismiss all*, the filter), the title and description were pushed into a column a few characters wide. The text now keeps a readable width and the buttons wrap beside it.
 
 ## 0.17.0 — 2026-11-14
