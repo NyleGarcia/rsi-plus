@@ -3,9 +3,13 @@
  * request carries the user's RSI session cookies via the extension's host permission.
  * RSI quirk: a page number past the end returns the last page again → stop on a repeated first id.
  */
-import { parseBuybackDetail, parseBuybackPage, parseHangarPage, type BuybackItem, type Pledge, HANGAR_PAGE, creditsDebug, parseCredits, type Credits } from './hangar';
+import { parseBuybackDetail, parseBuybackPage, parseBuybackTokens, parseHangarPage, type BuybackItem, type Pledge, HANGAR_PAGE, creditsDebug, parseCredits, type Credits } from './hangar';
 import { SPECTRUM_ORIGIN } from './types';
 import { sleep } from './utils';
+import { buybackTokenItem } from './settings';
+
+/** Remember what a buy-back page said about Credit Buy-Back tokens (never fails the load). */
+const saveTokens = (tokens: number) => void buybackTokenItem.setValue({ at: Date.now(), tokens }).catch(() => undefined);
 
 export class NotLoggedIn extends Error {
   constructor() {
@@ -77,8 +81,23 @@ async function loadAll<T extends { id: number; page?: number }>(
 export const loadHangar = (onProgress: (p: Progress<Pledge>) => void | Promise<void>, signal?: AbortSignal, resume?: Progress<Pledge>): Promise<Pledge[]> =>
   loadAll('/account/pledges', parseHangarPage, onProgress, signal, resume);
 
-export const loadBuyback = (onProgress: (p: Progress<BuybackItem>) => void | Promise<void>, signal?: AbortSignal, resume?: Progress<BuybackItem>): Promise<BuybackItem[]> =>
-  loadAll('/account/buy-back-pledges', parseBuybackPage, onProgress, signal, resume);
+export async function loadBuyback(onProgress: (p: Progress<BuybackItem>) => void | Promise<void>, signal?: AbortSignal, resume?: Progress<BuybackItem>): Promise<BuybackItem[]> {
+  // The queue shows the yellow token notice while a token is available; a whole read without it = none.
+  let tokens: number | null = null;
+  const all = await loadAll(
+    '/account/buy-back-pledges',
+    (doc) => {
+      const t = parseBuybackTokens(doc);
+      if (t != null) tokens = Math.max(tokens ?? 0, t);
+      return parseBuybackPage(doc);
+    },
+    onProgress,
+    signal,
+    resume,
+  );
+  if (all.length && !resume) saveTokens(tokens ?? 0);
+  return all;
+}
 
 export interface HangarUpdate {
   pledges: Pledge[];
@@ -173,6 +192,7 @@ export async function loadBuybackDetails(
       if (d.price != null) b.price = d.price;
       if (d.listPrice != null) b.listPrice = d.listPrice;
       if (d.sku != null) b.sku = d.sku;
+      if (d.opportunities != null) saveTokens(d.opportunities);
       b.detailAt = Date.now();
     }
     done++;

@@ -6,6 +6,7 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- Buyback: shows your Credit Buy-Back token (needed to buy back with store credit) as RSI's buy-back pages last showed it — available, none (next one early January / April / July / October), or probably back after a new quarter — with when it was read. Reload the buyback to refresh it.
 - Wallet: until the order history is imported, a notice at the top says the figures come from the hangar (store credit rebuys read as new spending) and has the *Import order history* button right there. The button also sits in the *Your spend* header all the time (*Re-import* once imported). ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
 - Wallet: on the hangar basis the 12-month figure and the By year / By month charts now say they are the melt value of what you pledged, store credit buys included, not cash; *Import order history* shows cash against store credit. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
 - RSI+ bar on RSI's store and account pages sits bottom left (it covered RSI's add-to-cart and buy buttons bottom right); its × folds it to a small RSI+ tab and it stays folded on other pages until you click the tab.

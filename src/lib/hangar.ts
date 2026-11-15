@@ -351,8 +351,20 @@ export function parseBuybackDetail(root: ParentNode): BuybackDetail {
   const orig = text(root.querySelector('.original-price'));
   const listPrice = orig ? Math.round(parseMoney(orig) * 100) : null;
   const skuRaw = root.querySelector<HTMLElement>('.js-buy-back[data-sku], [data-sku]')?.dataset.sku;
-  const opp = text(root.querySelector('.buy-back-warning strong'));
-  return { items, price: Number.isFinite(price as number) ? price : null, listPrice: listPrice || null, sku: skuRaw ? Number(skuRaw) : null, opportunities: opp ? Number(opp) : null };
+  return { items, price: Number.isFinite(price as number) ? price : null, listPrice: listPrice || null, sku: skuRaw ? Number(skuRaw) : null, opportunities: parseBuybackTokens(root) };
+}
+
+/**
+ * Credit Buy-Back tokens a buy-back page shows ("You have 1 opportunity to buy back a pledge with store credits"):
+ * the number, or null when the page has no such notice. On the queue (list) page no notice means no token.
+ */
+export function parseBuybackTokens(root: ParentNode): number | null {
+  const strong = text(root.querySelector('.buy-back-warning strong'));
+  if (/^\d+$/.test(strong)) return Number(strong);
+  // the notice by its words, wherever the page puts it (the queue page's markup is not verified)
+  const all = (root as Document).body?.textContent ?? root.textContent ?? '';
+  const m = /you have\s+(\d+)\s+opportunit(?:y|ies)\s+to buy back/i.exec(all.replace(/\s+/g, ' '));
+  return m ? Number(m[1]) : null;
 }
 
 /** Parse one buyback page (defensive — markup unverified). */
