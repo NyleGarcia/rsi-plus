@@ -665,6 +665,12 @@
               ariaLabel="Spend basis"
             />
           {/if}
+          <TipButton
+            variant={orders?.orders.length ? 'outline' : 'default'}
+            disabled={ordersBusy}
+            onclick={importOrders}
+            tip={`Reads your order history from RSI's Billing pages in this browser (what was cash, what was store credit, and when) — nothing is sent anywhere${orders ? `\nLast read ${fmtDateTime(orders.at)} · ${orders.orders.length} orders` : ''}`}
+          >{ordersBusy ? 'Reading…' : orders?.orders.length ? 'Re-import order history' : 'Import order history'}</TipButton>
           {#if editing}
             <Button variant="ghost" onclick={resetLayout}><RotateCcw /> Reset</Button>
             <Button onclick={() => (editing = false)}><Check /> Done</Button>
