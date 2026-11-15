@@ -462,6 +462,34 @@ export const mapListing = (r: RawListing): StorePaint => ({
   thumb: r.media?.thumbnail?.storeSmall ?? null,
 });
 
+/**
+ * Limited waves (`lib/waves.ts`): the standalone-ship listings, with RSI's clock. One request per 100 listings;
+ * `serverAt` is the `Date` header of the last answer (ms, whole seconds) — how far this PC's clock is off.
+ */
+export type ShipListing = StorePaint & { /** Warbond: new money only, store credit cannot pay it. */ warbond: boolean };
+export async function fetchShipListings(): Promise<{ items: ShipListing[]; serverAt: number | null }> {
+  let serverAt: number | null = null;
+  const items: ShipListing[] = [];
+  for (let page = 1; page < 10; page++) {
+    if (page > 1) await sleep(PAGE_GAP);
+    const res = await fetch(SEARCH, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{ operationName: 'GetBrowseListingQuery', variables: { query: { page, limit: 100, skus: { products: ['72'] } } }, query: LISTING_QUERY }]),
+    });
+    if (!res.ok) throw new Error(`RSI store: HTTP ${res.status}`);
+    const d = Date.parse(res.headers.get('date') ?? '');
+    if (Number.isFinite(d)) serverAt = d;
+    const body = (await res.json()) as { data?: { store: { listing: { resources: RawListing[]; totalCount: number } } }; errors?: { message: string }[] }[];
+    const listing = body[0]?.data?.store.listing;
+    if (!listing) throw new Error(`RSI store: ${body[0]?.errors?.[0]?.message ?? 'no data'}`);
+    items.push(...listing.resources.map((r) => ({ ...mapListing(r), warbond: !!r.isWarbond || /warbond/i.test(r.name) })));
+    if (listing.resources.length < 100 || items.length >= listing.totalCount) break;
+  }
+  return { items, serverAt };
+}
+
 /** Every listing for the given product-type ids (all pages). */
 async function fetchListing(products: string[], what = 'listing'): Promise<RawListing[]> {
   const out: RawListing[] = [];

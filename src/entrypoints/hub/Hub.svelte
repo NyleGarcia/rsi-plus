@@ -16,7 +16,8 @@
   import { privacy, togglePrivacy } from '@/lib/privacy.svelte';
   import type { HubTab } from '@/lib/messages';
   import { HUB_GROUPS, SETTINGS_PAGE, isHubTab, pageOf, type HubPage } from '@/lib/hub-pages';
-  import { INCOGNITO, feedItem, getSettings, settingsItem, storeLogItem } from '@/lib/settings';
+  import { INCOGNITO, feedItem, getSettings, settingsItem, storeLogItem, wavesItem } from '@/lib/settings';
+  import { wavesShown } from '@/lib/waves';
   import { FEED_SECTIONS, type FeedEvent } from '@/lib/watch';
   import { cleanLog, tally } from '@/lib/storelog';
   import { legacyHash } from '@/lib/hub-hash';
@@ -78,6 +79,7 @@
     ccu: () => import('@/components/CcuPanel.svelte'),
     settings: () => import('@/components/SettingsPanel.svelte'),
     mutes: () => import('@/components/MutesPanel.svelte'),
+    waves: () => import('@/components/WavesPanel.svelte'),
   } as const;
   type PanelKey = keyof typeof LOADERS;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -137,7 +139,14 @@
     getSettings().then(apply);
     return settingsItem.watch(async () => apply(await getSettings()));
   });
-  const groups = $derived(HUB_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => (spectrumTools || !SPECTRUM_ONLY.has(it.tab)) && (issueCouncil || it.tab !== 'issues')) })));
+  // Limited waves: the page is listed only during an event with waves, and only while Settings has it on.
+  let wavesOn = $state(false);
+  $effect(() => {
+    const apply = (v: { on?: boolean } | null) => (wavesOn = wavesShown(v, Date.now()));
+    wavesItem.getValue().then(apply);
+    return wavesItem.watch(apply);
+  });
+  const groups = $derived(HUB_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => (spectrumTools || !SPECTRUM_ONLY.has(it.tab)) && (issueCouncil || it.tab !== 'issues') && (wavesOn || it.tab !== 'waves')) })));
   const navItems = $derived([...groups.flatMap((g) => g.items), SETTINGS_PAGE]);
 
   function select(it: Item) {

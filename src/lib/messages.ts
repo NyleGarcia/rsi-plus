@@ -28,7 +28,7 @@ export type BgRequest =
   | { type: 'imp:sync' };
 
 /** Hub pages (`hub.html#<tab>`). One sidebar entry each; `ships` (→ fleet) and `notifications` (→ feed, store view) are legacy aliases. */
-export type HubTab = 'feed' | 'watching' | 'issues' | 'intel' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships';
+export type HubTab = 'feed' | 'watching' | 'issues' | 'intel' | 'friends' | 'mutes' | 'hangar' | 'melt' | 'fleet' | 'paints' | 'items' | 'buyback' | 'wallet' | 'store' | 'browse' | 'notifications' | 'ccu' | 'ccus' | 'paint-rebuy' | 'settings' | 'ships' | 'waves';
 
 export interface BulkResult {
   done: string[];

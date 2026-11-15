@@ -2,7 +2,8 @@
   /** Hub → Settings: appearance of the extension pages (theme / accent) and the Spectrum / site options the popup also shows. */
   import { fmtNum } from '@/lib/fmt';
   import { ACCENTS, MODES, PALETTES, readTheme, resolveMode, saveTheme, type Accent, type Palette, type ThemePrefs } from '@/lib/theme';
-  import { getSettings, patchSettings, settingsItem, type Settings } from '@/lib/settings';
+  import { getSettings, patchSettings, settingsItem, wavesItem, type Settings } from '@/lib/settings';
+  import { activeWaveEvent } from '@/lib/waves';
   import { MUTE_MODES, PARTY_REMIND, POLL_MINUTES, SETTING_TOGGLES, STARORG_SWITCH, clampSetting, type NumberSetting } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
   import { CURRENCIES } from '@/lib/currency';
@@ -51,6 +52,12 @@
    * came on through sync shows *Grant access* instead.
    */
   let icGranted = $state<boolean | null>(null);
+  // Limited waves (lib/waves.ts)
+  let wavesOnSetting = $state(true);
+  const waveEvent = activeWaveEvent(Date.now());
+  $effect(() => {
+    wavesItem.getValue().then((v) => (wavesOnSetting = v.on !== false));
+  });
   let icMsg = $state('');
   $effect(() => {
     browser.permissions.contains({ origins: IC_HOSTS }).then((v) => (icGranted = v), () => (icGranted = false));
@@ -247,6 +254,13 @@
         <SwitchRow id={`set-${STARORG_SWITCH.key}`} label={STARORG_SWITCH.label} hint={STARORG_SWITCH.hint} checked={s.starorg} onchange={(v) => set('starorg', v)} />
         <!-- Off: the background signs out and forgets both contexts' tokens and drops the hosts (`disconnectAll`). -->
         {#if s.starorg}<StarOrgCard />{/if}
+        <SwitchRow
+          id="set-waves"
+          label="Limited waves"
+          hint={`A page for stock-limited hull waves (countdown, ready check, stock watch, reminders). Only listed while a sale event with waves runs (IAE, Invictus / DefenseCon and the like)${waveEvent ? ` — now: ${waveEvent.name}` : ' — none right now'}. Off: no page, no reminders`}
+          checked={wavesOnSetting}
+          onchange={(v) => ((wavesOnSetting = v), void wavesItem.getValue().then((w) => wavesItem.setValue({ ...w, on: v })))}
+        />
         <SwitchRow
           id="set-issueCouncil"
           label="Issue Council"

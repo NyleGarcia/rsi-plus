@@ -20,6 +20,7 @@ import {
   ccuChainsItem,
   paintCatalogItem,
   saleHistoryItem,
+  wavesItem,
   priceHistoryItem,
   storeItemsItem,
   wishlistItem,
@@ -33,6 +34,7 @@ import { disconnectAll } from '@/lib/starorg';
 import { loadHangar } from '@/lib/account';
 import { readHangarOffscreen } from '@/lib/offscreen';
 import { ding } from '@/lib/sound';
+import { IAE_2956, WAVE_LEADS, wavesShown, waveTimes } from '@/lib/waves';
 import { chainEvents } from '@/lib/ccu';
 import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
 import { sleep } from '@/lib/utils';
@@ -50,6 +52,36 @@ const ALARM = 'spectrumplus:poll';
 const IC_SCRIPT = 'rsiplus-issue-council';
 const IMP_SCRIPT = 'rsiplus-impound';
 const PARTY_ALARM = 'spectrumplus:party';
+
+// ---- limited-wave reminders (lib/waves.ts) ----
+const WAVE_ALARM = 'wave:';
+/** One alarm per armed sale, wave and lead time still ahead (`wave:<sale>:<wave index>:<lead ms>`). */
+async function scheduleWaves() {
+  for (const a of await browser.alarms.getAll()) if (a.name.startsWith(WAVE_ALARM)) await browser.alarms.clear(a.name);
+  const v = await wavesItem.getValue();
+  const { armed } = v;
+  const now = Date.now();
+  if (!wavesShown(v, now)) return; // turned off in Settings, or no event with waves is running
+  for (const sale of IAE_2956.filter((x) => armed.includes(x.id))) {
+    waveTimes(sale.date).forEach((at, i) => {
+      for (const lead of WAVE_LEADS) if (at - lead > now + 5000) browser.alarms.create(`${WAVE_ALARM}${sale.id}:${i}:${lead}`, { when: at - lead });
+    });
+  }
+}
+async function waveReminder(name: string) {
+  const [, id, i, lead] = name.split(':');
+  const sale = IAE_2956.find((x) => x.id === id);
+  if (!sale || !wavesShown(await wavesItem.getValue(), Date.now())) return;
+  const mins = Math.round(Number(lead) / 60_000);
+  browser.notifications.create(name, {
+    type: 'basic',
+    iconUrl: browser.runtime.getURL('/icon/128.png'),
+    title: `${sale.ship}: wave ${Number(i) + 1} in ${mins} min`,
+    message: mins <= 1 ? 'Open RSI+ → Limited waves now: the stock watch is running.' : 'Open RSI+ → Limited waves and run the ready check.',
+    requireInteraction: mins <= 5,
+  });
+  await ding().catch(() => undefined);
+}
 
 export default defineBackground(() => {
   // Dev only: WXT's hot reload registers content scripts from every background; under `incognito: split` the two
@@ -94,7 +126,11 @@ export default defineBackground(() => {
   hangarLoadItem.watch((next, prev) => {
     if (isNewLoad(next, prev)) afterLoad(starorgCatalog).catch((e) => console.warn('[RSI+] starorg', e));
   });
+  // Limited waves: reminders before each wave of the armed sales.
+  wavesItem.watch(() => void scheduleWaves());
+  void scheduleWaves();
   browser.alarms.onAlarm.addListener((a) => {
+    if (a.name.startsWith(WAVE_ALARM)) waveReminder(a.name).catch((e) => console.warn('[RSI+] wave', e));
     if (a.name === ALARM) poll().catch((e) => console.warn('[RSI+] poll', e));
     if (a.name === PARTY_ALARM) partyTick().catch((e) => console.warn('[RSI+] party', e));
     if (a.name === STARORG_ALARM) weeklySync(starorgCatalog, readHangarFresh).catch((e) => console.warn('[RSI+] starorg', e));
