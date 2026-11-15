@@ -125,7 +125,10 @@ export function upgradeFromName(name: string): Upgrade | null {
   return m ? { fromId: null, fromName: m[1]!.trim(), toId: null, toName: m[2]!.trim() } : null;
 }
 
-function classify(name: string, items: PledgeItem[], upgrade: Upgrade | null): PledgeType {
+/** FPS gear by its name, for the rows RSI gives no item kind: armour sets, weapons, career kits. */
+const GEAR_NAME = /\b(armou?r|helmet|undersuit|backpack|rifle|pistol|smg|shotgun|sniper|lmg|carbine|knife|multi-?tool|medical device|career kit|(exploration|flight|pressure) suit)\b/i;
+
+export function classify(name: string, items: PledgeItem[], upgrade: Upgrade | null): PledgeType {
   const kinds = items.map((i) => i.kind.toLowerCase());
   const shipCount = kinds.filter((k) => k === 'ship').length;
   const lower = name.toLowerCase();
@@ -137,6 +140,7 @@ function classify(name: string, items: PledgeItem[], upgrade: Upgrade | null): P
   if (/paint|livery|skin/.test(lower) || kinds.includes('skin')) return 'paint';
   if (/hangar/.test(lower) || kinds.includes('hangar decoration')) return 'hangar';
   if (kinds.some((k) => /fps|armor|weapon|component|equipment/.test(k))) return 'gear';
+  if (GEAR_NAME.test(name) || items.some((i) => GEAR_NAME.test(i.title))) return 'gear';
   return 'other';
 }
 

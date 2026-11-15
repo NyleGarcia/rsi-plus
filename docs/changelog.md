@@ -6,6 +6,8 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- RSI+ bar on RSI's store and account pages sits bottom left (it covered RSI's add-to-cart and buy buttons bottom right); its × folds it to a small RSI+ tab and it stays folded on other pages until you click the tab.
+- Fixed: armour sets and career kits whose items RSI gives no kind for are typed *gear*, not *other* (Pledges, Wallet → By type). Shows after the next hangar reload. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
 
 ## 0.18.0 — 2026-11-15
 - New: **Limited waves** (Plan). For stock-limited hulls sold in timed waves (IAE 2956: 890 Jump, Odin, Kraken, Pioneer, Idris-P, Javelin): the schedule in your time, a countdown on RSI's clock, a ready check (signed in, Concierge, store credit, cart), a stock watch around each wave with warbond and store-credit listings apart, and reminders 30, 5 and 1 minute before. You add to cart and place the order; RSI+ never submits one. The page is listed only around an event with waves, a sale day leaves it a day after its last wave, and Settings → Integrations → Limited waves turns it off.
