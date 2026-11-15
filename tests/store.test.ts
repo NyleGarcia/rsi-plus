@@ -43,6 +43,10 @@ describe('store helpers', () => {
     // past the memo bound it still answers correctly
     for (let i = 0; i < 5100; i++) paintKey(`Hull ${i} - Paint`);
     expect(paintKey('Dragonfly - Coalfire Paint')).toBe('dragonfly coalfire');
+    // RSI writes the Hornet's model in front on the store, not in the hangar
+    expect(paintKey('F7 Hornet Mk II - Tigerveil Paint')).toBe(paintKey('Hornet Mk II - Tigerveil Paint'));
+    expect(paintKey('F7A Hornet Mk II - Simoom Paint')).toBe('hornet mk ii simoom');
+    expect(paintKey('F7C-M Super Hornet Mk II - Ironscale Paint')).toBe('f7c m super hornet mk ii ironscale');
   });
 
   it('matchShip vocab fallback (memoized per catalog) drops words no catalog name uses', () => {
