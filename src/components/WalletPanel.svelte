@@ -665,23 +665,22 @@
               ariaLabel="Spend basis"
             />
           {/if}
-          <div class="grid justify-items-end gap-0.5">
           <TipButton
             variant={orders?.orders.length ? 'outline' : 'default'}
             disabled={ordersBusy}
             onclick={importOrders}
             tip={`Reads your order history from RSI's Billing pages in this browser (what was cash, what was store credit, and when) — nothing is sent anywhere${orders ? `\nLast read ${fmtDateTime(orders.at)} · ${orders.orders.length} orders` : ''}`}
           >{ordersBusy ? 'Reading…' : orders?.orders.length ? 'Re-import order history' : 'Import order history'}</TipButton>
-          <span class="text-muted-foreground text-[11px]">
-            {#if ordersBusy}Reading RSI's Billing pages…{:else if orders?.orders.length}{orders.orders.length} orders · read {fmtDateTime(orders.at)}{:else}What you really paid, and when{/if}
-          </span>
-          </div>
           {#if editing}
             <Button variant="ghost" onclick={resetLayout}><RotateCcw /> Reset</Button>
             <Button onclick={() => (editing = false)}><Check /> Done</Button>
           {:else}
             <Button variant="outline" onclick={() => (editing = true)}><LayoutDashboard /> Customize</Button>
           {/if}
+          <!-- its own line under the buttons, so they stay level with each other -->
+          <span class="text-muted-foreground -mt-1 basis-full text-right text-[11px]">
+            {#if ordersBusy}Reading RSI's Billing pages…{:else if orders?.orders.length}Order history: {orders.orders.length} orders · read {fmtDateTime(orders.at)}{:else}Import order history: what you really paid, and when{/if}
+          </span>
         </Card.Action>
       {/if}
     </Card.Header>
