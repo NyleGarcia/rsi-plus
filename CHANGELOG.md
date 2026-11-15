@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.19.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.18.0...v0.19.0) (2026-11-15)
+
+
+### Features
+
+* **buyback:** Credit Buy-Back token status — available, none until next quarter, or probably back ([1bcb26b](https://github.com/NyleGarcia/rsi-plus/commit/1bcb26b4cb82c625f29a858426ba9be7e6ca1e97))
+* **wallet:** Import / Re-import order history button in the Your spend header ([a58cce6](https://github.com/NyleGarcia/rsi-plus/commit/a58cce64bce53e8074454c7cce64827b131d26d9))
+* **wallet:** line under the import button — what it gives, or when it was last read ([6d4a2bd](https://github.com/NyleGarcia/rsi-plus/commit/6d4a2bd6f00240e03e76c4876194119880b79094))
+* **wallet:** notice with Import order history at the top until orders are imported ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41)) ([dec4d7d](https://github.com/NyleGarcia/rsi-plus/commit/dec4d7d40d39b39131ed3569a351b017cccbae43))
+
+
+### Bug Fixes
+
+* RSI+ site bar bottom left with a remembered fold; armour sets and career kits typed gear ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41)) ([fb31b27](https://github.com/NyleGarcia/rsi-plus/commit/fb31b2758588747483a6ab4573b2a49050bc67de))
+* site bar position, Wallet order-history prompts, gear typing, buy-back token ([70b5615](https://github.com/NyleGarcia/rsi-plus/commit/70b56152629afcc4971d564fb1516e8d44d76261))
+* **wallet:** hangar-basis spend figures say they are melt value with store credit included, not cash ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41)) ([3dc66c9](https://github.com/NyleGarcia/rsi-plus/commit/3dc66c98057a55c62525d41ac3f9453400b73a19))
+* **wallet:** import caption on its own line under the header buttons ([c8cd803](https://github.com/NyleGarcia/rsi-plus/commit/c8cd8031dc63c6c0b71691ffa69b12826e579d04))
+
 ## [0.18.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.17.0...v0.18.0) (2026-11-15)
 
 
