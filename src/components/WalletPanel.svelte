@@ -678,6 +678,19 @@
       <Card.Content><Empty>Load your hangar on the <a class={LINK} href="#hangar">Pledges</a> page first.</Empty></Card.Content>
     {:else}
       <Card.Content class="grid gap-4">
+        {#if !orders?.orders.length}
+          <!-- First run: the hangar alone can't tell cash from store credit, nor when the money was paid -->
+          <Alert.Root>
+            <Alert.Title>These figures come from your hangar, not from what you paid</Alert.Title>
+            <Alert.Description>
+              <p>A hangar only knows what you hold now and when each pledge was created. Melting and buying again with store credit shows up as new spending in the month you rebought. For what RSI really charged, and when, import your order history: it reads RSI's Billing pages in this browser, nothing is sent anywhere.</p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Button size="sm" disabled={ordersBusy} onclick={importOrders}>{ordersBusy ? 'Reading…' : 'Import order history'}</Button>
+                {#if ordersMsg}<span class="text-muted-foreground text-xs">{ordersMsg}</span>{/if}
+              </div>
+            </Alert.Description>
+          </Alert.Root>
+        {/if}
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {#if useOrders && orderSums}
             {@render hero(Wallet, 'Cash paid', money(orderSums.cash), `${orderSums.count} orders · since ${Number.isFinite(oFirst) ? new Date(oFirst).getFullYear() : '—'}`, null, oCum.map((c) => c.value), 'accent')}

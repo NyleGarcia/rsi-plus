@@ -6,6 +6,7 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- Wallet: until the order history is imported, a notice at the top says the figures come from the hangar (store credit rebuys read as new spending) and has the *Import order history* button right there. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
 - Wallet: on the hangar basis the 12-month figure and the By year / By month charts now say they are the melt value of what you pledged, store credit buys included, not cash; *Import order history* shows cash against store credit. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
 - RSI+ bar on RSI's store and account pages sits bottom left (it covered RSI's add-to-cart and buy buttons bottom right); its × folds it to a small RSI+ tab and it stays folded on other pages until you click the tab.
 - Fixed: armour sets and career kits whose items RSI gives no kind for are typed *gear*, not *other* (Pledges, Wallet → By type). Shows after the next hangar reload. ([#41](https://github.com/NyleGarcia/rsi-plus/issues/41))
