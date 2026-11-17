@@ -67,10 +67,27 @@ describe('entries', () => {
     expect(skuName('Polaris', 'Polaris - Warbond Edition')).toBe('Polaris - Warbond Edition');
     expect(skuName('Polaris', '')).toBe('Polaris');
   });
-  it('listing: no ships (catalog has them), no Concierge / Subscribers rows', () => {
+  it('listing: no ships (catalog has them), no Subscribers rows; Concierge rows kept and flagged', () => {
     const it = (id: number, category: string, vip = false) => ({ id, name: `L${id}`, url: `https://robertsspaceindustries.com/pledge/${id}`, price: 900, discounted: 700, available: true, thumb: null, category, subtitle: '', vip, warbond: false });
     const l = { at: 0, items: [it(1, 'ships'), it(2, 'packs'), it(3, 'subscribers'), it(4, 'gear', true)] } as StoreListing;
-    expect(listingEntries(l)).toEqual([{ key: 'item:2', name: 'L2', price: 700, kind: 'packs', link: 'https://robertsspaceindustries.com/pledge/2', thumb: null }]);
+    expect(listingEntries(l)).toEqual([
+      { key: 'item:2', name: 'L2', price: 700, kind: 'packs', link: 'https://robertsspaceindustries.com/pledge/2', thumb: null },
+      { key: 'item:4', name: 'L4', price: 700, kind: 'gear', link: 'https://robertsspaceindustries.com/pledge/4', thumb: null, vip: true },
+    ]);
+  });
+  it('Concierge rows: logged when they come and go, held when a copy has none (logged out)', () => {
+    const pk = (n: number, vip = false): StoreEntry => ({ key: `item:${n}`, name: `P${n}`, price: 100, kind: 'packs', ...(vip ? { vip: true as const } : {}) });
+    const base = { listing: { at: 0, entries: [pk(1), pk(2, true)] } };
+    // Crusader Complete Pack shows up for a Concierge session
+    let r = recordStore(base, [], 'listing', [pk(1), pk(2, true), pk(3, true)], 1);
+    expect(r.logged).toEqual([{ at: 1, action: 'add', entries: [pk(3, true)] }]);
+    // logged out: no Concierge rows at all → nothing removed, the old ones stay in the snapshot
+    r = recordStore(r.snap, r.log, 'listing', [pk(1)], 2);
+    expect(r.logged).toEqual([]);
+    expect(r.snap.listing!.entries.map((e) => e.key).sort()).toEqual(['item:1', 'item:2', 'item:3']);
+    // back as Concierge, one pack gone → that one is removed
+    r = recordStore(r.snap, r.log, 'listing', [pk(1), pk(2, true)], 3);
+    expect(r.logged).toEqual([{ at: 3, action: 'remove', entries: [pk(3, true)] }]);
   });
   it('mergeChanges joins same-action groups logged within the window, keeping the parts', () => {
     const log = [

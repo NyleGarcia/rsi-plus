@@ -23,6 +23,8 @@ export interface StoreEntry {
   ship?: number;
   /** Store thumbnail (the hull's for CCUs / standalones, the listing's for items); missing on older copies. */
   thumb?: string | null;
+  /** Concierge-only listing: only a Concierge session sees it. */
+  vip?: true;
 }
 export interface StoreChange {
   at: number;
@@ -55,13 +57,14 @@ export function catalogEntries(c: Catalog): StoreEntry[] {
 }
 
 /**
- * Store listing entries. Standalone ships come from the catalog (same SKUs), and Concierge / Subscribers rows depend
- * on who is signed in — logging out would read as them being removed — so both are left out.
+ * Store listing entries. Standalone ships come from the catalog (same SKUs), and Subscribers rows depend on the
+ * subscription, so both are left out. Concierge rows (`vip`) are kept — packs like the Crusader Complete Pack only list
+ * there — and `diffEntries` holds them when a copy has none (logged out, not Concierge) so that never reads as removals.
  */
 export function listingEntries(l: StoreListing): StoreEntry[] {
   return l.items
-    .filter((i) => i.category !== 'ships' && i.category !== 'subscribers' && !i.vip)
-    .map((i) => ({ key: `item:${i.id}`, name: i.name, price: i.discounted, kind: i.category, link: i.url || undefined, thumb: i.thumb }));
+    .filter((i) => i.category !== 'ships' && i.category !== 'subscribers')
+    .map((i) => ({ key: `item:${i.id}`, name: i.name, price: i.discounted, kind: i.category, link: i.url || undefined, thumb: i.thumb, ...(i.vip ? { vip: true as const } : {}) }));
 }
 
 /** Groups of the same action logged close together (a catalog check and a listing check of the same poll) shown as one. */
@@ -112,12 +115,15 @@ export function diffEntries(prev: StoreEntry[], next: StoreEntry[]): { added: St
   const before = count(prev);
   const after = count(next);
   const held = new Set([...before].filter(([k, n]) => n >= 4 && (after.get(k) ?? 0) < n / 2).map(([k]) => k));
+  // No Concierge row at all in this copy: the session can't see them (logged out / not Concierge), not a delisting.
+  const vipHeld = !next.some((e) => e.vip);
+  const isHeld = (e: StoreEntry) => held.has(e.kind) || (vipHeld && !!e.vip);
   const had = new Set(prev.map((e) => e.key));
   const has = new Set(next.map((e) => e.key));
   return {
     added: next.filter((e) => !had.has(e.key) && !held.has(e.kind)),
-    removed: prev.filter((e) => !has.has(e.key) && !held.has(e.kind)),
-    keep: prev.filter((e) => held.has(e.kind)),
+    removed: prev.filter((e) => !has.has(e.key) && !isHeld(e)),
+    keep: prev.filter(isHeld),
   };
 }
 
