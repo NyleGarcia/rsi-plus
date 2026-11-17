@@ -954,7 +954,7 @@
                         {@const nm = ns.customName || ns.reservedName}
                         {@const lead = nameablesOf(p).length > 1 ? `${ns.ship}: ` : ''}
                         {#if nm}<HintBadge variant="secondary" hint={`${ns.ship}${ns.customName ? ` is named “${ns.customName}” on RSI` : ''}${ns.reservedName ? `${ns.customName ? ';' : ' has'} unique name “${ns.reservedName}” reserved: renaming it may lose that name` : ''}`}>{lead}“{nm}”</HintBadge>
-                        {:else if ns.token}<HintBadge variant="outline" hint={`Holds a ${ns.ship} Name Reservation: pick the name with Rename on RSI's hangar page once the ship is in this pledge`}>{ns.ship} name reservation</HintBadge>
+                        {:else if ns.token}<HintBadge variant="muted" hint={`Holds a ${ns.ship} Name Reservation: name it with Rename on RSI's hangar page`}>{ns.ship}: nameable</HintBadge>
                         {:else}<HintBadge variant="muted" hint={`RSI lets you name this ${ns.ship}: Rename on the hangar page`}>{lead}nameable</HintBadge>{/if}
                       {:else}
                         {#if p.reservedNames?.length}<HintBadge variant="secondary" hint="Unique ship name reserved on RSI">name: {p.reservedNames.join(', ')}</HintBadge>{/if}
