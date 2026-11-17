@@ -28,7 +28,7 @@
     "@wxt-dev/module-svelte": "^2.0.5",
     "fast-check": "^4.10.2",
     "happy-dom": "^21.0.4",
-    "playwright-core": "^1.65.0",
+    "playwright-core": "^1.65.1",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.3",
