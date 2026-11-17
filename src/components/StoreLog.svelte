@@ -265,6 +265,7 @@
                         </div>
                         <div class="text-muted-foreground flex flex-wrap items-center gap-1.5 text-[11px] leading-4">
                           {#if e.price > 0}<span class="text-foreground tabular-nums font-medium">{usd(e.price)}</span>{/if}
+                          {#if e.vip}<Tag kind="concierge" size="xs" />{/if}
                           {#if tags.warbond}<Tag kind="warbond" size="xs" />{/if}
                           {#if tags.insurance}<Tag kind="insurance" value={tags.insurance} size="xs" />{/if}
                           {#if tags.limited}<Tag kind="limited" size="xs" />{/if}
