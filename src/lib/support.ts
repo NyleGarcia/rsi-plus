@@ -1,5 +1,7 @@
 /** Support links shown at the bottom of the hub sidebar (after SC-ORG-BOT's footer). */
 export const BUYMEACOFFEE_URL = 'https://buymeacoffee.com/zedwil';
+/** StarOrg Tools' Patreon (RSI+ and StarOrg Tools share the maker). */
+export const PATREON_URL = 'https://www.patreon.com/cw/StarOrgTools';
 
 export interface ReferralLead {
   name: string;

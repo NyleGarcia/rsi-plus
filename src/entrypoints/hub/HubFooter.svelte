@@ -2,7 +2,7 @@
   /**
    * The hub's footer, on every page (after SC-ORG-BOT's): one slim row — Fankit badge + the "unofficial" line, version,
    * and a *More* toggle that unfolds the full trademark notice, links (source, changelog, privacy, report a bug),
-   * Buy me a coffee and the RSI referral code. Sticky at the bottom: the Fankit's always-visible notice, on every page.
+   * Buy me a coffee, Patreon and the RSI referral code. Sticky at the bottom: the Fankit's always-visible notice, on every page.
    */
   import { onMount } from 'svelte';
   import { browser } from 'wxt/browser';
@@ -12,6 +12,7 @@
   import ChevronUp from '@lucide/svelte/icons/chevron-up';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Coffee from '@lucide/svelte/icons/coffee';
+  import HandHeart from '@lucide/svelte/icons/hand-heart';
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
   import ExternalLink from '@lucide/svelte/icons/external-link';
@@ -19,7 +20,7 @@
   import Code from '@lucide/svelte/icons/code';
   import FileText from '@lucide/svelte/icons/file-text';
   import Shield from '@lucide/svelte/icons/shield';
-  import { BUYMEACOFFEE_URL, enlistUrl, REFERRAL_LEADS, REFERRAL_ROTATE_MS } from '@/lib/support';
+  import { BUYMEACOFFEE_URL, PATREON_URL, enlistUrl, REFERRAL_LEADS, REFERRAL_ROTATE_MS } from '@/lib/support';
 
   const REPO = 'https://github.com/NyleGarcia/rsi-plus';
   const TRADEMARK = 'Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC.';
@@ -65,6 +66,7 @@
       <span class="tabular-nums">RSI+ {version}</span>
       <span class="ml-auto inline-flex items-center gap-1">
         <Button variant="ghost" size="xs" href={BUYMEACOFFEE_URL} target="_blank" rel="noopener" class="hover:text-warning"><Coffee class="text-warning" /> Coffee</Button>
+        <Button variant="ghost" size="xs" href={PATREON_URL} target="_blank" rel="noopener" class="hover:text-destructive"><HandHeart class="text-destructive" /> Patreon</Button>
         <Button variant="ghost" size="xs" href={`${REPO}/issues/new`} target="_blank" rel="noopener"><Bug /> Bug</Button>
         <Collapsible.Trigger>
           {#snippet child({ props })}
