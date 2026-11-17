@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.20.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.19.0...v0.20.0) (2026-11-17)
+
+
+### Features
+
+* **hangar:** nameable ships and Name Reservation items ([39cf4f1](https://github.com/NyleGarcia/rsi-plus/commit/39cf4f1cf7ad9ff748a1453de15741a3a49373bb))
+* **hangar:** nameable ships with current and reserved names, Name Reservation items ([4e0f7d2](https://github.com/NyleGarcia/rsi-plus/commit/4e0f7d2e490ce04cebed77422c909d83ef23903a))
+
+
+### Bug Fixes
+
+* **hangar:** Name Reservation item badge reads '&lt;Hull&gt;: nameable' ([864cee1](https://github.com/NyleGarcia/rsi-plus/commit/864cee13a90c3654b7f5c82cc4207ee914e8b848))
+* **store-log:** Concierge listings (Crusader Complete Pack) in Store changes ([18318bd](https://github.com/NyleGarcia/rsi-plus/commit/18318bdac14f440d05ff2be8f4fdc489f5037d45))
+* **store-log:** Concierge listings in Store changes ([9f2cb38](https://github.com/NyleGarcia/rsi-plus/commit/9f2cb385fb308a960ad2fbc685d65ccbdee2ee01))
+
 ## [0.19.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.18.0...v0.19.0) (2026-11-15)
 
 
