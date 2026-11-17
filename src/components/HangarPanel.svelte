@@ -1,7 +1,7 @@
 <script lang="ts">
   import { nearView } from '@/lib/near-view';
   import { fetchCredits, loadHangar, updateHangar } from '@/lib/account';
-  import { hangarCsv, hangarUrl, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
+  import { hangarCsv, hangarUrl, nameablesOf, stackPledges, totals, type Pledge, type PledgeStack, type PledgeType } from '@/lib/hangar';
   import { xplorRows } from '@/lib/export';
   import { canMelt, copiesElsewhere, duplicatePlan, holdersIndex, keptCounts, lossWith, meltSummary, targetPlan } from '@/lib/melt';
   import { categorize, inventory, ownedShipsWithPaints, paintCopiesNeeded, paintStatus, seriesOf, shipGroups, storePaintIndex, upgradedFrom, type GameShip } from '@/lib/items';
@@ -950,7 +950,15 @@
                       {#if p.noBuyback}<HintBadge variant="warning" hint="RSI marks this pledge as not buy-backable: melting it is final">no buyback</HintBadge>{/if}
                       {#if p.configValue}<HintBadge variant="muted" hint="Paid customization on top of the pledge">+{money(p.configValue)} config</HintBadge>{/if}
                       {#if p.availability}<HintBadge variant="warning" hint="RSI's availability state for this pledge">{p.availability}</HintBadge>{/if}
-                      {#if p.reservedNames?.length}<HintBadge variant="secondary" hint="Ship name reserved on RSI">name: {p.reservedNames.join(', ')}</HintBadge>{:else if p.nameable?.length}<HintBadge variant="muted" hint="RSI lets you name this ship">nameable</HintBadge>{/if}
+                      {#each nameablesOf(p) as ns, i (`${ns.id}:${ns.ship}:${i}`)}
+                        {@const nm = ns.customName || ns.reservedName}
+                        {@const lead = nameablesOf(p).length > 1 ? `${ns.ship}: ` : ''}
+                        {#if nm}<HintBadge variant="secondary" hint={`${ns.ship}${ns.customName ? ` is named “${ns.customName}” on RSI` : ''}${ns.reservedName ? `${ns.customName ? ';' : ' has'} unique name “${ns.reservedName}” reserved: renaming it may lose that name` : ''}`}>{lead}“{nm}”</HintBadge>
+                        {:else if ns.token}<HintBadge variant="outline" hint={`Holds a ${ns.ship} Name Reservation: pick the name with Rename on RSI's hangar page once the ship is in this pledge`}>{ns.ship} name reservation</HintBadge>
+                        {:else}<HintBadge variant="muted" hint={`RSI lets you name this ${ns.ship}: Rename on the hangar page`}>{lead}nameable</HintBadge>{/if}
+                      {:else}
+                        {#if p.reservedNames?.length}<HintBadge variant="secondary" hint="Unique ship name reserved on RSI">name: {p.reservedNames.join(', ')}</HintBadge>{/if}
+                      {/each}
                     </div>
                   </Table.Cell>
                   <Table.Cell class="min-w-[90px] whitespace-normal"><LabelEdit ids={s.entries.map((e) => e.id)} {labels} onchange={saveLabels} /></Table.Cell>
