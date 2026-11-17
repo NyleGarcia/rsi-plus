@@ -18,6 +18,8 @@ Every release zip carries a SLSA build-provenance attestation (signed statement 
 ```sh
 scripts/verify-release.sh 0.6.1            # checksums + attestation + rebuild and diff
 gh attestation verify rsi-plus-0.6.1-chrome.zip -R NyleGarcia/rsi-plus   # attestation alone
+# offline, from the bundle attached to the release (0.22.0 on): <zip>.sigstore.json, plus .intoto.jsonl (its DSSE envelope)
+gh attestation verify rsi-plus-0.22.0-chrome.zip -R NyleGarcia/rsi-plus --bundle rsi-plus-0.22.0-chrome.sigstore.json
 ```
 The zip submitted to the Chrome Web Store is the same CI artifact that is attached to the GitHub release ([docs/release.md](docs/release.md)).
 
