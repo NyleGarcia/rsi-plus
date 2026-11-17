@@ -1,5 +1,5 @@
 # Release: release-please opens the release PR; on merge, attach the Chrome, Edge, Brave and Firefox zips (+ Firefox sources zip)
-# with SLSA provenance attestations and a SHA256SUMS file (scripts/verify-release.sh checks both and rebuilds),
+# with SLSA provenance attestations (also attached: `<zip>.sigstore.json` + `.intoto.jsonl` per target) and a SHA256SUMS file (scripts/verify-release.sh checks both and rebuilds),
 # then submit the Chrome zip to the Chrome Web Store as the publisher service account (API v2, Workload Identity
 # Federation; skipped until the GCP_* variables / CHROME_* secrets exist — docs/release.md).
 name: Release
@@ -76,12 +76,24 @@ jobs:
       - run: npm ci
       - run: npx wxt zip -b ${{ matrix.target }}
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        id: attest
         with:
           subject-path: .output/*.zip
-      - run: gh release upload "$TAG" .output/*.zip --clobber
+      # The attestation also rides on the release itself (OpenSSF Scorecard's Signed-Releases only looks there):
+      # `.sigstore.json` = the Sigstore bundle (`gh attestation verify <zip> --bundle <file> -R NyleGarcia/rsi-plus`),
+      # `.intoto.jsonl` = its DSSE envelope, the SLSA provenance statement on one line.
+      - name: Release assets (zips + provenance)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          base=".output/rsi-plus-$VERSION-$TARGET"
+          cp "$BUNDLE" "$base.sigstore.json"
+          jq -c .dsseEnvelope "$BUNDLE" > "$base.intoto.jsonl"
+          gh release upload "$TAG" .output/*.zip "$base.sigstore.json" "$base.intoto.jsonl" --clobber
 
   checksums:
     needs: [release-please, assets]

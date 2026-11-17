@@ -16,7 +16,7 @@ Three workflows on every push to `main` / `dev` and every PR; release flow in [r
 | Security | `dependency-review` (PRs) | a PR adding a dependency with a high+ advisory or a denied license |
 | Security | `secrets` | gitleaks finds a credential anywhere in history |
 | Security | `extension` | built manifest off the allowlist (`scripts/manifest-check.mjs`), `eval` / `new Function` in the bundle, `web-ext lint` errors |
-| Scorecard (`scorecard.yml`) | `scorecard` | never fails; publishes the OpenSSF score (README badge) and its findings to Code scanning. Runs on `dev` (the default branch — the score is taken there), `main` and weekly |
+| Scorecard (`scorecard.yml`) | `scorecard` | never fails; publishes the OpenSSF score (README badge) and its findings to Code scanning. Runs on `dev` (the default branch — the score is taken there; Scorecard refuses any other, so not on `main`) and weekly |
 
 Security also runs weekly (Monday 06:17 UTC) so new advisories get caught against unchanged code, and on *Actions → Security → Run workflow*.
 
@@ -28,7 +28,7 @@ Security also runs weekly (Monday 06:17 UTC) so new advisories get caught agains
 ## Supply chain
 Every `uses:` in the workflows is pinned to a commit SHA with the version in a comment (`actions/checkout@fbc6…  # v5.1.0`); Dependabot's `github-actions` updates move the SHA and the comment together. A moving tag (`@v5`) can be re-pointed by whoever controls the action's repo; a SHA cannot.
 
-Release zips carry SLSA build provenance (`actions/attest-build-provenance` in the `assets` job, verifiable with `gh attestation verify <zip> -R NyleGarcia/rsi-plus`) and the release gets a `SHA256SUMS` (`checksums` job). The build is reproducible: `scripts/verify-release.sh <version>` downloads the release, checks both, clones the tag, runs `npm ci && npx wxt zip -b chrome` and diffs the unpacked zips — checked for 0.6.0 (CI on Node 22 vs a local Node 24 build: identical). `SECURITY.md` holds the reporting policy.
+Release zips carry SLSA build provenance (`actions/attest-build-provenance` in the `assets` job, verifiable with `gh attestation verify <zip> -R NyleGarcia/rsi-plus`; from 0.22.0 each target's bundle is also attached as `<zip base>.sigstore.json` + `.intoto.jsonl`, which is what Scorecard's Signed-Releases reads) and the release gets a `SHA256SUMS` (`checksums` job). The build is reproducible: `scripts/verify-release.sh <version>` downloads the release, checks both, clones the tag, runs `npm ci && npx wxt zip -b chrome` and diffs the unpacked zips — checked for 0.6.0 (CI on Node 22 vs a local Node 24 build: identical). `SECURITY.md` holds the reporting policy.
 
 ## Dependabot
 `.github/dependabot.yml`: weekly npm and GitHub Actions bumps, minor/patch grouped into one PR each, so CI and Security run once per batch. Repo settings also have secret scanning + push protection and Dependabot security updates on.
