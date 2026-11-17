@@ -19,6 +19,20 @@ export interface PledgeItem {
   customName?: string;
 }
 
+/** A ship in a pledge RSI lets you name (its Rename button): one entry of `js-pledge-nameable-ships`. */
+export interface NameableShip {
+  /** RSI's `membership_id` — keys the reservation map and the rename form. '' on a bare-string entry. */
+  id: string;
+  /** `default_name`: the hull as RSI lists it. */
+  ship: string;
+  /** `custom_name`: the name the ship carries now. */
+  customName?: string;
+  /** The unique name reserved for this ship (`js-pledge-name-reservations[membership_id]`) — lost if you rename it. */
+  reservedName?: string;
+  /** From a `<Hull> Name Reservation` item in the pledge, with no matching RSI rename entry. */
+  token?: boolean;
+}
+
 export interface Upgrade {
   fromId: number | null;
   fromName: string;
@@ -67,8 +81,12 @@ export interface Pledge {
   configValue?: number;
   /** RSI's `.availability` text when it isn't the normal "Attributed" (e.g. still processing). */
   availability?: string;
-  /** Ships in the pledge RSI lets you name (`js-pledge-nameable-ships`), and names already reserved (`js-pledge-name-reservations`). */
-  nameable?: string[];
+  /**
+   * Ships in the pledge RSI lets you name (`js-pledge-nameable-ships`: `[{membership_id, default_name, custom_name}]`)
+   * with each one's reserved unique name. Saves before 0.16 hold none (the old reader missed `default_name`).
+   */
+  nameable?: NameableShip[];
+  /** Every reserved unique name in the pledge (`js-pledge-name-reservations`: `{membership_id: name}`). */
   reservedNames?: string[];
   /** RSI's hidden fields as read, untouched (empty ones left out) — for the debug export. Absent on old saves. */
   raw?: Record<string, string>;
@@ -145,6 +163,56 @@ export function classify(name: string, items: PledgeItem[], upgrade: Upgrade | n
 }
 
 /** JSON in a `<script type="application/json">` the hangar row carries; [] when missing / null / unparsable. Strings or objects with a name-ish field. */
+function jsonOf(root: ParentNode, sel: string): unknown {
+  try {
+    return JSON.parse(root.querySelector(sel)?.textContent?.trim() || 'null') as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** RSI's rename data on a hangar row → one entry per nameable ship, reserved name joined in by `membership_id`. */
+export function nameableShips(root: ParentNode): NameableShip[] {
+  const list = jsonOf(root, '.js-pledge-nameable-ships');
+  const res = jsonOf(root, '.js-pledge-name-reservations');
+  const reserved = res && typeof res === 'object' && !Array.isArray(res) ? (res as Record<string, unknown>) : {};
+  const str = (x: unknown) => (typeof x === 'string' || typeof x === 'number' ? String(x).trim() : '');
+  return (Array.isArray(list) ? list : list && typeof list === 'object' ? Object.values(list) : []).flatMap((x): NameableShip[] => {
+    if (typeof x === 'string') return x.trim() ? [{ id: '', ship: x.trim() }] : [];
+    if (!x || typeof x !== 'object') return [];
+    const o = x as Record<string, unknown>;
+    const id = str(o.membership_id ?? o.id);
+    const ship = str(o.default_name ?? o.name ?? o.title);
+    if (!ship) return [];
+    const customName = str(o.custom_name);
+    const reservedName = id ? str(reserved[id]) : '';
+    return [{ id, ship, ...(customName ? { customName } : {}), ...(reservedName ? { reservedName } : {}) }];
+  });
+}
+
+/** `Odin Name Reservation` → `Odin`; '' when the title is not a name-reservation item. */
+export const reservationHull = (title: string): string => /^(.+?)\s+name reservation\b/i.exec(title.trim())?.[1]?.trim() ?? '';
+
+/**
+ * A pledge's nameable ships: RSI's rename entries, plus one per `<Hull> Name Reservation` item whose hull no rename
+ * entry covers (prefix match: a Carrack reservation covers "Carrack Expedition"). Tolerates odd old saves.
+ */
+export function nameablesOf(p: Pick<Pledge, 'nameable'> & { items?: Pledge['items'] }): NameableShip[] {
+  const ns = Array.isArray(p.nameable) ? p.nameable.filter((n): n is NameableShip => !!n && typeof n === 'object' && typeof n.ship === 'string') : [];
+  const lc = (x: string) => x.toLowerCase();
+  const tokens = (Array.isArray(p.items) ? p.items : [])
+    .map((i) => reservationHull(i?.title ?? ''))
+    .filter((h, i, a) => h && a.indexOf(h) === i && !ns.some((n) => lc(n.ship).startsWith(lc(h))));
+  return [...ns, ...tokens.map((ship) => ({ id: '', ship, token: true }))];
+}
+
+/** 'named': a ship in it carries a name (RSI name, reserved name, or `.custom-name-text`) · 'open': nameable (rename entry or Name Reservation item), none named · 'none': neither. */
+export function namingOf(p: Pick<Pledge, 'nameable' | 'nickname' | 'reservedNames'> & { items?: Pledge['items'] }): 'named' | 'open' | 'none' {
+  const ns = nameablesOf(p);
+  if (p.nickname || p.reservedNames?.length || ns.some((n) => n.customName || n.reservedName)) return 'named';
+  return ns.length ? 'open' : 'none';
+}
+
 function jsonNames(root: ParentNode, sel: string): string[] {
   try {
     const v = JSON.parse(root.querySelector(sel)?.textContent?.trim() || 'null') as unknown;
@@ -290,7 +358,7 @@ export function parseHangarPage(root: ParentNode): Pledge[] {
       ...((cur) => (cur && !/\buec\b/i.test(cur) ? { paidWith: /store credit/i.test(cur) ? ('credit' as const) : ('cash' as const) } : {}))(val(li, '.js-pledge-currency')),
       ...((cv) => (cv > 0 ? { configValue: cv } : {}))(parseMoney(val(li, '.js-pledge-configuration-value'))),
       ...((av) => (av && !/^attributed$/i.test(av) ? { availability: av } : {}))(text(li.querySelector('.availability'))),
-      ...((n) => (n.length ? { nameable: n } : {}))(jsonNames(li, '.js-pledge-nameable-ships')),
+      ...((n) => (n.length ? { nameable: n } : {}))(nameableShips(li)),
       ...((n) => (n.length ? { reservedNames: n } : {}))(jsonNames(li, '.js-pledge-name-reservations')),
       raw: rawFields(li),
     });

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { hangarCsv, hangarUrl, parseBuybackPage, parseCredits, parseHangarPage, parseInsurance, parseMoney, stackPledges, totals, upgradeFromName, type Pledge, patchHangar } from '@/lib/hangar';
+import { hangarCsv, hangarUrl, nameableShips, nameablesOf, namingOf, parseBuybackPage, parseCredits, parseHangarPage, parseInsurance, parseMoney, stackPledges, totals, upgradeFromName, type Pledge, patchHangar } from '@/lib/hangar';
 
 // Synthetic markup mirroring /account/pledges (structure per HangarXPLOR's parser).
 const li = (id: number, name: string, value: string, items: [string, string, string?][], extra = '') => `
@@ -47,7 +47,7 @@ describe('hangar parser', () => {
         'Standalone Ships - Cutlass Black Warbond',
         '$110.00 USD',
         [['Cutlass Black', 'Ship', 'https://media.robertsspaceindustries.com/abc/product_thumb_medium_and_small.jpg'], ['Lifetime Insurance', 'Insurance']],
-        '<a class="js-reclaim">x</a><span class="label">Gift</span><input type="hidden" class="js-pledge-currency" value="Store Credit"><input type="hidden" class="js-pledge-not-buybackable" value="0"><input type="hidden" class="js-pledge-configuration-value" value="$0.00 USD"><span class="availability  ">Attributed</span><script class="js-pledge-nameable-ships" type="application/json">["Cutlass Black"]</script><script class="js-pledge-name-reservations" type="application/json">[{"name":"Rusty"}]</script>',
+        '<a class="js-reclaim">x</a><span class="label">Gift</span><input type="hidden" class="js-pledge-currency" value="Store Credit"><input type="hidden" class="js-pledge-not-buybackable" value="0"><input type="hidden" class="js-pledge-configuration-value" value="$0.00 USD"><span class="availability  ">Attributed</span><script class="js-pledge-nameable-ships" type="application/json">[{"membership_id":901,"default_name":"Cutlass Black","custom_name":"Old Rusty"}]</script><script class="js-pledge-name-reservations" type="application/json">{"901":"Rusty"}</script>',
       ) +
         li(2, 'Package - Mustang Alpha Starter Pack', '$1,045.00 USD', [['Mustang Alpha', 'Ship', 'https://media.robertsspaceindustries.com/same/thumb.jpg'], ['Star Citizen Digital Download', '', 'https://media.robertsspaceindustries.com/same/thumb.jpg']], '<input type="hidden" class="js-pledge-currency" value="USD"><input type="hidden" class="js-pledge-not-buybackable" value="1"><input type="hidden" class="js-pledge-configuration-value" value="$5.00 USD"><span class="availability  ">Pending</span><script class="js-pledge-nameable-ships" type="application/json">null</script>') +
         li(
@@ -67,7 +67,7 @@ describe('hangar parser', () => {
     expect(p[0]).toMatchObject({ name: 'Cutlass Black Warbond', lti: true, warbond: true, giftable: true, meltable: true, ships: ['Cutlass Black'], date: 'October 01, 2026' });
     expect(p[1]).toMatchObject({ hasGame: true, lti: false, paidWith: 'cash', noBuyback: true, configValue: 5, availability: 'Pending' });
     expect(p[1]!.nameable).toBeUndefined();
-    expect(p[0]).toMatchObject({ paidWith: 'credit', nameable: ['Cutlass Black'], reservedNames: ['Rusty'] });
+    expect(p[0]).toMatchObject({ paidWith: 'credit', nameable: [{ id: '901', ship: 'Cutlass Black', customName: 'Old Rusty', reservedName: 'Rusty' }], reservedNames: ['Rusty'] });
     expect(p[0]!.noBuyback).toBeUndefined();
     expect(p[0]!.availability).toBeUndefined();
     expect(p[2]!.paidWith).toBeUndefined();
@@ -258,5 +258,35 @@ describe('classify: gear RSI gives no item kind for', () => {
     expect(classify("CDS ORC-mkX 'SecondWind' Med. Armor", items("FBL-8u 'SecondWind' Undersuit", "ORC-mkX 'SecondWind' Helmet", "ORC-mkX 'SecondWind' Core"), null)).toBe('gear');
     expect(classify('Medical Career Kit - Heavy', items('ParaMed Medical Device', 'Morozov-SH-I Helmet Lifeforce'), null)).toBe('gear');
     expect(classify('Big Benny Plushie', items('Big Benny Plushie'), null)).toBe('other');
+  });
+});
+
+describe('ship naming', () => {
+  const row = (ships: string, res = 'null') => {
+    const d = document.createElement('div');
+    d.innerHTML = `<script class="js-pledge-nameable-ships" type="application/json">${ships}</script><script class="js-pledge-name-reservations" type="application/json">${res}</script>`;
+    return d;
+  };
+  it('reads RSI rename data: membership_id, default_name, custom_name + reservation map', () => {
+    expect(nameableShips(row('[{"membership_id":1,"default_name":"Hammerhead","custom_name":""},{"membership_id":2,"default_name":"Carrack","custom_name":"Far Star"}]', '{"1":"Best in Show"}'))).toEqual([
+      { id: '1', ship: 'Hammerhead', reservedName: 'Best in Show' },
+      { id: '2', ship: 'Carrack', customName: 'Far Star' },
+    ]);
+    expect(nameableShips(row('null'))).toEqual([]);
+    expect(nameableShips(row('not json'))).toEqual([]);
+    expect(nameableShips(row('["Cutlass Black"]'))).toEqual([{ id: '', ship: 'Cutlass Black' }]);
+  });
+  it('buckets pledges named / open / none, old saves tolerated', () => {
+    expect(namingOf({ nickname: '', nameable: [{ id: '1', ship: 'Hammerhead' }] })).toBe('open');
+    expect(namingOf({ nickname: '', nameable: [{ id: '1', ship: 'Hammerhead', reservedName: 'X' }] })).toBe('named');
+    expect(namingOf({ nickname: 'Rusty' })).toBe('named');
+    expect(namingOf({ nickname: '' })).toBe('none');
+    expect(nameablesOf({ nameable: ['Cutlass Black'] as never })).toEqual([]);
+  });
+  it('counts Name Reservation items as nameable, unless a rename entry covers the hull', () => {
+    const items = [{ title: 'Odin Name Reservation', kind: '' }, { title: 'Carrack Name Reservation', kind: '' }, { title: 'Carrack Name Reservation', kind: '' }, { title: 'Orion', kind: 'Ship' }];
+    expect(nameablesOf({ items })).toEqual([{ id: '', ship: 'Odin', token: true }, { id: '', ship: 'Carrack', token: true }]);
+    expect(nameablesOf({ items, nameable: [{ id: '7', ship: 'Carrack Expedition', reservedName: 'Eldritch Wayfinder' }] }).map((n) => n.ship)).toEqual(['Carrack Expedition', 'Odin']);
+    expect(namingOf({ nickname: '', items })).toBe('open');
   });
 });

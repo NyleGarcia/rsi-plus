@@ -3,7 +3,7 @@
  * `FacetBar` to these and persist the chosen values in their own prefs. Spec: docs/plans/specs/filters-and-labels.md.
  */
 import { INSURANCE_OPTIONS, SIZE_OPTIONS, STAGE_OPTIONS, stageOf, yesNo, type Facet, type FacetOption, type RangeFacet } from './facets';
-import type { Pledge, PledgeType } from './hangar';
+import { namingOf, type Pledge, type PledgeType } from './hangar';
 import type { OwnedShip } from './items';
 import { allLabels, idsWith, type Labels } from './labels';
 import { canMelt } from './melt';
@@ -88,7 +88,11 @@ export function pledgeFacets(ctx: PledgeFacetCtx = {}): Facet<Pledge>[] {
       { id: 'no', label: 'No buyback after melt', hint: 'RSI marks these as not buy-backable: melting is final', test: (p) => !!p.noBuyback },
       { id: 'yes', label: 'Buy-backable', test: (p) => !p.noBuyback },
     ] },
-    { id: 'named', label: 'Named ship', options: yesNo<Pledge>('Named', (p) => !!(p.nickname || p.reservedNames?.length)) },
+    { id: 'named', label: 'Ship name', hint: 'Ships RSI lets you name (Rename on the hangar page) and Name Reservation items', options: [
+      { id: 'yes', label: 'Named', hint: 'A ship in it carries a name or a reserved unique name', test: (p) => namingOf(p) === 'named' },
+      { id: 'open', label: 'Nameable, no name', hint: 'RSI lets you name a ship in it, or it holds a Name Reservation, and none is named yet', test: (p) => namingOf(p) === 'open' },
+      { id: 'no', label: 'Not nameable', hint: 'RSI offers no rename on it', test: (p) => namingOf(p) === 'none' },
+    ] },
     labelOpts.length ? { id: 'labels', label: 'Labels', hint: 'Your own labels', options: labelOpts } : null,
   ];
   return out.filter((f): f is Facet<Pledge> => !!f);
