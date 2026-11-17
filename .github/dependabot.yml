@@ -1,8 +1,10 @@
 # Weekly dependency bumps; minor/patch grouped into one PR per ecosystem so CI (and Security) runs once per batch.
+# `target-branch: dev`: main is the default branch (Scorecard scores it), but work lands on dev first.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -12,6 +14,7 @@ updates:
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday

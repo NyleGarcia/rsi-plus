@@ -16,7 +16,7 @@ Three workflows on every push to `main` / `dev` and every PR; release flow in [r
 | Security | `dependency-review` (PRs) | a PR adding a dependency with a high+ advisory or a denied license |
 | Security | `secrets` | gitleaks finds a credential anywhere in history |
 | Security | `extension` | built manifest off the allowlist (`scripts/manifest-check.mjs`), `eval` / `new Function` in the bundle, `web-ext lint` errors |
-| Scorecard (`scorecard.yml`) | `scorecard` | never fails; publishes the OpenSSF score (README badge) and its findings to Code scanning. Runs on `dev` (the default branch — the score is taken there; Scorecard refuses any other, so not on `main`) and weekly |
+| Scorecard (`scorecard.yml`) | `scorecard` | never fails; publishes the OpenSSF score (README badge) and its findings to Code scanning. Runs on `main` (the default branch since 0.22.0, so the score is of what ships; Scorecard refuses any other) and weekly |
 
 Security also runs weekly (Monday 06:17 UTC) so new advisories get caught against unchanged code, and on *Actions → Security → Run workflow*.
 

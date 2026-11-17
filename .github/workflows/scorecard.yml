@@ -3,7 +3,7 @@
 name: Scorecard
 on:
   push:
-    branches: [dev] # the default branch: Scorecard refuses any other ("only default branch is supported")
+    branches: [main] # the default branch: Scorecard refuses any other ("only default branch is supported")
   schedule:
     - cron: '41 6 * * 1'
   workflow_dispatch:
