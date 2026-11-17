@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.20.0...v0.21.0) (2026-11-17)
+
+
+### Features
+
+* **hub:** Patreon link in the footer ([b277425](https://github.com/NyleGarcia/rsi-plus/commit/b277425fc2ffc5e03228406aaee026fe99161cb2))
+* **hub:** Patreon link in the footer next to Coffee ([fdc9205](https://github.com/NyleGarcia/rsi-plus/commit/fdc9205beb065903e6f91de5dee8674cb63b1baf))
+
 ## [0.20.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.19.0...v0.20.0) (2026-11-17)
 
 
