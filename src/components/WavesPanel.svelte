@@ -9,7 +9,7 @@
   import { bg } from '@/lib/messages';
   import { conciergeItem, hangarItem, wavesItem } from '@/lib/settings';
   import { fetchShipListings, usd, type ShipListing } from '@/lib/store';
-  import { activeWaveEvent, countdown, EVENT_TAIL_MS, currentWave, IAE_2956, matchListings, watchEveryMs, WAVE_OPEN_MS, waveTimes, type WaveSale } from '@/lib/waves';
+  import { activeWaveEvent, countdown, EVENT_TAIL_MS, currentWave, IAE_2956, matchListings, stopAfterLook, watchEveryMs, WAVE_OPEN_MS, waveTimes, type WaveSale, type WaveStop } from '@/lib/waves';
   import { fmtWhen } from '@/lib/fmt';
   import { cn } from '@/lib/utils';
   import SwitchRow from './SwitchRow.svelte';
@@ -116,9 +116,25 @@
     void readyCheck();
   });
 
-  // ---- stock watch: only around a wave, a few seconds apart ----
+  // ---- stock watch: only around a wave, a few seconds apart; rests once the wave is in stock or sold out ----
   let watching = $state(true);
-  const every = $derived(watching && wave ? watchEveryMs(toWave) : null);
+  /** `<sale>:<wave index>`: the wave a stop or a sighting belongs to. A new wave has a new key, so the watch resumes. */
+  const waveKey = $derived(wave ? `${sale.id}:${wave.i}` : '');
+  let stop = $state<{ key: string; why: WaveStop; at: number } | null>(null);
+  /** Waves in which some listing was seen sellable (sold-out needs "was there, now gone"). */
+  let sawStock = $state(new Set<string>());
+  /** *Watch again* on a wave: keep looking through it, no auto stop (stock can come back when carts time out). */
+  let keepOn = $state('');
+  const stopped = $derived(stop && stop.key === waveKey ? stop : null);
+  const every = $derived(watching && wave && !stopped ? watchEveryMs(toWave) : null);
+  $effect(() => {
+    if (!looked || !waveKey || stopped || keepOn === waveKey) return;
+    const anyInStock = matches.some((m) => m.available);
+    const key = waveKey;
+    if (anyInStock && !sawStock.has(key)) sawStock = new Set([...sawStock, key]);
+    const why = stopAfterLook({ open: !!wave?.open, watchedInStock: hits.length > 0, anyInStock, sawStock: anyInStock || sawStock.has(key) });
+    if (why) stop = { key, why, at: looked };
+  });
   $effect(() => {
     if (every == null) return;
     const t = setInterval(() => void look(), every);
@@ -240,11 +256,12 @@
       <div class="grid gap-2">
         <div class="flex flex-wrap items-center gap-3">
           <strong class="text-sm">Stock watch</strong>
-          <SwitchRow id="wave-watch" size="sm" class="text-xs" label="On" hint="Looks at the store listing every few seconds from 45 s before a wave until 3 min after, slower up to 15 min after" checked={watching} onchange={(v) => (watching = v)} />
+          <SwitchRow id="wave-watch" size="sm" class="text-xs" label="On" hint="Looks at the store listing every few seconds from 45 s before a wave until 3 min after, slower up to 15 min after. Stops for that wave once a watched listing is in stock or the wave sells out; the next wave starts again." checked={watching} onchange={(v) => (watching = v)} />
           <span class="text-muted-foreground text-xs">
-            {#if !wave}nothing to watch{:else if every == null}{watching ? 'starts 5 min before the wave' : 'off'}{:else}checking every {every / 1000} s{/if}
+            {#if !wave}nothing to watch{:else if stopped}{stopped.why === 'stock' ? 'in stock' : 'sold out'} at {fmtWhen(stopped.at, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}{wave.i + 1 < sale.times.length ? `: resting until wave ${wave.i + 2}` : ': that was the last wave'}{:else if every == null}{watching ? 'starts 5 min before the wave' : 'off'}{:else}checking every {every / 1000} s{/if}
             {#if looked} · last look {Math.max(0, Math.round((now - offset - looked) / 1000))} s ago{/if}
           </span>
+          {#if stopped}<Button variant="outline" size="xs" onclick={() => ((keepOn = waveKey), (stop = null))} title="Keep watching this wave (e.g. stock may come back after a cart timeout)">Watch again</Button>{/if}
           <Button variant="outline" size="xs" disabled={looking} onclick={look}>Look now</Button>
         </div>
         {#if matches.length}
