@@ -467,7 +467,8 @@ export const mapListing = (r: RawListing): StorePaint => ({
  * `serverAt` is the `Date` header of the last answer (ms, whole seconds) — how far this PC's clock is off.
  */
 export type ShipListing = StorePaint & { /** Warbond: new money only, store credit cannot pay it. */ warbond: boolean };
-export async function fetchShipListings(): Promise<{ items: ShipListing[]; serverAt: number | null }> {
+/** `ids`: only those SKUs (`skus.ids`, one small request) — the wave watch polls just the listing you watch. */
+export async function fetchShipListings(ids?: number[]): Promise<{ items: ShipListing[]; serverAt: number | null }> {
   let serverAt: number | null = null;
   const items: ShipListing[] = [];
   for (let page = 1; page < 10; page++) {
@@ -476,7 +477,7 @@ export async function fetchShipListings(): Promise<{ items: ShipListing[]; serve
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify([{ operationName: 'GetBrowseListingQuery', variables: { query: { page, limit: 100, skus: { products: ['72'] } } }, query: LISTING_QUERY }]),
+      body: JSON.stringify([{ operationName: 'GetBrowseListingQuery', variables: { query: { page, limit: 100, skus: { products: ['72'], ...(ids?.length ? { ids: ids.map(String) } : {}) } } }, query: LISTING_QUERY }]),
     });
     if (!res.ok) throw new Error(`RSI store: HTTP ${res.status}`);
     const d = Date.parse(res.headers.get('date') ?? '');
