@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bundleValue, contentKey, hasContents, insuranceOf, insuranceTag, isBundle, isExtra, priceIndex } from '@/lib/bundle';
+import { bundleValue, contentKey, hasContents, insuranceOf, insuranceTag, isBundle, isExtra, packOffers, priceIndex, standaloneInsurance } from '@/lib/bundle';
 import type { CatalogShip, StoreItem } from '@/lib/store';
 
 const item = (o: Partial<StoreItem> & { id: number; name: string }): StoreItem => ({
@@ -129,5 +129,41 @@ describe('bundleValue', () => {
   it('subscriber listings never price anything', () => {
     const v = bundleValue(by(20), idx)!;
     expect(v.parts.find((p) => /Tractor/.test(p.name))?.price).toBe(500);
+  });
+});
+
+describe('packOffers', () => {
+  it('splits a multi-hull pack by MSRP', () => {
+    const o = packOffers(SHIPS[0]!, STORE, idx);
+    expect(o.map((x) => x.item.id)).toEqual([21]);
+    expect(o[0]).toMatchObject({ hulls: 2, share: Math.round((7500 * 4000) / 9000) });
+  });
+  it('a game package: hull share net of the UEC; standalone listings are not packs', () => {
+    const o = packOffers(SHIPS[2]!, STORE, idx);
+    expect(o.map((x) => x.item.id)).toEqual([27]);
+    expect(o[0]!.share).toBe(Math.round((4500 * 3000) / 4000));
+  });
+  it('skips sold-out and Subscribers Store listings; no hull, no offers', () => {
+    const gone = STORE.map((i) => (i.id === 21 ? { ...i, available: false } : i));
+    expect(packOffers(SHIPS[0]!, gone, priceIndex(gone, SHIPS))).toEqual([]);
+    expect(packOffers(ship(9, 'Idris-M', 0), STORE, idx)).toEqual([]);
+  });
+  it('unpriced pieces: no split (share null), cheapest pack first', () => {
+    const store = [...STORE, item({ id: 30, name: 'Mystery Pack', category: 'packs', price: 2000, discounted: 2000, contents: [{ name: 'ATLS', ship: true }, { name: 'Unknown Thing' }] })];
+    const o = packOffers(SHIPS[0]!, store, priceIndex(store, SHIPS));
+    expect(o.map((x) => [x.item.id, x.share])).toEqual([[30, null], [21, 3333]]);
+  });
+});
+
+describe('standaloneInsurance', () => {
+  it('matches a catalog SKU to the listing by hull, price and warbond; unknown when the listing lacks it', () => {
+    const sk = (id: number, price: number, title: string) => ({ id, price, title, available: true, stock: null });
+    const cat = [{ ...ship(3, 'Aurora MR', 3000), standalone: [sk(901, 3000, 'Standard Edition'), sk(902, 2500, 'Warbond Edition'), sk(903, 9999, 'Standard Edition')] }];
+    const store = [
+      item({ id: 25, name: 'Aurora MR', category: 'ships', price: 3000, discounted: 3000, contents: [{ name: 'Aurora MR', ship: true }, { name: '6 Month Insurance' }] }),
+      item({ id: 26, name: 'Aurora MR - LTI', category: 'ships', price: 2500, discounted: 2500, warbond: true, contents: [{ name: 'Aurora MR', ship: true }, { name: 'Lifetime Insurance' }] }),
+    ];
+    const m = standaloneInsurance(cat, store);
+    expect([m.get(901), m.get(902), m.has(903)]).toEqual(['6 mo', 'LTI', false]);
   });
 });

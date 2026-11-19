@@ -12,7 +12,7 @@
  *   and never appears among the parts.
  * Savings compare the bundle with the pieces that *can* be bought; what's left unpriced is said so.
  */
-import { matchShip, paintKey, type CatalogShip, type StoreContent, type StoreItem } from './store';
+import { isWarbondSku, matchShip, paintKey, type CatalogShip, type StoreContent, type StoreItem } from './store';
 
 /** One line of a bundle's breakdown: a piece, or a smaller listing (`pieces`) that covers several of them. */
 export interface BundlePart {
@@ -203,4 +203,73 @@ function value(it: Pick<StoreItem, 'id' | 'discounted'>, contents: StoreContent[
   }
   const savings = separate - it.discounted;
   return { parts, insurance: null, total, priced, priceable, separate, savings, pct: separate > 0 ? Math.round((100 * savings) / separate) : 0 };
+}
+
+/** A pack / package on sale that grants a hull: how to get a ship the store sells only inside a bundle (Eclipse, Idris …). */
+export interface PackOffer {
+  item: StoreItem;
+  /** Hulls in the pack (this one included). */
+  hulls: number;
+  /**
+   * This hull's share of the pack price, cents: the price split by each piece's separate price (MSRP for hulls).
+   * Null when the hull or too little of the rest has a price to split by.
+   */
+  share: number | null;
+}
+
+/**
+ * Hull `s`'s cut of pack `it`: the price split by each piece's separate price (MSRP for hulls, RSI's rate for UEC), or
+ * the whole price when the hull is the only piece that is not an extra.
+ */
+function shareOf(s: CatalogShip, it: StoreItem, hulls: number, idx: PriceIndex): number | null {
+  const v = bundleValue(it, idx);
+  // Split only when every priceable piece is priced: a half-priced pack would load the whole price on the known pieces.
+  if (v && s.msrp && v.separate > 0 && v.priced >= v.priceable) return Math.min(it.discounted, Math.round((it.discounted * s.msrp) / v.separate));
+  return hulls === 1 && (it.contents ?? []).every((c) => c.ship || isExtra(c.name)) ? it.discounted : null;
+}
+
+/**
+ * Every listing on sale now (not the Subscribers Store, not standalone ships) that grants a hull, by catalog id, best
+ * first: lowest share, then lowest price. Concierge-only packs come along when the session sees them (`item.vip`).
+ * One pass over the store for the whole catalog.
+ */
+export function packOffersByShip(items: StoreItem[], idx: PriceIndex): Map<number, PackOffer[]> {
+  const m = new Map<number, PackOffer[]>();
+  for (const it of items) {
+    if (!it.available || it.category === 'subscribers' || it.category === 'ships') continue;
+    const hulls = (it.contents ?? []).filter((c) => c.ship);
+    const ids = new Set<number>();
+    for (const c of hulls) {
+      const s = matchShip(c.name, idx.ships);
+      if (!s || ids.has(s.id)) continue;
+      ids.add(s.id);
+      m.set(s.id, [...(m.get(s.id) ?? []), { item: it, hulls: hulls.length, share: shareOf(s, it, hulls.length, idx) }]);
+    }
+  }
+  const cost = (o: PackOffer) => o.share ?? o.item.discounted;
+  for (const list of m.values()) list.sort((a, b) => cost(a) - cost(b) || a.item.discounted - b.item.discounted);
+  return m;
+}
+/** The packs that grant hull `s` (see `packOffersByShip`). */
+export const packOffers = (s: CatalogShip, items: StoreItem[], idx: PriceIndex): PackOffer[] => packOffersByShip(items, idx).get(s.id) ?? [];
+
+/**
+ * Insurance of each standalone SKU on sale (catalog SKU id → "LTI", "120 mo" …). The catalog's SKUs carry no insurance
+ * and their ids differ from the store listing's, so a SKU takes the insurance of the Standalone Ships listing for the
+ * same hull at the same price and warbond-ness. SKUs the listing doesn't show (Concierge-only, other editions) are
+ * left out: insurance unknown.
+ */
+export function standaloneInsurance(ships: CatalogShip[], items: StoreItem[]): Map<number, string> {
+  const listings = items.filter((i) => i.category === 'ships' && i.available);
+  const m = new Map<number, string>();
+  for (const s of ships) {
+    for (const k of s.standalone) {
+      if (!k.available) continue;
+      const wb = isWarbondSku(k);
+      const l = listings.find((i) => i.discounted === k.price && !!i.warbond === wb && matchShip(i.name, ships)?.id === s.id);
+      const t = l ? insuranceOf(l) : null;
+      if (t) m.set(k.id, t);
+    }
+  }
+  return m;
 }

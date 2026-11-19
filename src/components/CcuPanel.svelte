@@ -6,14 +6,16 @@
   import { applyAlternative, DEFAULT_PLAN_OPTIONS, savedVsMsrp, farthestReachable, ownedCcus, ownedHulls, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarState, hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem, storeItemsItem } from '@/lib/settings';
   import { withArchive, withExpected, type PriceHistory } from '@/lib/price-history';
   import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
-  import { matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
+  import { matchShip, usd, type Catalog, type SaleHistory, type StoreItem } from '@/lib/store';
+  import { packOffersByShip, priceIndex, standaloneInsurance } from '@/lib/bundle';
   import { ownUsd } from '@/lib/privacy.svelte';
   import Wizard, { type WizardStep } from './Wizard.svelte';
   import Segmented from './Segmented.svelte';
+  import Tag from './Tag.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import Stat from './Stat.svelte';
   import CcuChains from './CcuChains.svelte';
@@ -58,6 +60,17 @@
   let prices = $state<PriceHistory>({});
   let labels = $state<Labels>({});
   let error = $state('');
+  /** Browse's saved listing (never fetched here): packs / game packages that grant the target. */
+  let storeAll = $state<StoreItem[]>([]);
+  /**
+   * The target's packs, best share first — shown when no CCU or standalone to it is on sale today (an Eclipse, an
+   * Idris): buying the pack now vs waiting for the CCU to return.
+   */
+  const targetPacks = $derived.by(() => {
+    const t = toId == null ? null : (cat?.ships ?? []).find((s) => s.id === toId);
+    if (!t || t.ccu.some((k) => k.available) || t.standalone.some((k) => k.available)) return [];
+    return packOffersByShip(storeAll, priceIndex(storeAll, cat?.ships ?? [])).get(t.id) ?? [];
+  });
 
   type Mode = 'store' | 'hangar' | 'any';
   let mode = $state<Mode>('hangar');
@@ -81,12 +94,14 @@
     saleHistoryItem.getValue().then((h) => (sales = h));
     priceHistoryItem.getValue().then(async (h) => (prices = await withArchive(h)));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
+    storeItemsItem.getValue().then((v) => (storeAll = v?.items ?? []));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
     const offs = [
       hangarItem.watch((h) => (hangar = h)),
       pledgeLabelsItem.watch((l) => (labels = cleanLabels(l))),
+      storeItemsItem.watch((v) => (storeAll = v?.items ?? [])),
       buybackItem.watch((b) => (buyback = b)),
       // Another hub tab (or an account switch) changed the list: follow it, so this page never writes an old copy back.
       ccuChainsItem.watch((c) => {
@@ -136,6 +151,21 @@
   const labelPrefer = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => idsWith(labels, PREFER).has(p.id)), ships).map((h) => h.id));
   /** Hulls on LTI pledges (LTI tokens): one click to prefer them for auto chains. */
   const ltiHulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => p.lti), ships).map((h) => h.id));
+  /**
+   * Source insurance: a CCU keeps the pledge's insurance, so an LTI chain starts from a hull on an LTI pledge. `true`
+   * narrows *Ship in my hangar* to those hulls (an LTI token, an LTI starter).
+   */
+  let ltiOnly = $state(false);
+  const ltiSet = $derived(new Set(ltiHulls));
+  const mineSrc = $derived(ltiOnly ? mine.filter((s) => ltiSet.has(s.id)) : mine);
+  /** Catalog standalone SKU id → its insurance tag ("LTI", "120 mo"), matched to Browse's listing; unknown = absent. */
+  const skuInsurance = $derived(standaloneInsurance(ships, storeAll));
+  const ltiSkus = $derived([...skuInsurance].filter(([, t]) => t === 'LTI').map(([id]) => id));
+  /** Standalones on sale now that come with LTI (counted on the catalog, so a sold-out listing doesn't count). */
+  const ltiStarts = $derived(ships.reduce((n, s) => n + s.standalone.filter((k) => k.available && skuInsurance.get(k.id) === 'LTI').length, 0));
+  $effect(() => {
+    if (ltiOnly && mode === 'hangar' && fromId != null && !ltiSet.has(fromId)) fromId = null;
+  });
   let stopPick = $state<number | null>(null);
   /** The target picker hides ships you already own unless asked. */
   let targetOwned = $state(false);
@@ -148,7 +178,7 @@
   const reservedBy = $derived(new Map(chains.flatMap((c) => reservedRefs([c]).map((r) => [r, c] as const))));
   const startId = $derived(mode === 'store' ? STORE_START : fromId);
   // A chain saved for this very route keeps its CCUs: saving must not re-plan the chain on screen without them.
-  const effective = $derived<PlanOptions>({ ...opt, exclude: plannerExclude(opt.exclude, chains, excludeSaved, startId, toId, openedLeg) });
+  const effective = $derived<PlanOptions>({ ...opt, exclude: plannerExclude(opt.exclude, chains, excludeSaved, startId, toId, openedLeg), ...(mode === 'store' && ltiOnly ? { startSkus: ltiSkus } : {}) });
   // The opened chain ends when the route on screen is no longer its route.
   $effect(() => {
     if (openedLeg && (openedLeg.startId !== startId || openedLeg.targetId !== toId)) openedLeg = null;
@@ -650,12 +680,17 @@
 
       <fieldset class="border-border m-0 grid min-w-0 gap-2 rounded-lg border px-3 py-2.5">
         <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {#each OPTIONS as o (o.key)}
-            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' || o.key === 'useOwned' ? opt[o.key] !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
-          {/each}
-          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps: each extra step is a ship you can stop at and fly. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
+        {#snippet optRow(o: (typeof OPTIONS)[number])}
+          <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' || o.key === 'useOwned' ? opt[o.key] !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
+        {/snippet}
+        <!-- Short toggles in an even grid; the options that need a sentence get their own two-column block below. -->
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-x-4">
+          {#each OPTIONS.filter((o) => !o.hint) as o (o.key)}{@render optRow(o)}{/each}
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Leave my chains' CCUs alone${chains.length ? ` (${reservedBy.size})` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
+        </div>
+        <div class="border-border grid gap-x-6 gap-y-1 border-t pt-2 md:grid-cols-2">
+          {#each OPTIONS.filter((o) => o.hint) as o (o.key)}{@render optRow(o)}{/each}
+          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps that save money (a CCU you own or one below the MSRP difference): each is a ship you can stop at and fly. A step at the plain MSRP difference saves nothing and is left out. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
         </div>
         <span class="text-muted-foreground text-[11px]">
           {hangar ? `${ccus.owned.filter((o) => o.source === 'hangar').length} owned CCUs` : 'Load your hangar to use owned CCUs'}
@@ -685,16 +720,49 @@
           <Segmented
             options={[
               { id: 'hangar', label: 'Ship in my hangar' },
-              { id: 'store', label: 'Buy from the store', hint: 'Start by buying the cheapest standalone ship on sale' },
+              { id: 'store', label: 'Buy from the store', hint: 'No ship to pick: the planner starts from whichever standalone ship on sale makes the cheapest chain' },
               { id: 'any', label: 'Any ship' },
             ]}
             bind:value={mode}
             ariaLabel="Source"
           />
           {#if mode === 'store'}
-            <span class="text-muted-foreground text-[11px]">Picks the cheapest standalone ship on sale to start from.</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-muted-foreground text-xs">Insurance</span>
+              <Segmented
+                options={[
+                  { id: 'any', label: 'Any', hint: 'Any standalone ship on sale' },
+                  { id: 'lti', label: `LTI only · ${ltiStarts}`, hint: 'Only standalones that come with LTI (from Browse\'s listing): a CCU keeps the pledge\'s insurance, so the target ends with LTI' },
+                ]}
+                value={ltiOnly ? 'lti' : 'any'}
+                onchange={(v) => (ltiOnly = v === 'lti')}
+                ariaLabel="Store start insurance"
+                size="sm"
+              />
+            </div>
+            <span class="text-muted-foreground text-[11px]">Picked for you: the {ltiOnly ? 'LTI ' : ''}standalone ship on sale that makes the cheapest chain to the target.{#if !storeAll.length} Insurance comes from Browse's listing — open Browse once to load it.{/if}</span>
           {:else}
-            <ShipSelect {ships} {mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? 'Pick a ship you own…' : 'Pick a ship…'} />
+            {#if mode === 'hangar'}
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-muted-foreground text-xs">Insurance</span>
+                <Segmented
+                  options={[
+                    { id: 'any', label: 'Any copy', hint: 'Any ship in your hangar' },
+                    { id: 'lti', label: `LTI only · ${ltiHulls.length}`, hint: 'Only hulls on an LTI pledge: a CCU keeps the pledge\'s insurance, so the target ends with LTI' },
+                  ]}
+                  value={ltiOnly ? 'lti' : 'any'}
+                  onchange={(v) => (ltiOnly = v === 'lti')}
+                  ariaLabel="Source insurance"
+                  size="sm"
+                />
+              </div>
+            {/if}
+            <ShipSelect {ships} mine={mode === 'hangar' ? mineSrc : mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? (ltiOnly ? 'Pick an LTI ship you own…' : 'Pick a ship you own…') : 'Pick a ship…'} />
+            {#if fromId != null && ltiSet.has(fromId)}
+              <span class="text-muted-foreground text-[11px]"><Tag kind="insurance" value="LTI" size="xs" /> You have the {name(fromId)} on an LTI pledge: apply the CCUs to that copy and the {toId != null ? name(toId) : 'target'} keeps LTI.</span>
+            {:else if ltiOnly && mode === 'hangar' && !ltiHulls.length}
+              <span class="text-muted-foreground text-[11px]">{hangar ? 'No ship on an LTI pledge in your hangar.' : 'Load your hangar to see your LTI ships.'}</span>
+            {/if}
           {/if}
         </fieldset>
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
@@ -722,6 +790,22 @@
         </div>
       {/if}
       {#if startId != null && toId != null}
+        {#if targetPacks.length}
+          <Alert.Root>
+            <Alert.Description>
+              <span><strong>Or buy it now in a pack.</strong> No CCU or standalone to the {name(toId)} is on sale, but {targetPacks.length === 1 ? 'a pack grants it' : `${targetPacks.length} packs grant it`}:</span>
+              <ul class="m-0 mt-1 grid list-none gap-0.5 p-0">
+                {#each targetPacks.slice(0, 5) as o (o.item.id)}
+                  <li>
+                    <a href={`#browse?${new URLSearchParams({ item: String(o.item.id), q: o.item.name })}`}>{o.item.name}</a>
+                    <span class="tabular-nums">{usd(o.item.discounted)}</span>{#if o.hulls > 1}<span class="text-muted-foreground"> · {o.hulls} hulls</span>{/if}{#if o.share != null && o.share < o.item.discounted}<span class="text-muted-foreground"> · ≈ {usd(o.share)} for the {name(toId)}</span>{/if}{#if o.item.vip}<span class="text-muted-foreground"> · Concierge</span>{/if}{#if o.item.warbond}<span class="text-muted-foreground"> · warbond</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+              <span class="text-muted-foreground text-xs">The share splits the pack price by each piece's separate price (MSRP for hulls); you pay the whole pack. From Browse's saved listing.</span>
+            </Alert.Description>
+          </Alert.Root>
+        {/if}
         {#if !result}
           <Alert.Root variant="destructive">
             <Alert.Description>
@@ -782,6 +866,7 @@
                       {#if s.fromId !== STORE_START}<span class="text-muted-foreground">{name(s.fromId)}</span> <span class="text-muted-foreground">→</span> {/if}<strong>{name(s.toId)}</strong>
                       <Badge variant={kindVariant(s.kind)}>{KIND[s.kind]}</Badge>
                       {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback' && s.kind !== 'future'}<span class="text-muted-foreground text-[11px]">{s.label}</span>{/if}
+                      {#if s.kind === 'standalone' && s.skuId != null && skuInsurance.get(s.skuId)}<Tag kind="insurance" value={skuInsurance.get(s.skuId)!} size="xs" />{/if}
                       {#if s.kind === 'future'}<span class="text-muted-foreground text-[11px]">{s.est ? `priced at the last ${s.est.wb ? 'warbond ' : ''}sale price seen, ${fmtDate(s.est.at)}` : seen(s.toId)}</span>{/if}
                       {#if v?.st === 'checking'}<Badge variant="secondary" class="text-muted-foreground">checking…</Badge>
                       {:else if v?.st === 'wait'}<Badge variant="warning-soft">waits for a sale</Badge>

@@ -105,9 +105,14 @@ describe('ccu planner', () => {
     const fewer = plan(ships, [], 1, 4, o({ warbond: false }))!;
     expect(fewer.steps.map((s) => s.toId)).toEqual([4]);
     expect(plan(ships, [], 1, 4, o({ warbond: false, steps: undefined }))!.steps.map((s) => s.toId)).toEqual([4]);
+    // Every standard step costs its plain MSRP difference: extra hops save nothing, so more steps changes nothing.
     const more = plan(ships, [], 1, 4, o({ warbond: false, steps: 'more' }))!;
-    expect(more.steps.map((s) => s.toId)).toEqual([2, 3, 4]);
+    expect(more.steps.map((s) => s.toId)).toEqual([4]);
     expect(more.total).toBe(fewer.total);
+    // Hops that save (owned, free): the one with more of them wins, the zero-saving hop is still left out.
+    const owned = [own(1, 2, 51), own(2, 3, 52), own(1, 3, 53)];
+    expect(plan(ships, owned, 1, 4, o({ warbond: false, steps: 'more' }))!.steps.map((s) => s.ref ?? s.toId)).toEqual([51, 52, 4]);
+    expect(plan(ships, owned, 1, 4, o({ warbond: false, steps: 'more' }))!.useful).toBe(2);
     // Cost stays primary: the cheaper warbond chain wins whatever the preference.
     expect(plan(ships, [], 1, 4, o({ steps: 'more' }))).toMatchObject({ total: 20500 });
     for (const objective of ['cash', 'longterm'] as const) expect(plan(ships, [], 1, 4, o({ warbond: false, steps: 'more', objective }))!.total).toBe(21500);
@@ -178,11 +183,13 @@ describe('ccu planner', () => {
   });
 
   it('planAlternatives with more steps: the best chain minus a hop is not another route', () => {
-    const best = plan(ships, [], 1, 4, o({ warbond: false, steps: 'more' }))!;
+    const owned = [own(1, 2, 51), own(2, 3, 52), own(1, 3, 53)];
+    const best = plan(ships, owned, 1, 4, o({ warbond: false, steps: 'more' }))!;
     expect(best.steps.map((s) => s.toId)).toEqual([2, 3, 4]);
-    const alts = planAlternatives(ships, [], 1, 4, o({ warbond: false, steps: 'more' }));
+    const alts = planAlternatives(ships, owned, 1, 4, o({ warbond: false, steps: 'more' }));
     const hulls = new Set(best.steps.map((s) => s.toId));
-    for (const a of alts) expect(a.plan.steps.length >= best.steps.length || a.plan.steps.some((s) => !hulls.has(s.toId))).toBe(true);
+    // The own-vs-not row (`tag`) is always offered on top, whatever its length.
+    for (const a of alts.filter((x) => !x.tag)) expect(a.plan.steps.length >= best.steps.length || a.plan.steps.some((s) => !hulls.has(s.toId))).toBe(true);
   });
 
   it('farthestReachable: null when the graph reaches the target (a stop / forced CCU is the blocker)', () => {

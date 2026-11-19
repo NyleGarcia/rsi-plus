@@ -9,7 +9,7 @@
  * - future (`planAhead`): ship B has no CCU on sale today → assume a standard CCU at msrp(B) when it returns
  *   (event sales: IAE, Invictus, the maker's showcase) → cost msrp(B) − msrp(A), bought later. Ranked after
  *   anything buyable now at the same price; `chainEvents` alerts when such a CCU shows up in the store.
- * Objective picks what is minimised (see `Objective`); ties → fewer waits, then fewer steps (or more, `PlanOptions.steps`). Pure; inputs come from
+ * Objective picks what is minimised (see `Objective`); ties → fewer waits, then fewer steps (or more steps that save money, `PlanOptions.steps`). Pure; inputs come from
  * the catalog + hangar/buyback caches.
  */
 import { isWarbondSku, lowestOffer, matchShip, shipKey, usd, type CatalogShip } from './store';
@@ -75,6 +75,8 @@ export interface Plan {
   waits: number;
   /** Cents of `total` that belong to `future` steps — not payable today. */
   later: number;
+  /** Steps that save money (cost below the MSRP difference they cover: an owned CCU, a CCU on sale): see `saves`. */
+  useful?: number;
 }
 
 export interface PlanOptions {
@@ -107,10 +109,16 @@ export interface PlanOptions {
   /** Use the CCUs in your hangar (default on). Off: plan as if you owned none — what the route costs bought fresh, and your CCUs stay free for other chains. */
   useOwned?: boolean;
   /**
-   * Tie-break after cost and waits: `fewer` steps (default, also when unset) or `more` (every extra step is a ship you
-   * can stop at and fly). Never changes the cost of the chain — only which of the equally priced chains is shown.
+   * Tie-break after cost and waits: `fewer` steps (default, also when unset) or `more` — more steps that *save money*
+   * (`saves`), then fewer steps: a step bought at the plain MSRP difference saves nothing, so it never makes a chain
+   * longer. Never changes the cost of the chain — only which of the equally priced chains is shown.
    */
   steps?: StepsPreference;
+  /**
+   * Store start limited to these standalone SKUs (e.g. the ones that come with LTI, from Browse's listing); unset = any
+   * standalone on sale.
+   */
+  startSkus?: number[];
 }
 
 export type StepsPreference = 'fewer' | 'more';
@@ -151,6 +159,8 @@ interface Dist {
   paid: number;
   waits: number;
   steps: number;
+  /** Steps so far that save money (`saves`). */
+  useful: number;
   prev: Step | null;
   id: number;
   /** MSRP of the node (0 for the store start): orders equally ranked nodes when more steps are preferred. */
@@ -160,7 +170,7 @@ interface Dist {
 }
 
 /** What a path is ranked on: running totals (a Dijkstra node, or a whole `Plan` with `steps` = its length). */
-type Ranked = { cost: number; cash: number; paid: number; waits: number; steps: number };
+type Ranked = { cost: number; cash: number; paid: number; waits: number; steps: number; useful: number };
 
 /**
  * What a step that waits for a sale must save over buying today to be worth the wait (cents). A wait is a bet: the
@@ -193,12 +203,19 @@ function rank(objective: Objective, a: Ranked, b: Ranked): number {
 function before(objective: Objective, steps: StepsPreference | undefined, a: Ranked, b: Ranked): boolean {
   const r = rank(objective, a, b);
   if (r) return r < 0;
-  return steps === 'more' ? a.steps > b.steps : a.steps < b.steps;
+  if (steps === 'more' && a.useful !== b.useful) return a.useful > b.useful;
+  return a.steps < b.steps;
 }
+
+/**
+ * A step that saves money: it costs less than the MSRP difference it covers (`fromMsrp` 0 for the store start) — an
+ * owned CCU, a CCU on sale, a discounted standalone. A step at the plain difference is a ship to stop at, nothing more.
+ */
+export const saves = (cost: number, fromMsrp: number, toMsrp: number) => cost < toMsrp - fromMsrp;
 
 /** True when chain `a` beats chain `b` for these options (the planner's own order: objective, waits, steps). */
 export function planBefore(opt: Pick<PlanOptions, 'objective' | 'steps'>, a: Plan, b: Plan): boolean {
-  return before(opt.objective, opt.steps, { ...a, cost: a.total, steps: a.steps.length }, { ...b, cost: b.total, steps: b.steps.length });
+  return before(opt.objective, opt.steps, { ...a, cost: a.total, steps: a.steps.length, useful: a.useful ?? 0 }, { ...b, cost: b.total, steps: b.steps.length, useful: b.useful ?? 0 });
 }
 
 /**
@@ -217,6 +234,7 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
   const starts: Step[] = [];
   const skip = new Set(opt.skip ?? []);
   const noWait = new Set(opt.noWait ?? []);
+  const startOk = opt.startSkus ? new Set(opt.startSkus) : null;
   for (const s of ships) {
     let onSale = false;
     for (const k of s.ccu) {
@@ -241,7 +259,7 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
       else offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
     }
     for (const k of s.standalone) {
-      if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id)) continue;
+      if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id) || (startOk && !startOk.has(k.id))) continue;
       const wb = isWarbondSku(k);
       if (wb && !opt.warbond) continue;
       starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
@@ -300,7 +318,7 @@ function route(g: PlanGraph, opt: Pick<PlanOptions, 'objective' | 'steps'>, star
   const { objective, steps: pref } = opt;
   let seq = 0;
   const msrpOf = (id: number) => (id === STORE_START ? 0 : (g.byId.get(id)?.msrp ?? 0));
-  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, prev: null, id: startId, msrp: msrpOf(startId), seq: seq++ };
+  const first: Dist = { cost: 0, cash: 0, paid: 0, waits: 0, steps: 0, useful: 0, prev: null, id: startId, msrp: msrpOf(startId), seq: seq++ };
   const dist = new Map<number, Dist>([[startId, first]]);
   const done = new Set<number>();
   const lt =
@@ -354,6 +372,7 @@ function route(g: PlanGraph, opt: Pick<PlanOptions, 'objective' | 'steps'>, star
       cand.paid = here.paid + e.paid;
       cand.waits = here.waits + (e.kind === 'future' ? 1 : 0);
       cand.steps = here.steps + 1;
+      cand.useful = here.useful + (saves(e.cost, here.msrp, msrpOf(e.toId)) ? 1 : 0);
       if (old && !before(objective, pref, cand, old)) continue;
       const next: Dist = { ...cand, prev: e, id: e.toId, msrp: msrpOf(e.toId), seq: old ? old.seq : seq++ };
       dist.set(e.toId, next);
@@ -416,7 +435,9 @@ export function plan(ships: CatalogShip[], owned: OwnedCcu[], startId: number, t
   const paid = steps.reduce((n, s) => n + s.paid, 0);
   const msrpDiff = target.msrp - (start?.msrp ?? 0);
   const future = steps.filter((s) => s.kind === 'future');
-  return { steps, total, cash, paid, msrpDiff, savings: msrpDiff - total, waits: future.length, later: future.reduce((n, s) => n + s.cost, 0) };
+  const msrpOf = (id: number) => (id === STORE_START ? 0 : (g.byId.get(id)?.msrp ?? 0));
+  const useful = steps.filter((s) => saves(s.cost, msrpOf(s.fromId), msrpOf(s.toId))).length;
+  return { steps, total, cash, paid, msrpDiff, savings: msrpDiff - total, waits: future.length, later: future.reduce((n, s) => n + s.cost, 0), useful };
 }
 
 /**
