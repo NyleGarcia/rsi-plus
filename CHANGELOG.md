@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.22.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.21.0...v0.22.0) (2026-11-19)
+
+
+### Features
+
+* **settings:** store listing check interval (15 min – 24 h, default hourly) ([fe025f8](https://github.com/NyleGarcia/rsi-plus/commit/fe025f8c5da8cf22a3f2e37d0da536ee698c16ae))
+* **store-log:** Refresh button on Store changes (catalog + listing, once a minute) ([f0f3d60](https://github.com/NyleGarcia/rsi-plus/commit/f0f3d600e409eb77f06dfd9065d73e06c5c99043))
+* waves watch one listing and rests per wave, Store changes Refresh ([0697dbe](https://github.com/NyleGarcia/rsi-plus/commit/0697dbe1bcb5f85176c71d65c6470813687b95e1))
+* **waves:** stock watch rests once a wave is in stock or sold out, until the next wave ([737d473](https://github.com/NyleGarcia/rsi-plus/commit/737d473269719e409b7986454f014ab53f02729e))
+* **waves:** watch one listing (warbond or store credit) and poll only its SKU ([f9743c6](https://github.com/NyleGarcia/rsi-plus/commit/f9743c619fbd9eb00c4b3b9c1f637eb0d6b08d0e))
+
 ## [0.21.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.20.0...v0.21.0) (2026-11-17)
 
 
