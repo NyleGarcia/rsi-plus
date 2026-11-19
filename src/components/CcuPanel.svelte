@@ -664,12 +664,17 @@
 
       <fieldset class="border-border m-0 grid min-w-0 gap-2 rounded-lg border px-3 py-2.5">
         <legend class="text-muted-foreground px-1 text-xs">2 · Options</legend>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {#each OPTIONS as o (o.key)}
-            <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' || o.key === 'useOwned' ? opt[o.key] !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
-          {/each}
-          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps that save money (a CCU you own or one below the MSRP difference): each is a ship you can stop at and fly. A step at the plain MSRP difference saves nothing and is left out. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
+        {#snippet optRow(o: (typeof OPTIONS)[number])}
+          <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' || o.key === 'useOwned' ? opt[o.key] !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
+        {/snippet}
+        <!-- Short toggles in an even grid; the options that need a sentence get their own two-column block below. -->
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-x-4">
+          {#each OPTIONS.filter((o) => !o.hint) as o (o.key)}{@render optRow(o)}{/each}
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Leave my chains' CCUs alone${chains.length ? ` (${reservedBy.size})` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
+        </div>
+        <div class="border-border grid gap-x-6 gap-y-1 border-t pt-2 md:grid-cols-2">
+          {#each OPTIONS.filter((o) => o.hint) as o (o.key)}{@render optRow(o)}{/each}
+          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps that save money (a CCU you own or one below the MSRP difference): each is a ship you can stop at and fly. A step at the plain MSRP difference saves nothing and is left out. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
         </div>
         <span class="text-muted-foreground text-[11px]">
           {hangar ? `${ccus.owned.filter((o) => o.source === 'hangar').length} owned CCUs` : 'Load your hangar to use owned CCUs'}
