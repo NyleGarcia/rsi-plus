@@ -12,7 +12,7 @@
  *   and never appears among the parts.
  * Savings compare the bundle with the pieces that *can* be bought; what's left unpriced is said so.
  */
-import { matchShip, paintKey, type CatalogShip, type StoreContent, type StoreItem } from './store';
+import { isWarbondSku, matchShip, paintKey, type CatalogShip, type StoreContent, type StoreItem } from './store';
 
 /** One line of a bundle's breakdown: a piece, or a smaller listing (`pieces`) that covers several of them. */
 export interface BundlePart {
@@ -252,3 +252,24 @@ export function packOffersByShip(items: StoreItem[], idx: PriceIndex): Map<numbe
 }
 /** The packs that grant hull `s` (see `packOffersByShip`). */
 export const packOffers = (s: CatalogShip, items: StoreItem[], idx: PriceIndex): PackOffer[] => packOffersByShip(items, idx).get(s.id) ?? [];
+
+/**
+ * Insurance of each standalone SKU on sale (catalog SKU id → "LTI", "120 mo" …). The catalog's SKUs carry no insurance
+ * and their ids differ from the store listing's, so a SKU takes the insurance of the Standalone Ships listing for the
+ * same hull at the same price and warbond-ness. SKUs the listing doesn't show (Concierge-only, other editions) are
+ * left out: insurance unknown.
+ */
+export function standaloneInsurance(ships: CatalogShip[], items: StoreItem[]): Map<number, string> {
+  const listings = items.filter((i) => i.category === 'ships' && i.available);
+  const m = new Map<number, string>();
+  for (const s of ships) {
+    for (const k of s.standalone) {
+      if (!k.available) continue;
+      const wb = isWarbondSku(k);
+      const l = listings.find((i) => i.discounted === k.price && !!i.warbond === wb && matchShip(i.name, ships)?.id === s.id);
+      const t = l ? insuranceOf(l) : null;
+      if (t) m.set(k.id, t);
+    }
+  }
+  return m;
+}

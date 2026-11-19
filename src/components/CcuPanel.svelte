@@ -11,7 +11,7 @@
   import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
   import { matchShip, usd, type Catalog, type SaleHistory, type StoreItem } from '@/lib/store';
-  import { packOffersByShip, priceIndex } from '@/lib/bundle';
+  import { packOffersByShip, priceIndex, standaloneInsurance } from '@/lib/bundle';
   import { ownUsd } from '@/lib/privacy.svelte';
   import Wizard, { type WizardStep } from './Wizard.svelte';
   import Segmented from './Segmented.svelte';
@@ -158,6 +158,11 @@
   let ltiOnly = $state(false);
   const ltiSet = $derived(new Set(ltiHulls));
   const mineSrc = $derived(ltiOnly ? mine.filter((s) => ltiSet.has(s.id)) : mine);
+  /** Catalog standalone SKU id → its insurance tag ("LTI", "120 mo"), matched to Browse's listing; unknown = absent. */
+  const skuInsurance = $derived(standaloneInsurance(ships, storeAll));
+  const ltiSkus = $derived([...skuInsurance].filter(([, t]) => t === 'LTI').map(([id]) => id));
+  /** Standalones on sale now that come with LTI (counted on the catalog, so a sold-out listing doesn't count). */
+  const ltiStarts = $derived(ships.reduce((n, s) => n + s.standalone.filter((k) => k.available && skuInsurance.get(k.id) === 'LTI').length, 0));
   $effect(() => {
     if (ltiOnly && mode === 'hangar' && fromId != null && !ltiSet.has(fromId)) fromId = null;
   });
@@ -173,7 +178,7 @@
   const reservedBy = $derived(new Map(chains.flatMap((c) => reservedRefs([c]).map((r) => [r, c] as const))));
   const startId = $derived(mode === 'store' ? STORE_START : fromId);
   // A chain saved for this very route keeps its CCUs: saving must not re-plan the chain on screen without them.
-  const effective = $derived<PlanOptions>({ ...opt, exclude: plannerExclude(opt.exclude, chains, excludeSaved, startId, toId, openedLeg) });
+  const effective = $derived<PlanOptions>({ ...opt, exclude: plannerExclude(opt.exclude, chains, excludeSaved, startId, toId, openedLeg), ...(mode === 'store' && ltiOnly ? { startSkus: ltiSkus } : {}) });
   // The opened chain ends when the route on screen is no longer its route.
   $effect(() => {
     if (openedLeg && (openedLeg.startId !== startId || openedLeg.targetId !== toId)) openedLeg = null;
@@ -722,7 +727,20 @@
             ariaLabel="Source"
           />
           {#if mode === 'store'}
-            <span class="text-muted-foreground text-[11px]">Picked for you: the standalone ship on sale that makes the cheapest chain to the target. A new ship comes with its own insurance (rarely LTI): for an LTI result, start from an LTI ship in your hangar.</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-muted-foreground text-xs">Insurance</span>
+              <Segmented
+                options={[
+                  { id: 'any', label: 'Any', hint: 'Any standalone ship on sale' },
+                  { id: 'lti', label: `LTI only · ${ltiStarts}`, hint: 'Only standalones that come with LTI (from Browse\'s listing): a CCU keeps the pledge\'s insurance, so the target ends with LTI' },
+                ]}
+                value={ltiOnly ? 'lti' : 'any'}
+                onchange={(v) => (ltiOnly = v === 'lti')}
+                ariaLabel="Store start insurance"
+                size="sm"
+              />
+            </div>
+            <span class="text-muted-foreground text-[11px]">Picked for you: the {ltiOnly ? 'LTI ' : ''}standalone ship on sale that makes the cheapest chain to the target.{#if !storeAll.length} Insurance comes from Browse's listing — open Browse once to load it.{/if}</span>
           {:else}
             {#if mode === 'hangar'}
               <div class="flex flex-wrap items-center gap-2">
@@ -848,6 +866,7 @@
                       {#if s.fromId !== STORE_START}<span class="text-muted-foreground">{name(s.fromId)}</span> <span class="text-muted-foreground">→</span> {/if}<strong>{name(s.toId)}</strong>
                       <Badge variant={kindVariant(s.kind)}>{KIND[s.kind]}</Badge>
                       {#if s.label && s.kind !== 'owned' && s.kind !== 'buyback' && s.kind !== 'future'}<span class="text-muted-foreground text-[11px]">{s.label}</span>{/if}
+                      {#if s.kind === 'standalone' && s.skuId != null && skuInsurance.get(s.skuId)}<Tag kind="insurance" value={skuInsurance.get(s.skuId)!} size="xs" />{/if}
                       {#if s.kind === 'future'}<span class="text-muted-foreground text-[11px]">{s.est ? `priced at the last ${s.est.wb ? 'warbond ' : ''}sale price seen, ${fmtDate(s.est.at)}` : seen(s.toId)}</span>{/if}
                       {#if v?.st === 'checking'}<Badge variant="secondary" class="text-muted-foreground">checking…</Badge>
                       {:else if v?.st === 'wait'}<Badge variant="warning-soft">waits for a sale</Badge>

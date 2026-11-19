@@ -114,6 +114,11 @@ export interface PlanOptions {
    * longer. Never changes the cost of the chain — only which of the equally priced chains is shown.
    */
   steps?: StepsPreference;
+  /**
+   * Store start limited to these standalone SKUs (e.g. the ones that come with LTI, from Browse's listing); unset = any
+   * standalone on sale.
+   */
+  startSkus?: number[];
 }
 
 export type StepsPreference = 'fewer' | 'more';
@@ -229,6 +234,7 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
   const starts: Step[] = [];
   const skip = new Set(opt.skip ?? []);
   const noWait = new Set(opt.noWait ?? []);
+  const startOk = opt.startSkus ? new Set(opt.startSkus) : null;
   for (const s of ships) {
     let onSale = false;
     for (const k of s.ccu) {
@@ -253,7 +259,7 @@ export function planGraph(ships: CatalogShip[], owned: OwnedCcu[], opt: PlanOpti
       else offers.push({ to: s, price: s.msrp, kind: 'future', title: 'Not on sale now' });
     }
     for (const k of s.standalone) {
-      if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id)) continue;
+      if (!k.available || (opt.inStockOnly && k.stock === 0) || skip.has(k.id) || (startOk && !startOk.has(k.id))) continue;
       const wb = isWarbondSku(k);
       if (wb && !opt.warbond) continue;
       starts.push({ fromId: STORE_START, toId: s.id, kind: 'standalone', cost: k.price, cash: wb || !opt.storeCredit ? k.price : 0, paid: 0, label: k.title || 'Standalone', skuId: k.id });
