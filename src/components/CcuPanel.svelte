@@ -15,6 +15,7 @@
   import { ownUsd } from '@/lib/privacy.svelte';
   import Wizard, { type WizardStep } from './Wizard.svelte';
   import Segmented from './Segmented.svelte';
+  import Tag from './Tag.svelte';
   import ShipSelect from './ShipSelect.svelte';
   import Stat from './Stat.svelte';
   import CcuChains from './CcuChains.svelte';
@@ -150,6 +151,16 @@
   const labelPrefer = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => idsWith(labels, PREFER).has(p.id)), ships).map((h) => h.id));
   /** Hulls on LTI pledges (LTI tokens): one click to prefer them for auto chains. */
   const ltiHulls = $derived(ownedHulls((hangar?.pledges ?? []).filter((p) => p.lti), ships).map((h) => h.id));
+  /**
+   * Source insurance: a CCU keeps the pledge's insurance, so an LTI chain starts from a hull on an LTI pledge. `true`
+   * narrows *Ship in my hangar* to those hulls (an LTI token, an LTI starter).
+   */
+  let ltiOnly = $state(false);
+  const ltiSet = $derived(new Set(ltiHulls));
+  const mineSrc = $derived(ltiOnly ? mine.filter((s) => ltiSet.has(s.id)) : mine);
+  $effect(() => {
+    if (ltiOnly && mode === 'hangar' && fromId != null && !ltiSet.has(fromId)) fromId = null;
+  });
   let stopPick = $state<number | null>(null);
   /** The target picker hides ships you already own unless asked. */
   let targetOwned = $state(false);
@@ -711,9 +722,29 @@
             ariaLabel="Source"
           />
           {#if mode === 'store'}
-            <span class="text-muted-foreground text-[11px]">Picked for you: the standalone ship on sale that makes the cheapest chain to the target.</span>
+            <span class="text-muted-foreground text-[11px]">Picked for you: the standalone ship on sale that makes the cheapest chain to the target. A new ship comes with its own insurance (rarely LTI): for an LTI result, start from an LTI ship in your hangar.</span>
           {:else}
-            <ShipSelect {ships} {mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? 'Pick a ship you own…' : 'Pick a ship…'} />
+            {#if mode === 'hangar'}
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-muted-foreground text-xs">Insurance</span>
+                <Segmented
+                  options={[
+                    { id: 'any', label: 'Any copy', hint: 'Any ship in your hangar' },
+                    { id: 'lti', label: `LTI only · ${ltiHulls.length}`, hint: 'Only hulls on an LTI pledge: a CCU keeps the pledge\'s insurance, so the target ends with LTI' },
+                  ]}
+                  value={ltiOnly ? 'lti' : 'any'}
+                  onchange={(v) => (ltiOnly = v === 'lti')}
+                  ariaLabel="Source insurance"
+                  size="sm"
+                />
+              </div>
+            {/if}
+            <ShipSelect {ships} mine={mode === 'hangar' ? mineSrc : mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? (ltiOnly ? 'Pick an LTI ship you own…' : 'Pick a ship you own…') : 'Pick a ship…'} />
+            {#if fromId != null && ltiSet.has(fromId)}
+              <span class="text-muted-foreground text-[11px]"><Tag kind="insurance" value="LTI" size="xs" /> You have the {name(fromId)} on an LTI pledge: apply the CCUs to that copy and the {toId != null ? name(toId) : 'target'} keeps LTI.</span>
+            {:else if ltiOnly && mode === 'hangar' && !ltiHulls.length}
+              <span class="text-muted-foreground text-[11px]">{hangar ? 'No ship on an LTI pledge in your hangar.' : 'Load your hangar to see your LTI ships.'}</span>
+            {/if}
           {/if}
         </fieldset>
         <fieldset class="border-border m-0 grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border px-3 py-2.5">
