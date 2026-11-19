@@ -553,3 +553,13 @@ describe('verification tier', () => {
     expect(verifyUrl(STARORG_ORIGIN, 'zed wil&x')).toBe('https://starorg.tools/verify/rsi?handle=zed%20wil%26x');
   });
 });
+
+describe('store listing interval', () => {
+  it('clamps to 15 min .. 24 h, empty = hourly', async () => {
+    const { clampSetting, STORE_LISTING_MINUTES: n } = await import('@/lib/settings-ui');
+    expect(clampSetting(n, 5)).toBe(15);
+    expect(clampSetting(n, 30)).toBe(30);
+    expect(clampSetting(n, 99999)).toBe(1440);
+    expect(clampSetting(n, '')).toBe(60);
+  });
+});

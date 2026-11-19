@@ -9,7 +9,7 @@
   import { bg } from '@/lib/messages';
   import { conciergeItem, hangarItem, wavesItem } from '@/lib/settings';
   import { fetchShipListings, usd, type ShipListing } from '@/lib/store';
-  import { activeWaveEvent, countdown, EVENT_TAIL_MS, currentWave, IAE_2956, matchListings, watchEveryMs, WAVE_OPEN_MS, waveTimes, type WaveSale } from '@/lib/waves';
+  import { activeWaveEvent, countdown, EVENT_TAIL_MS, currentWave, IAE_2956, matchListings, stopAfterLook, watchEveryMs, WAVE_OPEN_MS, waveTimes, type WaveSale, type WaveStop } from '@/lib/waves';
   import { fmtWhen } from '@/lib/fmt';
   import { cn } from '@/lib/utils';
   import SwitchRow from './SwitchRow.svelte';
@@ -67,31 +67,32 @@
   });
   const matches = $derived(matchListings(listings, sale));
   /**
-   * The listings being watched. A wave hull is usually listed twice — a warbond one (new money only) and a store
-   * credit one — and other editions can carry the same name (a Best in Show). By default the "10 Year" ones, else all;
-   * untick what you do not want to be told about.
+   * The one listing being watched. A wave hull is usually listed twice — a warbond one (new money only) and a store
+   * credit one — and other editions can carry the same name (a Best in Show). You pick one; during a wave only that
+   * one is polled (by SKU). Default: among the "10 Year" ones, store credit when your credit covers it, else warbond.
    */
-  let unwatched = $state(new Set<number>());
+  let choice = $state<number | null>(null); // null = default, 0 = none
   const wanted = $derived(matches.some((m) => /10 year/i.test(m.name)) ? matches.filter((m) => /10 year/i.test(m.name)) : matches);
-  const watchedOf = (m: ShipListing) => !unwatched.has(m.id) && (wanted.includes(m) || picked.has(m.id));
-  let picked = $state(new Set<number>());
-  function toggleWatch(m: ShipListing) {
-    if (watchedOf(m)) (unwatched = new Set([...unwatched, m.id])), (picked = new Set([...picked].filter((x) => x !== m.id)));
-    else (picked = new Set([...picked, m.id])), (unwatched = new Set([...unwatched].filter((x) => x !== m.id)));
-  }
-  const hits = $derived(matches.filter((m) => m.available && watchedOf(m)));
+  const fallback = $derived(wanted.find((m) => !m.warbond && credit != null && credit >= m.discounted) ?? wanted.find((m) => m.warbond) ?? wanted[0] ?? null);
+  const watched = $derived(choice === 0 ? null : (matches.find((m) => m.id === choice) ?? fallback));
+  const watchedOf = (m: ShipListing) => watched?.id === m.id;
+  const toggleWatch = (m: ShipListing) => (choice = watchedOf(m) ? 0 : m.id);
+  const hits = $derived(watched?.available ? [watched] : []);
   const hit = $derived(hits[0] ?? null);
   /** What store credit does for a listing: nothing for a warbond; else covers it or falls short. */
   const pay = (m: ShipListing): string => (m.warbond ? 'new money only (warbond): store credit cannot pay it' : credit == null ? 'store credit can pay it' : credit >= m.discounted ? `your store credit covers it (${usd(credit)})` : `store credit pays ${usd(credit)}, ${usd(m.discounted - credit)} more in new money`);
   const inCart = $derived((cart?.lines ?? []).filter((l) => matches.some((m) => m.id === l.skuId) || l.title.toLowerCase().includes(sale.listing.toLowerCase())));
 
-  async function look() {
+  /** `only`: just the watched listing (the wave poll); else every standalone ship (ready check, *Look now*). */
+  async function look(only = false) {
     if (looking) return;
     looking = true;
     try {
       const before = Date.now();
-      const r = await fetchShipListings();
-      listings = r.items;
+      const id = only ? watched?.id : undefined;
+      const r = await fetchShipListings(id ? [id] : undefined);
+      // A one-SKU answer replaces that listing only; an empty one (delisted between waves) marks it not sellable.
+      listings = id ? listings.map((l) => (l.id === id ? (r.items.find((x) => x.id === id) ?? { ...l, available: false }) : l)) : r.items;
       if (r.serverAt != null) offset = r.serverAt + 500 - (before + Date.now()) / 2; // the header has whole seconds
       looked = Date.now();
       lookError = '';
@@ -116,12 +117,28 @@
     void readyCheck();
   });
 
-  // ---- stock watch: only around a wave, a few seconds apart ----
+  // ---- stock watch: only around a wave, a few seconds apart; rests once the wave is in stock or sold out ----
   let watching = $state(true);
-  const every = $derived(watching && wave ? watchEveryMs(toWave) : null);
+  /** `<sale>:<wave index>`: the wave a stop or a sighting belongs to. A new wave has a new key, so the watch resumes. */
+  const waveKey = $derived(wave ? `${sale.id}:${wave.i}` : '');
+  let stop = $state<{ key: string; why: WaveStop; at: number } | null>(null);
+  /** Waves in which some listing was seen sellable (sold-out needs "was there, now gone"). */
+  let sawStock = $state(new Set<string>());
+  /** *Watch again* on a wave: keep looking through it, no auto stop (stock can come back when carts time out). */
+  let keepOn = $state('');
+  const stopped = $derived(stop && stop.key === waveKey ? stop : null);
+  const every = $derived(watching && wave && !stopped ? watchEveryMs(toWave) : null);
+  $effect(() => {
+    if (!looked || !waveKey || stopped || keepOn === waveKey) return;
+    const anyInStock = !!watched?.available; // only the watched listing is polled during the wave
+    const key = waveKey;
+    if (anyInStock && !sawStock.has(key)) sawStock = new Set([...sawStock, key]);
+    const why = stopAfterLook({ open: !!wave?.open, watchedInStock: hits.length > 0, anyInStock, sawStock: anyInStock || sawStock.has(key) });
+    if (why) stop = { key, why, at: looked };
+  });
   $effect(() => {
     if (every == null) return;
-    const t = setInterval(() => void look(), every);
+    const t = setInterval(() => void look(true), every);
     return () => clearInterval(t);
   });
   // the moment it is sellable: sound + a notification, once per wave
@@ -240,12 +257,13 @@
       <div class="grid gap-2">
         <div class="flex flex-wrap items-center gap-3">
           <strong class="text-sm">Stock watch</strong>
-          <SwitchRow id="wave-watch" size="sm" class="text-xs" label="On" hint="Looks at the store listing every few seconds from 45 s before a wave until 3 min after, slower up to 15 min after" checked={watching} onchange={(v) => (watching = v)} />
+          <SwitchRow id="wave-watch" size="sm" class="text-xs" label="On" hint="Looks at the store listing every few seconds from 45 s before a wave until 3 min after, slower up to 15 min after. Stops for that wave once a watched listing is in stock or the wave sells out; the next wave starts again." checked={watching} onchange={(v) => (watching = v)} />
           <span class="text-muted-foreground text-xs">
-            {#if !wave}nothing to watch{:else if every == null}{watching ? 'starts 5 min before the wave' : 'off'}{:else}checking every {every / 1000} s{/if}
+            {#if !wave}nothing to watch{:else if stopped}{stopped.why === 'stock' ? 'in stock' : 'sold out'} at {fmtWhen(stopped.at, { hour: 'numeric', minute: '2-digit', second: '2-digit' })}{wave.i + 1 < sale.times.length ? `: resting until wave ${wave.i + 2}` : ': that was the last wave'}{:else if every == null}{watching ? 'starts 5 min before the wave' : 'off'}{:else}checking every {every / 1000} s{/if}
             {#if looked} · last look {Math.max(0, Math.round((now - offset - looked) / 1000))} s ago{/if}
           </span>
-          <Button variant="outline" size="xs" disabled={looking} onclick={look}>Look now</Button>
+          {#if stopped}<Button variant="outline" size="xs" onclick={() => ((keepOn = waveKey), (stop = null))} title="Keep watching this wave (e.g. stock may come back after a cart timeout)">Watch again</Button>{/if}
+          <Button variant="outline" size="xs" disabled={looking} onclick={() => look()}>Look now</Button>
         </div>
         {#if matches.length}
           <div class="grid gap-2">
@@ -257,7 +275,7 @@
                   <strong class={cn(m.available && on && 'text-success text-lg')}>{m.available ? 'IN STOCK · ' : ''}{m.name} · {usd(m.discounted)}</strong>
                   {#if !m.available}<span class="text-muted-foreground text-xs">not sellable right now</span>{/if}
                   <span class="flex-1"></span>
-                  <SwitchRow id={`wave-watch-${m.id}`} size="sm" class="text-xs" label="Watch" hint="Tell me when this listing becomes sellable" checked={on} onchange={() => toggleWatch(m)} />
+                  <SwitchRow id={`wave-watch-${m.id}`} size="sm" class="text-xs" label="Watch" hint="Watch this one: during the wave only it is checked, and you are told when it becomes sellable" checked={on} onchange={() => toggleWatch(m)} />
                 </div>
                 <span class="text-muted-foreground text-xs">{pay(m)}</span>
                 <div class="flex flex-wrap items-center gap-2">

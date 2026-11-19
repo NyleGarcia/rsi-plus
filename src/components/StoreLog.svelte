@@ -10,13 +10,16 @@
   import { catalogItem, gameShipsItem, hangarItem, storeItemsItem, storeLogItem, storeSnapshotItem } from '@/lib/settings';
   import type { GameShip } from '@/lib/items';
   import { ownedHulls as ownedHullMap, ownedTitleCount, ownedTitleCounts } from '@/lib/owned-counts';
-  import { isBestValue, isLimitedTime, isLowStock, isNewListing, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
-  import { cleanLog, dismiss, mergeChanges, skuName, tally, type EntryKind, type MergedChange, type StoreChange, type StoreEntry, type StoreSnapshot } from '@/lib/storelog';
+  import { fetchStoreItems, isBestValue, isLimitedTime, isLowStock, isNewListing, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
+  import { cleanLog, dismiss, listingEntries, mergeChanges, skuName, tally, type EntryKind, type MergedChange, type StoreChange, type StoreEntry, type StoreSnapshot } from '@/lib/storelog';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import X from '@lucide/svelte/icons/x';
   import ShoppingCart from '@lucide/svelte/icons/shopping-cart';
   import Route from '@lucide/svelte/icons/route';
   import { addStandalone } from '@/lib/cart';
+  import { bg } from '@/lib/messages';
+  import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
+  import { saveStoreCopy } from '@/lib/storelog-save';
   import { createCartLedger } from '@/lib/cart-ui.svelte';
   import { cn } from '@/lib/utils';
   import { insuranceOf, insuranceTag, isInsurance } from '@/lib/bundle';
@@ -42,6 +45,30 @@
   let limit = $state(4);
   /** Type sections (`<group>:<kind>`) opened past their first tiles. */
   let open = $state(new Set<string>());
+  let loading = $state(false);
+  let error = $state('');
+  /**
+   * Re-read both sources now: the catalog (CCUs, standalones — the background saves its copy) and the listing (paints,
+   * packs, gear …). Once a minute, like Browse's Refresh: a burst of store reads gets the session rate-limited by RSI.
+   */
+  async function refresh() {
+    if (loading) return;
+    const wait = cooldownLeft('store-changes');
+    if (wait) return void (error = cooldownMsg(wait));
+    loading = true;
+    error = '';
+    try {
+      await bg({ type: 'catalog:get', fresh: true });
+      const v = await fetchStoreItems();
+      await storeItemsItem.setValue(v);
+      await saveStoreCopy('listing', listingEntries(v), v.at);
+    } catch (e) {
+      cooldownReset('store-changes');
+      error = (e as Error).message;
+    } finally {
+      loading = false;
+    }
+  }
 
   $effect(() => {
     storeLogItem.getValue().then((v) => (log = cleanLog(v)));
@@ -194,11 +221,12 @@
     <Card.Title>Store changes</Card.Title>
     <Card.Description>
       What the pledge store added and removed: CCUs and standalone ships, paints, packs, gear, game packages, add-ons.
-      {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly) and when you refresh Browse. Click a name to see it in RSI+, <ExternalLink class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">open on RSI</span> for the RSI page, <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">cart</span> adds it to your RSI cart (CCUs open the planner); <X class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">dismiss</span> dismisses.
+      {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly, or as set in Settings), when you refresh Browse, and with Refresh here. Click a name to see it in RSI+, <ExternalLink class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">open on RSI</span> for the RSI page, <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">cart</span> adds it to your RSI cart (CCUs open the planner); <X class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">dismiss</span> dismisses.
     </Card.Description>
-    {#if log.length}
-      <!-- Under the text, not beside it: four controls next to a long description left both cramped. -->
-      <div class="flex flex-wrap items-center gap-2 pt-2">
+    <!-- Under the text, not beside it: four controls next to a long description left both cramped. -->
+    <div class="flex flex-wrap items-center gap-2 pt-2">
+      <TipButton variant="outline" size="default" disabled={loading} onclick={refresh} tip="Check the store now: the catalog (CCUs, standalone ships) and the listing (paints, packs, gear …)">{loading ? 'Checking…' : 'Refresh'}</TipButton>
+      {#if log.length}
         <OpenCartButton count={cart.added} total={cart.snapshot?.qty ?? null} size="default" />
         {#if ownedShown}
           <TipButton variant="outline" size="default" onclick={dropOwned} tip="Dismiss what is already in your hangar (the green tiles), in the changes shown">Dismiss owned · {ownedShown}</TipButton>
@@ -213,8 +241,9 @@
           bind:value={show}
           ariaLabel="Show changes"
         />
-      </div>
-    {/if}
+      {/if}
+    </div>
+    {#if error}<p class="text-destructive pt-1 text-xs" role="alert">{error}</p>{/if}
   </Card.Header>
   <Card.Content>
     {#if !log.length}

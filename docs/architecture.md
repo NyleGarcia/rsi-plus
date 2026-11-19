@@ -325,9 +325,9 @@ Optional one-click hangar sync to [StarOrg Tools](https://starorg.tools). Opt-in
   - Real bumps: open a PR `dev` → `main`, merge, then release-please's PR → `vX.Y.Z` with assets as above.
   - Local builds (`wxt.config.ts` → `localVersionName`, not in CI, not on the tagged release commit) set `version_name` `<next>-dev (local <sha>[+])`, with `+` for uncommitted changes. WXT derives the manifest `version` `<next>` from it, so an unpacked `.output/chrome-mv3` shows it is newer than the last release.
   - `main` is the GitHub default branch (since 0.22.0, so OpenSSF Scorecard scores what ships). Work still lands on `dev`: open PRs with `--base dev`, and `dependabot.yml` pins `target-branch: dev`. `release.yml` pins release-please to `target-branch: main`.
-  - Branch protection:
-    - `main`: no force push or deletion; status check `verify` required, not enforced for admins, because release-please PRs get no CI with `GITHUB_TOKEN`.
-    - `dev`: no force push or deletion.
+  - Branch protection: repository rulesets, not classic protection (Scorecard's `GITHUB_TOKEN` can read rulesets, not classic rules):
+    - `main` ruleset: no force push or deletion; status check `verify` required; repository admins bypass, because release-please PRs get no CI with `GITHUB_TOKEN`.
+    - `dev` ruleset: no force push or deletion.
 - CI does not auto-run on the release PR with the default `GITHUB_TOKEN` (GitHub limitation); re-run manually or switch to a PAT later.
 - `docs/changelog.md` stays the hand-written user-facing log; `CHANGELOG.md` is generated.
 

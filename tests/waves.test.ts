@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeWaveEvent, wavesShown, countdown, currentWave, IAE_2956, matchListings, watchEveryMs, WAVE_OPEN_MS, waveTimes } from '@/lib/waves';
+import { activeWaveEvent, wavesShown, countdown, currentWave, IAE_2956, matchListings, stopAfterLook, watchEveryMs, WAVE_OPEN_MS, waveTimes } from '@/lib/waves';
 
 describe('limited waves', () => {
   it('six waves, four hours apart, from 16:00 UTC on the sale date', () => {
@@ -46,5 +46,14 @@ describe('limited waves', () => {
     expect(matchListings(items, sale('kraken')).map((i) => i.name)).toEqual(['Kraken - 10 Year']);
     expect(matchListings(items, sale('privateer')).map((i) => i.name)).toEqual(['Kraken Privateer - 10 Year']);
     expect(matchListings(items, sale('890')).map((i) => i.name)).toEqual(['890 Jump - Best In Show Edition 2955', '890 Jump - 10 Year']);
+  });
+  it('stopAfterLook: a watched listing in stock, or open wave seen in stock then gone, ends the watch for that wave', () => {
+    const o = { open: true, watchedInStock: false, anyInStock: false, sawStock: false };
+    expect(stopAfterLook({ ...o, watchedInStock: true, anyInStock: true, sawStock: true })).toBe('stock');
+    expect(stopAfterLook({ ...o, open: false, watchedInStock: true, anyInStock: true, sawStock: true })).toBe('stock'); // listed a bit early
+    expect(stopAfterLook({ ...o, sawStock: true })).toBe('soldout');
+    expect(stopAfterLook({ ...o, open: false, sawStock: true })).toBeNull(); // between waves: nothing to sell out
+    expect(stopAfterLook(o)).toBeNull(); // open, never seen in stock: keep looking
+    expect(stopAfterLook({ ...o, anyInStock: true, sawStock: true })).toBeNull(); // only an unwatched edition sellable
   });
 });

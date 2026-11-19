@@ -97,6 +97,18 @@ export function watchEveryMs(msToWave: number): number | null {
   return null;
 }
 
+/**
+ * After a look during a wave: stop watching that wave? `stock` = a listing you watch is sellable (you have been told;
+ * the cart button has what it needs); `soldout` = the wave is open, some listing was sellable earlier in it, and none
+ * is now. Either way the watch rests until the next wave opens its own window (`currentWave` moves on).
+ */
+export type WaveStop = 'stock' | 'soldout';
+export function stopAfterLook(o: { open: boolean; watchedInStock: boolean; anyInStock: boolean; sawStock: boolean }): WaveStop | null {
+  if (o.watchedInStock) return 'stock';
+  if (o.open && o.sawStock && !o.anyInStock) return 'soldout';
+  return null;
+}
+
 /** Store listings whose name carries the sale's text, sellable ones first, then by name length (the plain hull before packs). */
 export function matchListings<T extends Pick<StorePaint, 'name' | 'available'>>(items: readonly T[], sale: Pick<WaveSale, 'listing' | 'ship'>): T[] {
   const want = sale.listing.toLowerCase();
