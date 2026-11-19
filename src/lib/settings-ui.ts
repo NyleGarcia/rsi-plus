@@ -45,7 +45,7 @@ export const MUTE_MODES: { id: Settings['muteMode']; label: string; hint: string
 
 /** The number settings that sit next to a switch — same words, bounds and fallback on every page that shows them. */
 export interface NumberSetting {
-  key: 'pollMinutes' | 'partyRemindHours';
+  key: 'pollMinutes' | 'partyRemindHours' | 'storeListingMinutes';
   /** Text before the field. */
   label: string;
   /** Text after the field. */
@@ -56,7 +56,9 @@ export interface NumberSetting {
   fallback: number;
 }
 export const POLL_MINUTES: NumberSetting = { key: 'pollMinutes', label: 'every', unit: 'min', min: 2, max: 120, fallback: 5 };
+/** Floor 15 min: each check is ~9 store requests, and bursts get the session rate-limited by RSI. */
+export const STORE_LISTING_MINUTES: NumberSetting = { key: 'storeListingMinutes', label: 'Store listing check every', unit: 'min', min: 15, max: 1440, fallback: 60 };
 export const PARTY_REMIND: NumberSetting = { key: 'partyRemindHours', label: 'Party reminder after', unit: 'h (0 = never)', min: 0, max: 720, fallback: 0 };
-export const clampSetting = (n: NumberSetting, raw: unknown) => Math.max(n.min, Number(raw) || n.fallback);
+export const clampSetting = (n: NumberSetting, raw: unknown) => Math.min(n.max, Math.max(n.min, Number(raw) || n.fallback));
 /** One toggle's wording by key (pages that show a single switch outside the Settings list). */
 export const toggleOf = (key: keyof Settings): SettingToggle => [...SETTING_TOGGLES, STARORG_SWITCH, ...STARORG_TOGGLES].find((t) => t.key === key) ?? { key, label: String(key) };

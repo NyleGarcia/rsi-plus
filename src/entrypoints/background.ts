@@ -39,6 +39,7 @@ import { chainEvents } from '@/lib/ccu';
 import { fetchCatalog, fetchPaints, fetchStoreItems, recordSales, wishlistEvents, type Catalog, type PaintCatalog } from '@/lib/store';
 import { sleep } from '@/lib/utils';
 import { catalogEntries, listingEntries } from '@/lib/storelog';
+import { clampSetting, STORE_LISTING_MINUTES } from '@/lib/settings-ui';
 import { saveStoreCopy } from '@/lib/storelog-save';
 import { recordPrices } from '@/lib/price-history';
 import { threadUrl } from '@/lib/types';
@@ -333,10 +334,10 @@ async function doPoll(): Promise<BgResponses['poll:now']> {
   } catch (e) {
     errors.push(`store: ${(e as Error).message}`);
   }
-  // Store listing (paints, packs, gear …) hourly, for the store changes log on Browse.
+  // Store listing (paints, packs, gear …) every `storeListingMinutes` (default hourly), for the Store changes log.
   try {
     const listing = await storeItemsItem.getValue();
-    if (!listing || now - listing.at > 60 * 60_000) {
+    if (!listing || now - listing.at > clampSetting(STORE_LISTING_MINUTES, s.storeListingMinutes) * 60_000) {
       const v = await fetchStoreItems();
       await storeItemsItem.setValue(v);
       await saveStoreCopy('listing', listingEntries(v), v.at);

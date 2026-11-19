@@ -55,6 +55,8 @@ export interface Settings {
   notify: boolean;
   /** Notify when *any* friend comes online (otherwise only friends marked with the bell). */
   notifyAllFriends: boolean;
+  /** Store listing check (paints, packs, gear … for Store changes) at most this often, in minutes (≥ 15); runs on a poll tick. */
+  storeListingMinutes: number;
   /** Remind to remove party friends this many hours after they were added (0 = never). */
   partyRemindHours: number;
   /** Play a short ding when party mode auto-accepts a friend request. */
@@ -110,6 +112,7 @@ export const DEFAULTS: Settings = {
   pollAuto: true,
   notify: true,
   notifyAllFriends: false,
+  storeListingMinutes: 60,
   partyRemindHours: 12,
   partySound: true,
   siteBar: true,

@@ -221,7 +221,7 @@
     <Card.Title>Store changes</Card.Title>
     <Card.Description>
       What the pledge store added and removed: CCUs and standalone ships, paints, packs, gear, game packages, add-ons.
-      {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly), when you refresh Browse, and with Refresh here. Click a name to see it in RSI+, <ExternalLink class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">open on RSI</span> for the RSI page, <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">cart</span> adds it to your RSI cart (CCUs open the planner); <X class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">dismiss</span> dismisses.
+      {#if Number.isFinite(since)}Watching since {when(since)}.{/if} Checked when RSI+ polls (catalog every 30 min with a wishlist, else 6 h; the listing hourly, or as set in Settings), when you refresh Browse, and with Refresh here. Click a name to see it in RSI+, <ExternalLink class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">open on RSI</span> for the RSI page, <ShoppingCart class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">cart</span> adds it to your RSI cart (CCUs open the planner); <X class="inline size-3.5 align-[-2px]" aria-hidden="true" /><span class="sr-only">dismiss</span> dismisses.
     </Card.Description>
     <!-- Under the text, not beside it: four controls next to a long description left both cramped. -->
     <div class="flex flex-wrap items-center gap-2 pt-2">

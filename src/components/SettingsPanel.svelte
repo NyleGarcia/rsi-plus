@@ -4,7 +4,7 @@
   import { ACCENTS, MODES, PALETTES, readTheme, resolveMode, saveTheme, type Accent, type Palette, type ThemePrefs } from '@/lib/theme';
   import { getSettings, patchSettings, settingsItem, wavesItem, type Settings } from '@/lib/settings';
   import { activeWaveEvent } from '@/lib/waves';
-  import { MUTE_MODES, PARTY_REMIND, POLL_MINUTES, SETTING_TOGGLES, STARORG_SWITCH, clampSetting, type NumberSetting } from '@/lib/settings-ui';
+  import { MUTE_MODES, PARTY_REMIND, POLL_MINUTES, SETTING_TOGGLES, STARORG_SWITCH, STORE_LISTING_MINUTES, clampSetting, type NumberSetting } from '@/lib/settings-ui';
   import { bg } from '@/lib/messages';
   import { CURRENCIES } from '@/lib/currency';
   import Segmented from './Segmented.svelte';
@@ -237,6 +237,7 @@
             <Segmented options={MUTE_MODES} value={s.muteMode} ariaLabel="Muted threads" onchange={(v) => set('muteMode', v)} />
           </div>
           {@render numberField(PARTY_REMIND, s.partyRemindHours)}
+          {@render numberField(STORE_LISTING_MINUTES, s.storeListingMinutes, !s.pollAuto)}
         </div>
       {/if}
     </Card.Content>
