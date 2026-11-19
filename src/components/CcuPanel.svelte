@@ -6,11 +6,12 @@
   import { applyAlternative, DEFAULT_PLAN_OPTIONS, savedVsMsrp, farthestReachable, ownedCcus, ownedHulls, ownedShips, plan, planGraph, plannerExclude, reservedRefs, STORE_START, type Objective, type OpenedLeg, type PlanOptions, type SavedChain, type Step } from '@/lib/ccu';
   import { hangarState, hangarUrl } from '@/lib/hangar';
   import { bg } from '@/lib/messages';
-  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem } from '@/lib/settings';
+  import { buybackItem, catalogItem, ccuChainsItem, hangarItem, pledgeLabelsItem, priceHistoryItem, saleHistoryItem, storeItemsItem } from '@/lib/settings';
   import { withArchive, withExpected, type PriceHistory } from '@/lib/price-history';
   import { cleanLabels, idsWith, KEEP, PREFER, type Labels } from '@/lib/labels';
   import { refreshHangar, type HangarProgress } from '@/lib/hangar-refresh';
-  import { matchShip, usd, type Catalog, type SaleHistory } from '@/lib/store';
+  import { matchShip, usd, type Catalog, type SaleHistory, type StoreItem } from '@/lib/store';
+  import { packOffersByShip, priceIndex } from '@/lib/bundle';
   import { ownUsd } from '@/lib/privacy.svelte';
   import Wizard, { type WizardStep } from './Wizard.svelte';
   import Segmented from './Segmented.svelte';
@@ -58,6 +59,17 @@
   let prices = $state<PriceHistory>({});
   let labels = $state<Labels>({});
   let error = $state('');
+  /** Browse's saved listing (never fetched here): packs / game packages that grant the target. */
+  let storeAll = $state<StoreItem[]>([]);
+  /**
+   * The target's packs, best share first — shown when no CCU or standalone to it is on sale today (an Eclipse, an
+   * Idris): buying the pack now vs waiting for the CCU to return.
+   */
+  const targetPacks = $derived.by(() => {
+    const t = toId == null ? null : (cat?.ships ?? []).find((s) => s.id === toId);
+    if (!t || t.ccu.some((k) => k.available) || t.standalone.some((k) => k.available)) return [];
+    return packOffersByShip(storeAll, priceIndex(storeAll, cat?.ships ?? [])).get(t.id) ?? [];
+  });
 
   type Mode = 'store' | 'hangar' | 'any';
   let mode = $state<Mode>('hangar');
@@ -81,12 +93,14 @@
     saleHistoryItem.getValue().then((h) => (sales = h));
     priceHistoryItem.getValue().then(async (h) => (prices = await withArchive(h)));
     pledgeLabelsItem.getValue().then((l) => (labels = cleanLabels(l)));
+    storeItemsItem.getValue().then((v) => (storeAll = v?.items ?? []));
     bg({ type: 'catalog:get' })
       .then((c) => (cat = c))
       .catch((e) => (error = (e as Error).message));
     const offs = [
       hangarItem.watch((h) => (hangar = h)),
       pledgeLabelsItem.watch((l) => (labels = cleanLabels(l))),
+      storeItemsItem.watch((v) => (storeAll = v?.items ?? [])),
       buybackItem.watch((b) => (buyback = b)),
       // Another hub tab (or an account switch) changed the list: follow it, so this page never writes an old copy back.
       ccuChainsItem.watch((c) => {
@@ -722,6 +736,22 @@
         </div>
       {/if}
       {#if startId != null && toId != null}
+        {#if targetPacks.length}
+          <Alert.Root>
+            <Alert.Description>
+              <span><strong>Or buy it now in a pack.</strong> No CCU or standalone to the {name(toId)} is on sale, but {targetPacks.length === 1 ? 'a pack grants it' : `${targetPacks.length} packs grant it`}:</span>
+              <ul class="m-0 mt-1 grid list-none gap-0.5 p-0">
+                {#each targetPacks.slice(0, 5) as o (o.item.id)}
+                  <li>
+                    <a href={`#browse?${new URLSearchParams({ item: String(o.item.id), q: o.item.name })}`}>{o.item.name}</a>
+                    <span class="tabular-nums">{usd(o.item.discounted)}</span>{#if o.hulls > 1}<span class="text-muted-foreground"> · {o.hulls} hulls</span>{/if}{#if o.share != null && o.share < o.item.discounted}<span class="text-muted-foreground"> · ≈ {usd(o.share)} for the {name(toId)}</span>{/if}{#if o.item.vip}<span class="text-muted-foreground"> · Concierge</span>{/if}{#if o.item.warbond}<span class="text-muted-foreground"> · warbond</span>{/if}
+                  </li>
+                {/each}
+              </ul>
+              <span class="text-muted-foreground text-xs">The share splits the pack price by each piece's separate price (MSRP for hulls); you pay the whole pack. From Browse's saved listing.</span>
+            </Alert.Description>
+          </Alert.Root>
+        {/if}
         {#if !result}
           <Alert.Root variant="destructive">
             <Alert.Description>
