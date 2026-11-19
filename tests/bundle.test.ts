@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bundleValue, contentKey, hasContents, insuranceOf, insuranceTag, isBundle, isExtra, priceIndex } from '@/lib/bundle';
+import { bundleValue, contentKey, hasContents, insuranceOf, insuranceTag, isBundle, isExtra, packOffers, priceIndex } from '@/lib/bundle';
 import type { CatalogShip, StoreItem } from '@/lib/store';
 
 const item = (o: Partial<StoreItem> & { id: number; name: string }): StoreItem => ({
@@ -129,5 +129,28 @@ describe('bundleValue', () => {
   it('subscriber listings never price anything', () => {
     const v = bundleValue(by(20), idx)!;
     expect(v.parts.find((p) => /Tractor/.test(p.name))?.price).toBe(500);
+  });
+});
+
+describe('packOffers', () => {
+  it('splits a multi-hull pack by MSRP', () => {
+    const o = packOffers(SHIPS[0]!, STORE, idx);
+    expect(o.map((x) => x.item.id)).toEqual([21]);
+    expect(o[0]).toMatchObject({ hulls: 2, share: Math.round((7500 * 4000) / 9000) });
+  });
+  it('a game package: hull share net of the UEC; standalone listings are not packs', () => {
+    const o = packOffers(SHIPS[2]!, STORE, idx);
+    expect(o.map((x) => x.item.id)).toEqual([27]);
+    expect(o[0]!.share).toBe(Math.round((4500 * 3000) / 4000));
+  });
+  it('skips sold-out and Subscribers Store listings; no hull, no offers', () => {
+    const gone = STORE.map((i) => (i.id === 21 ? { ...i, available: false } : i));
+    expect(packOffers(SHIPS[0]!, gone, priceIndex(gone, SHIPS))).toEqual([]);
+    expect(packOffers(ship(9, 'Idris-M', 0), STORE, idx)).toEqual([]);
+  });
+  it('unpriced pieces: no split (share null), cheapest pack first', () => {
+    const store = [...STORE, item({ id: 30, name: 'Mystery Pack', category: 'packs', price: 2000, discounted: 2000, contents: [{ name: 'ATLS', ship: true }, { name: 'Unknown Thing' }] })];
+    const o = packOffers(SHIPS[0]!, store, priceIndex(store, SHIPS));
+    expect(o.map((x) => [x.item.id, x.share])).toEqual([[30, null], [21, 3333]]);
   });
 });

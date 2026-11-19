@@ -204,3 +204,51 @@ function value(it: Pick<StoreItem, 'id' | 'discounted'>, contents: StoreContent[
   const savings = separate - it.discounted;
   return { parts, insurance: null, total, priced, priceable, separate, savings, pct: separate > 0 ? Math.round((100 * savings) / separate) : 0 };
 }
+
+/** A pack / package on sale that grants a hull: how to get a ship the store sells only inside a bundle (Eclipse, Idris …). */
+export interface PackOffer {
+  item: StoreItem;
+  /** Hulls in the pack (this one included). */
+  hulls: number;
+  /**
+   * This hull's share of the pack price, cents: the price split by each piece's separate price (MSRP for hulls).
+   * Null when the hull or too little of the rest has a price to split by.
+   */
+  share: number | null;
+}
+
+/**
+ * Hull `s`'s cut of pack `it`: the price split by each piece's separate price (MSRP for hulls, RSI's rate for UEC), or
+ * the whole price when the hull is the only piece that is not an extra.
+ */
+function shareOf(s: CatalogShip, it: StoreItem, hulls: number, idx: PriceIndex): number | null {
+  const v = bundleValue(it, idx);
+  // Split only when every priceable piece is priced: a half-priced pack would load the whole price on the known pieces.
+  if (v && s.msrp && v.separate > 0 && v.priced >= v.priceable) return Math.min(it.discounted, Math.round((it.discounted * s.msrp) / v.separate));
+  return hulls === 1 && (it.contents ?? []).every((c) => c.ship || isExtra(c.name)) ? it.discounted : null;
+}
+
+/**
+ * Every listing on sale now (not the Subscribers Store, not standalone ships) that grants a hull, by catalog id, best
+ * first: lowest share, then lowest price. Concierge-only packs come along when the session sees them (`item.vip`).
+ * One pass over the store for the whole catalog.
+ */
+export function packOffersByShip(items: StoreItem[], idx: PriceIndex): Map<number, PackOffer[]> {
+  const m = new Map<number, PackOffer[]>();
+  for (const it of items) {
+    if (!it.available || it.category === 'subscribers' || it.category === 'ships') continue;
+    const hulls = (it.contents ?? []).filter((c) => c.ship);
+    const ids = new Set<number>();
+    for (const c of hulls) {
+      const s = matchShip(c.name, idx.ships);
+      if (!s || ids.has(s.id)) continue;
+      ids.add(s.id);
+      m.set(s.id, [...(m.get(s.id) ?? []), { item: it, hulls: hulls.length, share: shareOf(s, it, hulls.length, idx) }]);
+    }
+  }
+  const cost = (o: PackOffer) => o.share ?? o.item.discounted;
+  for (const list of m.values()) list.sort((a, b) => cost(a) - cost(b) || a.item.discounted - b.item.discounted);
+  return m;
+}
+/** The packs that grant hull `s` (see `packOffersByShip`). */
+export const packOffers = (s: CatalogShip, items: StoreItem[], idx: PriceIndex): PackOffer[] => packOffersByShip(items, idx).get(s.id) ?? [];

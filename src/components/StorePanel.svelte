@@ -9,6 +9,7 @@
   import { catalogItem, gameShipsItem, hangarItem, priceHistoryItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { lastSeen, PRICE_KIND_LABEL, runsOf, withArchive, type PriceHistory } from '@/lib/price-history';
   import { isLimitedSku, isLimitedTime, isWarbondSku, lastSale, lowestOffer, matchShip, usd, type Catalog, type CatalogShip, type SaleHistory, type StoreItem } from '@/lib/store';
+  import { packOffersByShip, priceIndex, type PackOffer } from '@/lib/bundle';
   import { cooldownLeft, cooldownMsg, cooldownReset } from '@/lib/cooldown';
   import { applyFacets, SIZE_OPTIONS, STAGE_OPTIONS, stageOf, type Facet, type FacetValues, type RangeFacet } from '@/lib/facets';
   import FacetBar from './FacetBar.svelte';
@@ -44,6 +45,17 @@
   const owned = $derived(ownedHulls(hangar?.pledges, game, cat?.ships ?? []));
   /** Browse's standalone-ship listings (already loaded by Browse / the poll — never fetched here). */
   let shipListings = $state<StoreItem[]>([]);
+  /** Everything Browse's listing holds (packs and game packages grant hulls too). */
+  let storeAll = $state<StoreItem[]>([]);
+  const setListing = (v: { items?: StoreItem[] } | null) => ((shipListings = shipsOf(v)), (storeAll = v?.items ?? []));
+  /** Catalog id → packs / game packages on sale that grant it, best share first (some hulls are sold only that way). */
+  const packs = $derived(packOffersByShip(storeAll, priceIndex(storeAll, cat?.ships ?? [])));
+  const packTip = (s: CatalogShip, list: PackOffer[]) =>
+    list
+      .slice(0, 10)
+      .map((o) => `${o.item.name} ${usd(o.item.discounted)}${o.hulls > 1 ? ` · ${o.hulls} hulls` : ''}${o.share != null && o.share < o.item.discounted ? ` · ≈ ${usd(o.share)} for the ${s.name}` : ''}${o.item.vip ? ' · Concierge' : ''}${o.item.warbond ? ' · warbond' : ''}`)
+      .join('\n') + (list.length > 10 ? `\n… ${list.length - 10} more` : '') + '\nShare = the pack price split by each piece\'s separate price (MSRP for hulls).';
+  const packHref = (o: PackOffer) => `#browse?${new URLSearchParams({ item: String(o.item.id), q: o.item.name })}`;
   const shipsOf = (v: { items?: StoreItem[] } | null) => (v?.items ?? []).filter((i) => i.category === 'ships');
   /** Catalog id → its standalone listings, matched by name. */
   const listingsById = $derived.by(() => {
@@ -106,9 +118,9 @@
     hangarItem.getValue().then((h) => (hangar = h));
     saleHistoryItem.getValue().then((h) => (sales = h));
     priceHistoryItem.getValue().then(async (h) => (prices = await withArchive(h)));
-    storeItemsItem.getValue().then((v) => (shipListings = shipsOf(v)));
+    storeItemsItem.getValue().then(setListing);
     refresh(false);
-    const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), gameShipsItem.watch((g) => (game = g ?? [])), hangarItem.watch((h) => (hangar = h)), saleHistoryItem.watch((h) => (sales = h ?? {})), storeItemsItem.watch((v) => (shipListings = shipsOf(v)))];
+    const offs = [catalogItem.watch((c) => (cat = c)), wishlistItem.watch((w) => (wish = w ?? [])), gameShipsItem.watch((g) => (game = g ?? [])), hangarItem.watch((h) => (hangar = h)), saleHistoryItem.watch((h) => (sales = h ?? {})), storeItemsItem.watch(setListing)];
     return () => offs.forEach((o) => o());
   });
 
@@ -138,6 +150,8 @@
   const makers = $derived([...new Set((cat?.ships ?? []).map((s) => s.manufacturer).filter(Boolean))].sort());
   const warbondOf = (s: CatalogShip) => s.ccu.find((k) => isWarbondSku(k) && k.available);
   const onSale = (s: CatalogShip) => s.ccu.length > 0 || s.standalone.some((k) => k.available);
+  /** On sale in any form, a pack that grants it included (the *On sale* filter). */
+  const sold = (s: CatalogShip) => onSale(s) || packs.has(s.id);
   const saving = (s: CatalogShip) => {
     const o = lowestOffer(s);
     return o && s.msrp ? s.msrp - o.price : 0;
@@ -152,6 +166,8 @@
         { id: 'standard', label: 'Standard CCU', hint: 'A non-warbond CCU to it on sale (store credit welcome)', test: (s) => s.ccu.some((k) => !isWarbondSku(k)) },
         { id: 'limited', label: 'Limited CCU', hint: 'A CCU RSI titles limited', test: (s) => s.ccu.some(isLimitedSku) },
         { id: 'standalone', label: 'Standalone', hint: 'The ship itself on sale', test: (s) => s.standalone.some((k) => k.available) },
+        { id: 'pack', label: 'In a pack', hint: 'A pack or game package on sale grants it (from Browse) — some hulls are sold only that way', test: (s) => packs.has(s.id) },
+        { id: 'packonly', label: 'Pack only', hint: 'Only a pack or game package grants it right now: no CCU, no standalone', test: (s) => packs.has(s.id) && !onSale(s) },
       ],
     },
     { id: 'stage', label: 'Stage', options: STAGE_OPTIONS<CatalogShip>((s) => s.flyable) },
@@ -171,7 +187,7 @@
   const rows = $derived.by(() => {
     const query = q.trim().toLowerCase();
     return (cat?.ships ?? []).filter(
-      (s) => (sale === 'all' || (sale === 'sale') === onSale(s)) && (!maker || s.manufacturer === maker) && (!query || `${s.name} ${s.manufacturer} ${s.focus}`.toLowerCase().includes(query)),
+      (s) => (sale === 'all' || (sale === 'sale') === sold(s)) && (!maker || s.manufacturer === maker) && (!query || `${s.name} ${s.manufacturer} ${s.focus}`.toLowerCase().includes(query)),
     );
   });
   const shown = $derived.by(() => {
@@ -194,9 +210,9 @@
     const t = setTimeout(() => (budget += 40), 16);
     return () => clearTimeout(t);
   });
-  const onSaleCount = $derived((cat?.ships ?? []).filter(onSale).length);
+  const onSaleCount = $derived((cat?.ships ?? []).filter(sold).length);
   const SALE = $derived<{ id: Sale; label: string; hint: string }[]>([
-    { id: 'sale', label: `On sale · ${onSaleCount}`, hint: 'Hulls the store sells right now: a CCU to them or a standalone' },
+    { id: 'sale', label: `On sale · ${onSaleCount}`, hint: 'Hulls the store sells right now: a CCU to them, a standalone, or a pack that grants them' },
     { id: 'off', label: `Not on sale · ${(cat?.ships.length ?? 0) - onSaleCount}`, hint: "Hulls with nothing on sale now — Plan CCU still works for them (Plan ahead), with the last date RSI+ saw them on sale" },
     { id: 'all', label: `All hulls · ${cat?.ships.length ?? 0}`, hint: 'Every hull in the catalog' },
   ]);
@@ -275,7 +291,14 @@
                 {#each s.ccu.filter((k) => k !== wb) as k (k.id)}<Tag kind="sale" label={`${k.title || 'CCU'} ${usd(k.price)}`} />{#if isLimitedSku(k)}<Tag kind="limited" size="xs" class="self-center" hint="RSI titles this CCU limited" />{/if}{/each}
                 {#each s.standalone.filter((k) => k.available) as k (k.id)}<Tag kind="sale" label={`Standalone ${usd(k.price)}`} />{/each}
                 {#if limitedIds.has(s.id)}<Tag kind="limited" size="xs" class="self-center" hint="RSI marks the standalone listing time-limited (from Browse)" />{/if}
-                {#if !onSale(s)}
+                {#if packs.get(s.id)?.length}
+                  {@const list = packs.get(s.id)!}
+                  {@const o = list[0]!}
+                  <a href={packHref(o)} class="no-underline" title={packTip(s, list)}>
+                    <Tag kind="sale" label={`${onSale(s) ? 'In' : 'Only in'} ${list.length > 1 ? `${list.length} packs` : 'a pack'}: ${o.share != null && o.share < o.item.discounted ? `≈ ${usd(o.share)}` : usd(o.item.discounted)}`} hint={null} />
+                  </a>
+                {/if}
+                {#if !sold(s)}
                   {@const t = lastSale(sales, s.id)}
                   {@const was = lastSeen(prices, s.id, ['ccu-wb', 'ccu', 'ship-wb', 'ship'])}
                   <LazyTip tip={t ? 'Last seen on sale by RSI+ (history starts when it was installed)' : "Not seen on sale since RSI+ was installed — ships come back at IAE (November), Invictus (May) or the maker's showcase"}>
