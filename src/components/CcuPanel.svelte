@@ -668,7 +668,7 @@
           {#each OPTIONS as o (o.key)}
             <SwitchRow id={`ccu-opt-${o.key}`} size="sm" label={o.label} hint={o.hint} checked={o.key === 'lastSeen' || o.key === 'useOwned' ? opt[o.key] !== false : !!opt[o.key]} onchange={(v) => (opt[o.key] = v)} />
           {/each}
-          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps: each extra step is a ship you can stop at and fly. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
+          <SwitchRow id="ccu-opt-steps" size="sm" label="Prefer more steps" hint="When two chains cost the same, show the one with more steps that save money (a CCU you own or one below the MSRP difference): each is a ship you can stop at and fly. A step at the plain MSRP difference saves nothing and is left out. Off: the one with fewer steps." checked={opt.steps === 'more'} onchange={(v) => (opt.steps = v ? 'more' : 'fewer')} />
           <SwitchRow id="ccu-opt-exclude-saved" size="sm" label={`Leave my chains' CCUs alone${chains.length ? ` (${reservedBy.size})` : ''}`} checked={excludeSaved} disabled={!chains.length} onchange={(v) => ((excludeSaved = v), (openedLeg = null))} />
         </div>
         <span class="text-muted-foreground text-[11px]">
@@ -699,14 +699,14 @@
           <Segmented
             options={[
               { id: 'hangar', label: 'Ship in my hangar' },
-              { id: 'store', label: 'Buy from the store', hint: 'Start by buying the cheapest standalone ship on sale' },
+              { id: 'store', label: 'Buy from the store', hint: 'No ship to pick: the planner starts from whichever standalone ship on sale makes the cheapest chain' },
               { id: 'any', label: 'Any ship' },
             ]}
             bind:value={mode}
             ariaLabel="Source"
           />
           {#if mode === 'store'}
-            <span class="text-muted-foreground text-[11px]">Picks the cheapest standalone ship on sale to start from.</span>
+            <span class="text-muted-foreground text-[11px]">Picked for you: the standalone ship on sale that makes the cheapest chain to the target.</span>
           {:else}
             <ShipSelect {ships} {mine} bind:value={fromId} onlyMine={mode === 'hangar'} ariaLabel="From ship" placeholder={mode === 'hangar' ? 'Pick a ship you own…' : 'Pick a ship…'} />
           {/if}
