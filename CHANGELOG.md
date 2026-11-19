@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.23.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.22.0...v0.23.0) (2026-11-19)
+
+
+### Features
+
+* **catalog:** packs and game packages that grant a hull, with its share of the pack price; pack-only hulls count as on sale ([986228a](https://github.com/NyleGarcia/rsi-plus/commit/986228a63e0a7d7643a6731c2252ce174687dd3f))
+* **ccu:** pack-only target — offer the packs that grant it next to the chain ([3ee9afc](https://github.com/NyleGarcia/rsi-plus/commit/3ee9afcc0e4192164acadd80c7323b1b99e69a7b))
+* **ccu:** planner source insurance — LTI only narrows my hangar to hulls on LTI pledges ([7f0527c](https://github.com/NyleGarcia/rsi-plus/commit/7f0527cdb150ad92da64bb019126ecdf16040aeb))
+* **ccu:** store start insurance — LTI only limits the store start to standalones that come with LTI; insurance tag on the buy-ship step ([8ee9531](https://github.com/NyleGarcia/rsi-plus/commit/8ee95311691c1faec44d29fb88a537ab086e09be))
+* pack offers for hulls, LTI source choice, CCU steps that save money ([cae8f67](https://github.com/NyleGarcia/rsi-plus/commit/cae8f6746fe7fb5e16cefaf6cd1682383741b05b))
+
+
+### Bug Fixes
+
+* **ccu:** prefer more steps counts only steps that save money; store source says it picks the start itself ([6cbc194](https://github.com/NyleGarcia/rsi-plus/commit/6cbc194083a26ff8eeb851a1c6d6ea1ebac7b206))
+
 ## [0.22.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.21.0...v0.22.0) (2026-11-19)
 
 
