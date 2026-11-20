@@ -8,7 +8,7 @@
 set -euo pipefail
 VERSION="${1:?usage: verify-release.sh <version> [--no-rebuild]}"
 REBUILD=1; [ "${2:-}" = "--no-rebuild" ] && REBUILD=0
-REPO="${REPO:-NyleGarcia/rsi-plus}"
+REPO="${REPO:-voidput/rsi-plus}"
 TAG="v$VERSION"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 ok() { echo "✔ $*"; }; warn() { echo "⚠ $*" >&2; }; fail() { echo "✖ $*" >&2; exit 1; }

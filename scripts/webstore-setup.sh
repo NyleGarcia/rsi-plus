@@ -11,7 +11,7 @@
 #   bash scripts/webstore-setup.sh [PROJECT_ID] [OWNER/REPO]
 set -euo pipefail
 PROJECT="${1:-rsi-plus-publish}"
-REPO="${2:-NyleGarcia/rsi-plus}"
+REPO="${2:-voidput/rsi-plus}"
 SA_NAME=webstore-publisher
 GCLOUD="${GCLOUD:-$(command -v gcloud || echo "$HOME/google-cloud-sdk/bin/gcloud")}"
 
@@ -46,6 +46,12 @@ SA="$SA_NAME@$PROJECT.iam.gserviceaccount.com"
        --display-name="rsi-plus repo" --issuer-uri="https://token.actions.githubusercontent.com" \
        --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
        --attribute-condition="assertion.repository == '$REPO'"
+# Existing provider (e.g. after a repository transfer): pin it to $REPO, and drop the old repository's binding below.
+"$GCLOUD" iam workload-identity-pools providers update-oidc rsi-plus --workload-identity-pool=github --location=global --project "$PROJECT" \
+  --attribute-condition="assertion.repository == '$REPO'" --quiet >/dev/null
+for old in $("$GCLOUD" iam service-accounts get-iam-policy "$SA" --project "$PROJECT" --flatten=bindings --filter=bindings.role:roles/iam.workloadIdentityUser --format='value(bindings.members)' | tr ';' '\n' | grep '/attribute.repository/' | grep -v "/attribute.repository/$REPO\$"); do
+  "$GCLOUD" iam service-accounts remove-iam-policy-binding "$SA" --project "$PROJECT" --role=roles/iam.workloadIdentityUser --member="$old" --quiet >/dev/null
+done
 "$GCLOUD" iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/projects/$NUM/locations/global/workloadIdentityPools/github/attribute.repository/$REPO" --quiet >/dev/null
 "$GCLOUD" iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --role=roles/iam.serviceAccountTokenCreator --member="user:$acct" --quiet >/dev/null

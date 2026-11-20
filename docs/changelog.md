@@ -6,6 +6,8 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- RSI+ is now part of StarOrg Tools: the hub footer links to starorg.tools, and the project lives at github.com/voidput/rsi-plus (old links redirect).
+- Firefox: releases are submitted to Firefox Add-ons once the listing is live.
 
 ## 0.19.0 — 2026-11-15
 - Buyback: shows your Credit Buy-Back token (needed to buy back with store credit) as RSI's buy-back pages last showed it — available, none (next one early January / April / July / October), or probably back after a new quarter — with when it was read. Reload the buyback to refresh it.

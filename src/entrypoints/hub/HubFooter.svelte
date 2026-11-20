@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * The hub's footer, on every page (after SC-ORG-BOT's): one slim row — Fankit badge + the "unofficial" line, version,
-   * and a *More* toggle that unfolds the full trademark notice, links (source, changelog, privacy, report a bug),
+   * and a *More* toggle that unfolds the full trademark notice, links (StarOrg Tools, source, changelog, privacy, report a bug),
    * Buy me a coffee, Patreon and the RSI referral code. Sticky at the bottom: the Fankit's always-visible notice, on every page.
    */
   import { onMount } from 'svelte';
@@ -20,9 +20,10 @@
   import Code from '@lucide/svelte/icons/code';
   import FileText from '@lucide/svelte/icons/file-text';
   import Shield from '@lucide/svelte/icons/shield';
+  import Boxes from '@lucide/svelte/icons/boxes';
   import { BUYMEACOFFEE_URL, PATREON_URL, enlistUrl, REFERRAL_LEADS, REFERRAL_ROTATE_MS } from '@/lib/support';
 
-  const REPO = 'https://github.com/NyleGarcia/rsi-plus';
+  const REPO = 'https://github.com/voidput/rsi-plus';
   const TRADEMARK = 'Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC.';
   const UNOFFICIAL = 'RSI+ is an unofficial Star Citizen fan tool, not affiliated with or endorsed by the Cloud Imperium group of companies.';
   const SHORT = 'Unofficial fan tool · not affiliated with Cloud Imperium';
@@ -48,6 +49,7 @@
     }
   }
   const LINKS = [
+    { label: 'Part of StarOrg Tools', href: 'https://starorg.tools', icon: Boxes },
     { label: 'Source', href: REPO, icon: Code },
     { label: 'Changelog', href: `${REPO}/blob/main/docs/changelog.md`, icon: FileText },
     { label: 'Privacy', href: `${REPO}/blob/main/PRIVACY.md`, icon: Shield },

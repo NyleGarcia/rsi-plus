@@ -13,7 +13,7 @@ const titles = [];
 let from = {};
 for (;;) {
   const q = new URLSearchParams({ action: 'query', list: 'allpages', apnamespace: '0', aplimit: 'max', format: 'json', formatversion: '2', ...from });
-  const res = await fetch(`${API}?${q}`, { headers: { 'User-Agent': 'rsi-plus wiki-titles (github.com/NyleGarcia/rsi-plus)' } });
+  const res = await fetch(`${API}?${q}`, { headers: { 'User-Agent': 'rsi-plus wiki-titles (github.com/voidput/rsi-plus)' } });
   if (!res.ok) throw new Error(`starcitizen.tools allpages: HTTP ${res.status}`);
   const body = await res.json();
   titles.push(...body.query.allpages.map((p) => p.title));

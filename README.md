@@ -1,8 +1,10 @@
 # RSI+
 
-[![CI](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/ci.yml) [![Security](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml/badge.svg)](https://github.com/NyleGarcia/rsi-plus/actions/workflows/security.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/NyleGarcia/rsi-plus/badge)](https://scorecard.dev/viewer/?uri=github.com/NyleGarcia/rsi-plus) [![Release](https://img.shields.io/github/v/release/NyleGarcia/rsi-plus?sort=semver)](https://github.com/NyleGarcia/rsi-plus/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/voidput/rsi-plus/actions/workflows/ci.yml/badge.svg)](https://github.com/voidput/rsi-plus/actions/workflows/ci.yml) [![Security](https://github.com/voidput/rsi-plus/actions/workflows/security.yml/badge.svg)](https://github.com/voidput/rsi-plus/actions/workflows/security.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/voidput/rsi-plus/badge)](https://scorecard.dev/viewer/?uri=github.com/voidput/rsi-plus) [![Release](https://img.shields.io/github/v/release/voidput/rsi-plus?sort=semver)](https://github.com/voidput/rsi-plus/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Browser extension (Chrome, Edge, Brave — MV3; Firefox — MV2) for the whole [Roberts Space Industries](https://robertsspaceindustries.com) site — Spectrum, hangar, buyback and the pledge store. Sibling of Crunchy+ (same stack: WXT + Svelte 5 + TS; hub UI on shadcn-svelte + Tailwind v4, charts on LayerChart). Ideas from [Hangar XPLORer](https://github.com/dolkensp/HangarXPLOR) (MIT) and [CCU Game](https://ccugame.app); no data is sent anywhere but RSI, unless you connect StarOrg Tools.
+
+Part of the [StarOrg Tools](https://starorg.tools) family, with [StarOrg Codex](https://github.com/voidput/starorg-codex) and [Snares](https://snare.starorg.tools). RSI+ works on its own; a StarOrg account is optional.
 
 ## RSI site
 - **Guided flows** — *Guide me* steppers on Paint rebuy and the CCU planner walk the safe order (cart confirmed with RSI before anything is melted; chain verified with RSI before anything is bought) and tick steps off from real data.
@@ -40,7 +42,7 @@ npm run zip:all      # .output/rsi-plus-<v>-{chrome,edge,brave,firefox}.zip (+ -
 npm test             # vitest
 npm run check        # svelte-check / tsc
 ```
-Install from a [release](https://github.com/NyleGarcia/rsi-plus/releases): **Chrome** → `rsi-plus-<v>-chrome.zip`, **Edge** → `-edge.zip`, **Brave** → `-brave.zip` (all three the same MV3 code, named per browser; Brave also runs the Chrome zip), unzip → extensions page (`brave://extensions`, `edge://extensions`) → Developer mode → *Load unpacked*. **Firefox** → `-firefox.zip` via `about:debugging` → *This Firefox* → *Load Temporary Add-on* (unsigned builds last until Firefox restarts; a signed AMO build is pending). Firefox runs the MV2 build: no offscreen page (the background page plays sounds itself) and no incognito split — private windows share the normal login, like Chrome's dev build.
+Install from a [release](https://github.com/voidput/rsi-plus/releases): **Chrome** → `rsi-plus-<v>-chrome.zip`, **Edge** → `-edge.zip`, **Brave** → `-brave.zip` (all three the same MV3 code, named per browser; Brave also runs the Chrome zip), unzip → extensions page (`brave://extensions`, `edge://extensions`) → Developer mode → *Load unpacked*. **Firefox** → `-firefox.zip` via `about:debugging` → *This Firefox* → *Load Temporary Add-on* (unsigned builds last until Firefox restarts; a signed AMO build is pending). Firefox runs the MV2 build: no offscreen page (the background page plays sounds itself) and no incognito split — private windows share the normal login, like Chrome's dev build.
 Log in on robertsspaceindustries.com in the same browser profile — the extension uses your session (`Rsi-Token` cookie). Public reads (threads, channels) also work logged out.
 
 ## Security
@@ -50,7 +52,7 @@ Runs only in your browser, talks only to RSI, and to StarOrg Tools if you connec
   ```sh
   scripts/verify-release.sh <version>     # checksums + attestation + rebuild from the tag and diff
   ```
-- Found something? [Report it privately](https://github.com/NyleGarcia/rsi-plus/security/advisories/new) — see [SECURITY.md](SECURITY.md).
+- Found something? [Report it privately](https://github.com/voidput/rsi-plus/security/advisories/new) — see [SECURITY.md](SECURITY.md).
 
 Store listing: [store/LISTING.md](store/LISTING.md) · privacy: [PRIVACY.md](PRIVACY.md) · security: [SECURITY.md](SECURITY.md) · license: [MIT](LICENSE).
 

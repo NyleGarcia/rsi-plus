@@ -67,4 +67,4 @@ Uninstalling the extension deletes all its stored data (saved logins and the Sta
 
 ## Contact
 
-Open an issue at <https://github.com/NyleGarcia/rsi-plus/issues>.
+Open an issue at <https://github.com/voidput/rsi-plus/issues>.
