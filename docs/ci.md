@@ -14,7 +14,7 @@ Three workflows on every push to `main` / `dev` and every PR; release flow in [r
 | Security (`security.yml`) | `codeql` | CodeQL `security-and-quality` findings for JS/TS and for the workflow files (results under *Security → Code scanning*) |
 | Security | `audit` | `npm audit`: moderate+ in shipped deps, high+ anywhere |
 | Security | `dependency-review` (PRs) | a PR adding a dependency with a high+ advisory or a denied license |
-| Security | `secrets` | gitleaks finds a credential anywhere in history |
+| Security | `secrets` | gitleaks (pinned CLI, checksum-checked — the action needs a paid license on org repos) finds a credential anywhere in history |
 | Security | `extension` | built manifest off the allowlist (`scripts/manifest-check.mjs`), `eval` / `new Function` in the bundle, `web-ext lint` errors |
 | Scorecard (`scorecard.yml`) | `scorecard` | never fails; publishes the OpenSSF score (README badge) and its findings to Code scanning. Runs on `main` (the default branch since 0.22.0, so the score is of what ships; Scorecard refuses any other) and weekly |
 
