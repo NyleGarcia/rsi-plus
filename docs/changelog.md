@@ -6,6 +6,7 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- Fixed: a "Migration failed for local:orders" error logged by the offscreen page (Chromium) when it loaded the hangar for the weekly sync.
 - RSI+ is now part of StarOrg Tools: the hub footer links to starorg.tools, and the project lives at github.com/voidput/rsi-plus (old links redirect).
 - Firefox: releases are submitted to Firefox Add-ons once the listing is live.
 

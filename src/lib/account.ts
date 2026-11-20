@@ -6,10 +6,14 @@
 import { parseBuybackDetail, parseBuybackPage, parseBuybackTokens, parseHangarPage, type BuybackItem, type Pledge, HANGAR_PAGE, creditsDebug, parseCredits, type Credits } from './hangar';
 import { SPECTRUM_ORIGIN } from './types';
 import { sleep } from './utils';
-import { buybackTokenItem } from './settings';
 
-/** Remember what a buy-back page said about Credit Buy-Back tokens (never fails the load). */
-const saveTokens = (tokens: number) => void buybackTokenItem.setValue({ at: Date.now(), tokens }).catch(() => undefined);
+/**
+ * Remember what a buy-back page said about Credit Buy-Back tokens (never fails the load). `settings` is imported lazily:
+ * the offscreen document loads this module for `loadHangar` and has no storage API, and evaluating `settings` there
+ * runs the storage items' migrations (`[@wxt-dev/storage] Migration failed … add the 'storage' permission`).
+ */
+const saveTokens = (tokens: number) =>
+  void import('./settings').then(({ buybackTokenItem }) => buybackTokenItem.setValue({ at: Date.now(), tokens })).catch(() => undefined);
 
 export class NotLoggedIn extends Error {
   constructor() {
