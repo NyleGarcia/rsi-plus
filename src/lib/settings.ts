@@ -175,6 +175,11 @@ export const pledgeLabelsItem = storage.defineItem<Labels>(acct('local:pledgeLab
 export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; prefer?: number[]; storeStart: boolean; /** The goals were folded into the saved chains (*My chains*). */ merged?: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], prefer: [], storeStart: false } });
 /** Limited waves: the sales to be reminded of (`lib/waves.ts` ids). */
 export const wavesItem = storage.defineItem<{ armed: string[]; /** Settings → Limited waves (absent = on). */ on?: boolean }>('local:waves', { fallback: { armed: [] } });
+/**
+ * Limited waves page: the ship last looked at and, per sale, the listing picked to watch (SKU id; 0 = none). Kept apart
+ * from `wavesItem`, which the background watches to reschedule the wave reminders.
+ */
+export const wavesViewItem = storage.defineItem<{ pick: string | null; watch: Record<string, number> }>('local:wavesView', { fallback: { pick: null, watch: {} } });
 /** Credit Buy-Back tokens as RSI's buy-back pages last showed them (`lib/buyback-token.ts`). */
 export const buybackTokenItem = storage.defineItem<BuybackToken | null>(acct('local:buybackToken'), { fallback: null });
 /** RSI+ bar on RSI pages folded to its small tab (the × on the bar); remembered across pages. */
