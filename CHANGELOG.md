@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.24.0](https://github.com/voidput/rsi-plus/compare/v0.23.0...v0.24.0) (2026-11-21)
+
+
+### Features
+
+* part of StarOrg Tools — repo moved to voidput/rsi-plus, Firefox Add-ons publishing ([427aec8](https://github.com/voidput/rsi-plus/commit/427aec833bfe1c7906e17e0fdfd801741fbd85af))
+* **ships:** Loaners card on My ships — RSI's Loaner Ship Matrix, the loaners your ships get and the full matrix with search ([715c4a4](https://github.com/voidput/rsi-plus/commit/715c4a43528cf55e5d0874ed862d035d2682abf9))
+* **store:** a ship you hold a CCU to counts as owned — Store changes tiles, Ship catalog tag and Owned facet ([234f690](https://github.com/voidput/rsi-plus/commit/234f690cd4c8924ecb1ea3cd6441e9f72b56f2ab))
+
+
+### Bug Fixes
+
+* **loaners:** read cell text by splitting on tags instead of a tag-stripping regex (CodeQL) ([cb608a8](https://github.com/voidput/rsi-plus/commit/cb608a85f13cd33d5560a27e6688bfc7152626f7))
+* **loaners:** strip any &lt; &gt; left after the tags in matrix cells (CodeQL incomplete sanitization) ([6699b32](https://github.com/voidput/rsi-plus/commit/6699b329c85fabaa1c3a5207589c7c3f9fcb7e61))
+* **offscreen:** load settings lazily in account.ts — the offscreen page has no storage API, so evaluating settings there failed the orders migration ([3195e4a](https://github.com/voidput/rsi-plus/commit/3195e4a869808f03469127a26c5e6bea175fd6b4))
+* **waves:** remember the picked ship and, per ship, the watched listing — a reload or a ship switch no longer falls back to the default ([2d4ea75](https://github.com/voidput/rsi-plus/commit/2d4ea75b8f8ba1d37b8c93831b3bdc17b0937cbb))
+
 ## [0.23.0](https://github.com/NyleGarcia/rsi-plus/compare/v0.22.0...v0.23.0) (2026-11-19)
 
 
