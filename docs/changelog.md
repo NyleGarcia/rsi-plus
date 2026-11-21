@@ -6,6 +6,7 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- Store changes and Ship catalog: a ship you hold a CCU to counts as owned: its tiles go green with *CCU owned* (and *Dismiss owned* takes them), and the catalog's *Ships I own* filter includes it.
 - My ships: a **Loaners** card shows the loaners your ships get from RSI's Loaner Ship Matrix (one of each, with the ships that grant it), and the whole matrix with search. Read from RSI's support article, refreshed daily or with *Refresh*.
 - Limited waves: the ship you picked and the listing you chose to watch for each ship are remembered, so a reload or switching between ships no longer jumps back to the default ship or listing.
 - Fixed: a "Migration failed for local:orders" error logged by the offscreen page (Chromium) when it loaded the hangar for the weekly sync.

@@ -51,3 +51,14 @@ describe('ownedHulls', () => {
     expect(ownedHulls([pledge(1, 'x', [['Cutlass Black', 'Ship']])], [], []).size).toBe(0);
   });
 });
+
+describe('ccuTargets', () => {
+  it('counts hangar CCUs by the hull they upgrade to', async () => {
+    const { ccuTargets } = await import('@/lib/owned-counts');
+    const ships = [{ id: 1, name: 'Aurora MR' }, { id: 2, name: 'Vulcan' }] as never;
+    const up = (id: number) => ({ id, name: `Upgrade - Aurora MR to Vulcan`, value: 10, upgrade: { fromId: 1, fromName: 'Aurora MR', toId: 2, toName: 'Vulcan' } });
+    expect([...ccuTargets([up(10), up(11)] as never, ships)]).toEqual([[2, 2]]);
+    expect(ccuTargets(null, ships).size).toBe(0);
+    expect(ccuTargets([up(10)] as never, []).size).toBe(0);
+  });
+});
