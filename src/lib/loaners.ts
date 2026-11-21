@@ -24,14 +24,15 @@ export interface LoanerMatrix {
   rows: LoanerRow[];
 }
 
-const ENTITIES: Record<string, string> = { '&nbsp;': ' ', '&#39;': "'", '&#039;': "'", '&quot;': '"', '&lt;': '<', '&gt;': '>' };
+const ENTITIES: Record<string, string> = { '&nbsp;': ' ', '&#39;': "'", '&#039;': "'", '&quot;': '"' };
+/** A cell's plain text. Ship names have no `<` / `>`: any left after the tags go too (never markup, only text nodes). */
 const text = (html: string) =>
   html
     .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&(?:nbsp|#0?39|quot|lt|gt);/g, (e) => ENTITIES[e] ?? e)
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    // `&amp;` last: unescaping it first would decode `&amp;lt;` twice
+    .replace(/<[^>]*>/g, '')
+    .replace(/[<>]/g, '')
+    .replace(/&(?:nbsp|#0?39|quot);/g, (e) => ENTITIES[e] ?? e)
+    // `&amp;` last: unescaping it first would decode `&amp;quot;` twice
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
