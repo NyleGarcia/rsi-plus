@@ -27,9 +27,11 @@ export interface LoanerMatrix {
 const ENTITIES: Record<string, string> = { '&nbsp;': ' ', '&#39;': "'", '&#039;': "'", '&quot;': '"' };
 /** A cell's plain text. Ship names have no `<` / `>`: any left after the tags go too (never markup, only text nodes). */
 const text = (html: string) =>
+  // Every `<` starts a tag that runs to the next `>` (`<br>` → a space); split there, no tag-stripping regex.
   html
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]*>/g, '')
+    .split('<')
+    .map((seg, i) => (i ? ` ${seg.slice(seg.indexOf('>') + 1)}` : seg))
+    .join('')
     .replace(/[<>]/g, '')
     .replace(/&(?:nbsp|#0?39|quot);/g, (e) => ENTITIES[e] ?? e)
     // `&amp;` last: unescaping it first would decode `&amp;quot;` twice
