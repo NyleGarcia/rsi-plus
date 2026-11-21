@@ -6,6 +6,7 @@ updated: 2026-11-15
 # Changelog
 
 ## Unreleased
+- My ships: a **Loaners** card shows the loaners your ships get from RSI's Loaner Ship Matrix (one of each, with the ships that grant it), and the whole matrix with search. Read from RSI's support article, refreshed daily or with *Refresh*.
 - Limited waves: the ship you picked and the listing you chose to watch for each ship are remembered, so a reload or switching between ships no longer jumps back to the default ship or listing.
 - Fixed: a "Migration failed for local:orders" error logged by the offscreen page (Chromium) when it loaded the hangar for the weekly sync.
 - RSI+ is now part of StarOrg Tools: the hub footer links to starorg.tools, and the project lives at github.com/voidput/rsi-plus (old links redirect).

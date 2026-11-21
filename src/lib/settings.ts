@@ -4,6 +4,7 @@ import { NO_MUTES, type MuteRules } from './filters';
 import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
 import type { GameShip } from './items';
 import type { Labels } from './labels';
+import type { LoanerMatrix } from './loaners';
 import type { OrgCache } from './orgs';
 import type { Goal, SavedChain } from './ccu';
 import type { BuybackToken } from './buyback-token';
@@ -186,6 +187,8 @@ export const buybackTokenItem = storage.defineItem<BuybackToken | null>(acct('lo
 export const siteBarMinItem = storage.defineItem<boolean>('local:siteBarMin', { fallback: false });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
+/** RSI's Loaner Ship Matrix (public support article, `lib/loaners.ts`), refetched by the Ships page once a day. */
+export const loanersItem = storage.defineItem<LoanerMatrix | null>('local:loaners', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */
 export const saleHistoryItem = storage.defineItem<SaleHistory>('local:saleHistory', { fallback: {} });
 /** Per ship: MSRP / CCU / standalone prices over time (`lib/price-history.ts`), stamped on every catalog refresh. */

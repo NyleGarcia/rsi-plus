@@ -1,12 +1,12 @@
 # RSI+ Privacy Policy
 
-_Last updated: 2026-11-10_
+_Last updated: 2026-11-20_
 
 RSI+ is a browser extension that improves the Roberts Space Industries website (Spectrum, hangar, buyback, pledge store). It runs entirely in your browser. There is no RSI+ server, account, or analytics. It talks only to RSI, and to StarOrg Tools if you connect it. The optional Issue Council integration reads RSI's Issue Council pages you open and sends nothing anywhere. The optional integration for The Impound reads that store's public listings while you browse it and sends it nothing about you.
 
 ## What the extension accesses
 
-- **Roberts Space Industries (robertsspaceindustries.com) — the only site it talks to unless you turn on an integration below.** Your RSI session cookie (`Rsi-Token`, read so the background can call Spectrum's API on your behalf, exactly as the site does), Spectrum threads, channels, replies and your friends list, your hangar, buyback and store-credit pages, the public pledge-store catalog, and the public funding statistics. Used to track what you have read, mute and watch things, manage friend requests, list and value your pledges, plan CCU chains and paint buybacks, and notify you.
+- **Roberts Space Industries (robertsspaceindustries.com) — the only site it talks to unless you turn on an integration below.** Your RSI session cookie (`Rsi-Token`, read so the background can call Spectrum's API on your behalf, exactly as the site does), Spectrum threads, channels, replies and your friends list, your hangar, buyback and store-credit pages, the public pledge-store catalog, and the public funding statistics, and the public Loaner Ship Matrix article on RSI's support site (support.robertsspaceindustries.com, fetched with no cookies). Used to track what you have read, mute and watch things, manage friend requests, list and value your pledges, plan CCU chains and paint buybacks, and notify you.
 - **Account switcher (optional, off until you turn it on in Settings):** *Save this login* copies your RSI cookies into the extension's storage so you can switch between your own accounts. Nothing is saved unless you press it; *Forget* deletes it.
 - **Star Citizen Wiki links:** the globe next to a ship or item name is an ordinary link to starcitizen.tools that opens only when you click it. RSI+ makes no request to the wiki and sends it nothing (it knows which pages exist from a list of page titles bundled with the extension); the link carries only the ship or item name (never a custom ship name).
 - **Public citizen pages (optional):** *Load all orgs* on the Friends tab reads your friends' public RSI profile pages to show their organisations.
