@@ -28,7 +28,7 @@
     "@wxt-dev/module-svelte": "^2.0.5",
     "fast-check": "^4.10.2",
     "happy-dom": "^21.0.4",
-    "playwright-core": "^1.65.0",
+    "playwright-core": "^1.65.1",
     "svelte": "^5.57.3",
     "svelte-check": "^4.7.8",
     "tailwindcss": "^4.3.3",
@@ -37,7 +37,7 @@
     "wxt": "^0.21.5"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.72.0",
+    "@lucide/svelte": "^1.73.0",
     "bits-ui": "^2.21.0",
     "clsx": "^2.1.1",
     "layerchart": "^2.10.1",
