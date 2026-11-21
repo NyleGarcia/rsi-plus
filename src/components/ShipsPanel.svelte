@@ -69,6 +69,7 @@
   import { applyFacets, stageOf, type FacetValues } from '@/lib/facets';
   import { shipFacets, shipRanges, SHIP_PRIMARY } from '@/lib/pledge-facets';
   import FacetBar from './FacetBar.svelte';
+  import LoanersCard from './LoanersCard.svelte';
 
   let hangar = $state<Awaited<ReturnType<typeof hangarItem.getValue>>>(null);
   let cat = $state<Catalog | null>(null);
@@ -322,6 +323,8 @@
   const fleetOf = (id: number) => fleet.find((f) => f.ship.id === id);
   const toggleCompare = (id: number) => (compare = compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id]);
   const unmatchedShips = $derived(rows.filter((r) => r.category === 'ship' && !r.ship));
+  /** Pledged hulls for the Loaners card (in-game copies get no loaner), plus hangar ships the store catalog doesn't sell (Idris-M, Javelin, Kraken…). */
+  const loanerShips = $derived([...fleet.filter((f) => f.count > f.game).map((f) => ({ id: f.ship.id, name: f.ship.name })), ...unmatchedShips.map((r, i) => ({ id: -1 - i, name: r.title }))]);
   const storeFor = (fam: string) => (storeByFam.get(fam) ?? []).filter((sp) => !ownedStoreIds.has(sp.id));
   // ---- in-game ships (aUEC-bought / earned): tracked by hand, counted as hulls for paints ----
   let gameAdd = $state<number | null>(null);
@@ -635,6 +638,7 @@
               {/if}
             </Card.Content>
           </Card.Root>
+          <LoanersCard owned={loanerShips} />
         {/if}
 
     {#if view === 'ships' && compared.length}

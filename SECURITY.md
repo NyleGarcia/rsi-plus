@@ -3,7 +3,7 @@
 RSI+ runs entirely in your browser and talks to one site, robertsspaceindustries.com ([PRIVACY.md](PRIVACY.md)). It handles your RSI session cookie, so it is held to that standard.
 
 ## Reporting a vulnerability
-- Preferred: [GitHub private vulnerability report](https://github.com/NyleGarcia/rsi-plus/security/advisories/new) — only the maintainer sees it.
+- Preferred: [GitHub private vulnerability report](https://github.com/voidput/rsi-plus/security/advisories/new) — only the maintainer sees it.
 - Or a GitHub issue for anything that is not exploitable (hardening ideas, a permission that looks wider than needed).
 - Expect an acknowledgement within 72 hours and a fix release for confirmed issues within 14 days; the advisory is published with the fix. Please do not test against accounts you do not own.
 
@@ -17,9 +17,9 @@ The latest release on the Chrome Web Store / GitHub releases. Older versions get
 Every release zip carries a SLSA build-provenance attestation (signed statement that GitHub Actions built it from the tagged commit) and a `SHA256SUMS` file, and the build is reproducible:
 ```sh
 scripts/verify-release.sh 0.6.1            # checksums + attestation + rebuild and diff
-gh attestation verify rsi-plus-0.6.1-chrome.zip -R NyleGarcia/rsi-plus   # attestation alone
+gh attestation verify rsi-plus-0.6.1-chrome.zip -R voidput/rsi-plus   # attestation alone
 # offline, from the bundle attached to the release (0.22.0 on): <zip>.sigstore.json, plus .intoto.jsonl (its DSSE envelope)
-gh attestation verify rsi-plus-0.22.0-chrome.zip -R NyleGarcia/rsi-plus --bundle rsi-plus-0.22.0-chrome.sigstore.json
+gh attestation verify rsi-plus-0.22.0-chrome.zip -R voidput/rsi-plus --bundle rsi-plus-0.22.0-chrome.sigstore.json
 ```
 The zip submitted to the Chrome Web Store is the same CI artifact that is attached to the GitHub release ([docs/release.md](docs/release.md)).
 

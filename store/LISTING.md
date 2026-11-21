@@ -19,6 +19,8 @@ Copy-paste source for the developer dashboard (same layout as Crunchy+). Assets 
 ```
 RSI+ adds the tools the Roberts Space Industries site is missing — for your hangar, the pledge store and Spectrum — in one hub page plus small touches on the site itself. Everything runs in your browser against your own RSI login; there is no RSI+ server or account.
 
+Part of StarOrg Tools (https://starorg.tools), a set of Star Citizen org and player tools. No StarOrg account needed; connecting one is optional.
+
 HANGAR, BUYBACK & STORE
 • Hangar explorer: every pledge on one page — melt value totals, counts by type, LTI / warbond / giftable / meltable filters, group by ship, hide event sets (IAE, Luminalia, subscriber flair…), CSV / JSON export and a fleet file in the format other hangar and fleet-viewer tools import.
 • Melt calculator: tick pledges and see the credit you would get and what you would lose for good, with duplicate and orphan-paint pickers.
@@ -48,9 +50,9 @@ ON THE SITE
 • An RSI+ bar on store ship pages (MSRP, warbond price, wishlist, Plan CCU) and on hangar / buyback / upgrade pages that opens the matching hub view.
 
 PRIVACY
-RSI+ talks only to robertsspaceindustries.com, and to an org fleet site if you connect it. The optional resale store price check reads that store's public listings while you browse it and sends it nothing about you. Optional: connect an org fleet site to send your RSI handle and ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge id and pledge name; never pledge values). Off until you press Connect; nothing else from RSI is ever sent. Settings shows every field sent and can preview the exact list. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
+RSI+ talks only to robertsspaceindustries.com, and to an org fleet site if you connect it. The optional resale store price check reads that store's public listings while you browse it and sends it nothing about you. Optional: connect an org fleet site to send your RSI handle and ship list (each ship's model and maker, the name you gave it, LTI / warbond / insurance, pledge id and pledge name; never pledge values). Off until you press Connect; nothing else from RSI is ever sent. Settings shows every field sent and can preview the exact list. Your data stays in your browser's extension storage; nothing is sold, shared or tracked, and nothing is bought or melted without you clicking RSI's own button. Full policy: https://github.com/voidput/rsi-plus/blob/main/PRIVACY.md
 
-Open source: https://github.com/NyleGarcia/rsi-plus
+Open source: https://github.com/voidput/rsi-plus
 
 DISCLAIMER
 RSI+ is an unofficial Star Citizen fan tool, made by the community. It is not affiliated with, endorsed by or sponsored by Cloud Imperium Games, Roberts Space Industries or any company of the Cloud Imperium group. Star Citizen®, Roberts Space Industries® and Cloud Imperium® are registered trademarks of Cloud Imperium Rights LLC; all game content, names and images belong to their owners. Store prices and listings are read from the official RSI pledge store and can lag behind it or differ; RSI+ is not a store, sells nothing and takes no payment — every purchase happens on robertsspaceindustries.com under RSI's own terms.
@@ -65,8 +67,8 @@ RSI+ is an unofficial Star Citizen fan tool, made by the community. It is not af
 
 **Additional fields**
 - Official URL: none
-- Homepage URL: https://github.com/NyleGarcia/rsi-plus
-- Support URL: https://github.com/NyleGarcia/rsi-plus/issues
+- Homepage URL: https://github.com/voidput/rsi-plus
+- Support URL: https://github.com/voidput/rsi-plus/issues
 - Mature content: No
 
 ## Privacy tab
@@ -105,7 +107,7 @@ RSI+ improves the Roberts Space Industries website for its users: Spectrum read 
 
 **Certifications (all three):** I do not sell or transfer user data to third parties outside the approved use cases · I do not use or transfer user data for purposes unrelated to my item's single purpose · I do not use or transfer user data to determine creditworthiness or for lending purposes.
 
-**Privacy policy URL:** https://github.com/NyleGarcia/rsi-plus/blob/main/PRIVACY.md
+**Privacy policy URL:** https://github.com/voidput/rsi-plus/blob/main/PRIVACY.md
 
 ## Distribution
 - Visibility: Public (or Unlisted while testing)

@@ -4,7 +4,7 @@
   import Segmented from './Segmented.svelte';
   import { bg } from '@/lib/messages';
   import type { GameShip } from '@/lib/items';
-  import { ownedHulls } from '@/lib/owned-counts';
+  import { ccuTargets, ownedHulls } from '@/lib/owned-counts';
   import { useDeepLink } from '@/lib/deep-link.svelte';
   import { catalogItem, gameShipsItem, hangarItem, priceHistoryItem, saleHistoryItem, storeItemsItem, wishlistItem, type WishShip } from '@/lib/settings';
   import { lastSeen, PRICE_KIND_LABEL, runsOf, withArchive, type PriceHistory } from '@/lib/price-history';
@@ -43,6 +43,9 @@
   let game = $state<GameShip[]>([]);
   /** Ships you own (from the hangar) → copies + insurance, keyed by catalog id. */
   const owned = $derived(ownedHulls(hangar?.pledges, game, cat?.ships ?? []));
+  /** Hangar CCUs by target hull: holding a CCU to a ship counts as owning it (Owned facet, "CCU owned" tag). */
+  const ccuTo = $derived(ccuTargets(hangar?.pledges, cat?.ships ?? []));
+  const has = (id: number) => owned.has(id) || ccuTo.has(id);
   /** Browse's standalone-ship listings (already loaded by Browse / the poll — never fetched here). */
   let shipListings = $state<StoreItem[]>([]);
   /** Everything Browse's listing holds (packs and game packages grant hulls too). */
@@ -176,8 +179,8 @@
       id: 'owned',
       label: 'Owned',
       options: [
-        { id: 'yes', label: `Ships I own`, hint: 'In your hangar (pledged or in-game)', test: (s) => owned.has(s.id) },
-        { id: 'no', label: "Ships I don't own", test: (s) => !owned.has(s.id) },
+        { id: 'yes', label: `Ships I own`, hint: 'In your hangar (pledged or in-game), or a CCU to it is', test: (s) => has(s.id) },
+        { id: 'no', label: "Ships I don't own", test: (s) => !has(s.id) },
       ],
     },
     { id: 'wish', label: 'Wishlist', options: [{ id: 'yes', label: '★ Wishlist', hint: 'Hulls you starred', test: (s) => wished(s.id) }] },
@@ -280,6 +283,9 @@
                       <Tag kind="owned" count={o.count} label={`owned ×${o.count}${o.game ? ` (${o.game === o.count ? '' : `${o.game} `}in-game)` : ''}`} />
                       {#each o.insurance as i (i)}<Tag kind="insurance" value={i} />{/each}
                     </div>
+                  {:else if ccuTo.get(s.id)}
+                    {@const c = ccuTo.get(s.id)!}
+                    <div class="flex flex-wrap gap-1"><Tag kind="owned" label={`CCU owned${c > 1 ? ` ×${c}` : ''}`} hint="You hold a CCU to this hull in your hangar" /></div>
                   {/if}
                 </div>
               </div>

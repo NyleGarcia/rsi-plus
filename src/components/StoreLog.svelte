@@ -9,7 +9,7 @@
   import Minus from '@lucide/svelte/icons/minus';
   import { catalogItem, gameShipsItem, hangarItem, storeItemsItem, storeLogItem, storeSnapshotItem } from '@/lib/settings';
   import type { GameShip } from '@/lib/items';
-  import { ownedHulls as ownedHullMap, ownedTitleCount, ownedTitleCounts } from '@/lib/owned-counts';
+  import { ccuTargets, ownedHulls as ownedHullMap, ownedTitleCount, ownedTitleCounts } from '@/lib/owned-counts';
   import { fetchStoreItems, isBestValue, isLimitedTime, isLowStock, isNewListing, STORE_CATEGORIES, usd, type Catalog, type StoreListing } from '@/lib/store';
   import { cleanLog, dismiss, listingEntries, mergeChanges, skuName, tally, type EntryKind, type MergedChange, type StoreChange, type StoreEntry, type StoreSnapshot } from '@/lib/storelog';
   import ExternalLink from '@lucide/svelte/icons/external-link';
@@ -106,13 +106,17 @@
   const ownedHulls = $derived(ownedHullMap(hangar?.pledges, game, cat?.ships ?? []));
   /** Copies of an item in the hangar by normalized title (pledge names and every item inside them) — as Browse counts them. */
   const ownedKeys = $derived(ownedTitleCounts(hangar?.pledges));
+  /** Hangar CCUs by the hull they upgrade to: holding one counts as having the hull. */
+  const ccuTo = $derived(ccuTargets(hangar?.pledges, cat?.ships ?? []));
   /** "owned ×n" for an item / a standalone hull, "hull owned" for a CCU to a hull you have; null when not in the hangar. */
   const ownedLabel = (e: StoreEntry): string | null => {
     if (!hangar) return null;
     if (isHull(e)) {
       const id = e.ship ?? known.get(e.key)?.ship;
       const n = id ? (ownedHulls.get(id)?.count ?? 0) : 0;
-      return n ? (e.kind === 'ccu' ? `hull owned${n > 1 ? ` ×${n}` : ''}` : `owned ×${n}`) : null;
+      if (n) return e.kind === 'ccu' ? `hull owned${n > 1 ? ` ×${n}` : ''}` : `owned ×${n}`;
+      const c = id ? (ccuTo.get(id) ?? 0) : 0;
+      return c ? `CCU owned${c > 1 ? ` ×${c}` : ''}` : null;
     }
     const n = ownedTitleCount(ownedKeys, nameOf(e));
     return n ? `owned ×${n}` : null;
@@ -311,7 +315,7 @@
                             {/snippet}
                             <HintBadge size="xs" side="bottom" hint={contents}>{inside.length} items</HintBadge>
                           {/if}
-                          {#if owned}<Tag kind="owned" size="xs" label={owned} hint={e.kind === 'ccu' ? 'The hull this upgrades to is already in your hangar' : 'Already in your hangar'} />{/if}
+                          {#if owned}<Tag kind="owned" size="xs" label={owned} hint={owned.startsWith('CCU') ? 'You hold a CCU to this hull in your hangar' : e.kind === 'ccu' ? 'The hull this upgrades to is already in your hangar' : 'Already in your hangar'} />{/if}
                           {#if rsi}
                             <TipButton variant="ghost" size="icon-xs" class="text-muted-foreground size-5 shrink-0" href={rsi} target="_blank" rel="noopener" tip="Open on the RSI store" aria-label="Open on the RSI store"><ExternalLink class="size-3" /></TipButton>
                           {/if}

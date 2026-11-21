@@ -7,7 +7,7 @@
    */
   import { addStandalone, CART_URL, readCart, signedIn, type CartSnapshot } from '@/lib/cart';
   import { bg } from '@/lib/messages';
-  import { conciergeItem, hangarItem, wavesItem } from '@/lib/settings';
+  import { conciergeItem, hangarItem, wavesItem, wavesViewItem } from '@/lib/settings';
   import { fetchShipListings, usd, type ShipListing } from '@/lib/store';
   import { activeWaveEvent, countdown, EVENT_TAIL_MS, currentWave, IAE_2956, matchListings, stopAfterLook, watchEveryMs, WAVE_OPEN_MS, waveTimes, type WaveSale, type WaveStop } from '@/lib/waves';
   import { fmtWhen } from '@/lib/fmt';
@@ -39,6 +39,16 @@
   const live = $derived(sales.filter((s) => now < s.times.at(-1)! + WAVE_OPEN_MS));
   let pick = $state<string | null>(null);
   const sale = $derived(sales.find((s) => s.id === pick) ?? live[0] ?? sales.at(-1) ?? allSales.at(-1)!);
+  /** Per sale: the listing you picked to watch (0 = none). Saved with the ship picked, so a reload or a ship switch keeps both. */
+  let picks = $state<Record<string, number>>({});
+  $effect(() => {
+    wavesViewItem.getValue().then((v) => {
+      pick ??= v.pick;
+      picks = { ...v.watch, ...picks };
+    });
+  });
+  const saveView = () => void wavesViewItem.setValue({ pick, watch: $state.snapshot(picks) });
+  const pickSale = (id: string) => ((pick = id), saveView());
   const wave = $derived(currentWave(sale.times, now));
   const toWave = $derived(wave ? wave.at - now : Infinity);
 
@@ -71,12 +81,12 @@
    * credit one — and other editions can carry the same name (a Best in Show). You pick one; during a wave only that
    * one is polled (by SKU). Default: among the "10 Year" ones, store credit when your credit covers it, else warbond.
    */
-  let choice = $state<number | null>(null); // null = default, 0 = none
+  const choice = $derived<number | null>(picks[sale.id] ?? null); // null = default, 0 = none
   const wanted = $derived(matches.some((m) => /10 year/i.test(m.name)) ? matches.filter((m) => /10 year/i.test(m.name)) : matches);
   const fallback = $derived(wanted.find((m) => !m.warbond && credit != null && credit >= m.discounted) ?? wanted.find((m) => m.warbond) ?? wanted[0] ?? null);
   const watched = $derived(choice === 0 ? null : (matches.find((m) => m.id === choice) ?? fallback));
   const watchedOf = (m: ShipListing) => watched?.id === m.id;
-  const toggleWatch = (m: ShipListing) => (choice = watchedOf(m) ? 0 : m.id);
+  const toggleWatch = (m: ShipListing) => ((picks = { ...picks, [sale.id]: watchedOf(m) ? 0 : m.id }), saveView());
   const hits = $derived(watched?.available ? [watched] : []);
   const hit = $derived(hits[0] ?? null);
   /** What store credit does for a listing: nothing for a warbond; else covers it or falls short. */
@@ -204,7 +214,7 @@
       {#each sales as s (s.id)}
         {@const w = currentWave(s.times, now)}
         <div class={cn('flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2', s.id === sale.id && 'border-primary bg-primary/5', !w && 'opacity-50')}>
-          <Button variant={s.id === sale.id ? 'default' : 'outline'} size="sm" onclick={() => (pick = s.id)}>{s.ship}</Button>
+          <Button variant={s.id === sale.id ? 'default' : 'outline'} size="sm" onclick={() => pickSale(s.id)}>{s.ship}</Button>
           <span class="text-muted-foreground text-xs">{day(s)}</span>
           {#if s.concierge}<Badge variant="outline">Concierge</Badge>{/if}
           {#if s.invite}<Badge variant="warning">Invite only</Badge>{/if}

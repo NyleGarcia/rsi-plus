@@ -3,6 +3,7 @@
  * Pure — input is the cached `Pledge[]` + catalog (+ in-game ships).
  */
 import type { Pledge } from './hangar';
+import { ownedCcus } from './ccu';
 import { inventory, ownedShipsWithPaints, type GameShip, type OwnedShip } from './items';
 import { cutKey, paintKey, type CatalogShip } from './store';
 
@@ -47,4 +48,12 @@ export function ownedTitleCount(o: OwnedTitles, title: string): number {
 export function ownedHulls(pledges: Pledge[] | null | undefined, game: GameShip[], ships: CatalogShip[]): Map<number, OwnedShip> {
   if (!ships.length) return new Map();
   return new Map(ownedShipsWithPaints(inventory(pledges ?? [], ships), game, ships).map((o) => [o.ship.id, o]));
+}
+
+/** Hangar CCUs (applied or not, buyback excluded) by the hull they upgrade to → how many; a CCU to a ship counts as having it. */
+export function ccuTargets(pledges: Pledge[] | null | undefined, ships: CatalogShip[]): Map<number, number> {
+  const n = new Map<number, number>();
+  if (!ships.length) return n;
+  for (const c of ownedCcus(pledges ?? [], [], ships).owned) n.set(c.toId, (n.get(c.toId) ?? 0) + 1);
+  return n;
 }

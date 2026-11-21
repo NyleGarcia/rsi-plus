@@ -4,6 +4,7 @@ import { NO_MUTES, type MuteRules } from './filters';
 import type { FriendNotes, PartyLogEntry, PartyMode } from './friends';
 import type { GameShip } from './items';
 import type { Labels } from './labels';
+import type { LoanerMatrix } from './loaners';
 import type { OrgCache } from './orgs';
 import type { Goal, SavedChain } from './ccu';
 import type { BuybackToken } from './buyback-token';
@@ -175,12 +176,19 @@ export const pledgeLabelsItem = storage.defineItem<Labels>(acct('local:pledgeLab
 export const ccuGoalsItem = storage.defineItem<{ goals: Goal[]; keep: number[]; prefer?: number[]; storeStart: boolean; /** The goals were folded into the saved chains (*My chains*). */ merged?: boolean }>(acct('local:ccuGoals'), { fallback: { goals: [], keep: [], prefer: [], storeStart: false } });
 /** Limited waves: the sales to be reminded of (`lib/waves.ts` ids). */
 export const wavesItem = storage.defineItem<{ armed: string[]; /** Settings → Limited waves (absent = on). */ on?: boolean }>('local:waves', { fallback: { armed: [] } });
+/**
+ * Limited waves page: the ship last looked at and, per sale, the listing picked to watch (SKU id; 0 = none). Kept apart
+ * from `wavesItem`, which the background watches to reschedule the wave reminders.
+ */
+export const wavesViewItem = storage.defineItem<{ pick: string | null; watch: Record<string, number> }>('local:wavesView', { fallback: { pick: null, watch: {} } });
 /** Credit Buy-Back tokens as RSI's buy-back pages last showed them (`lib/buyback-token.ts`). */
 export const buybackTokenItem = storage.defineItem<BuybackToken | null>(acct('local:buybackToken'), { fallback: null });
 /** RSI+ bar on RSI pages folded to its small tab (the × on the bar); remembered across pages. */
 export const siteBarMinItem = storage.defineItem<boolean>('local:siteBarMin', { fallback: false });
 /** Pledge-store ship catalog + on-sale SKUs (public data), refreshed by the background. */
 export const catalogItem = storage.defineItem<Catalog | null>('local:catalog', { fallback: null });
+/** RSI's Loaner Ship Matrix (public support article, `lib/loaners.ts`), refetched by the Ships page once a day. */
+export const loanersItem = storage.defineItem<LoanerMatrix | null>('local:loaners', { fallback: null });
 /** Per ship: when it was last seen on sale (CCU / standalone), stamped on every catalog refresh since install. */
 export const saleHistoryItem = storage.defineItem<SaleHistory>('local:saleHistory', { fallback: {} });
 /** Per ship: MSRP / CCU / standalone prices over time (`lib/price-history.ts`), stamped on every catalog refresh. */
